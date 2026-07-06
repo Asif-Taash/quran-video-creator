@@ -75,6 +75,7 @@ export default function VideoCreatorForm() {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [isGeneratingBg, setIsGeneratingBg] = useState(false);
   const [customAudio, setCustomAudio] = useState<File | null>(null);
+  const [isExtractingAudio, setIsExtractingAudio] = useState(false);
   const [audioSourceMode, setAudioSourceMode] = useState<"reciter" | "custom">("reciter");
 
   const [segmentationProgress, setSegmentationProgress] = useState<string | null>(null);
@@ -605,6 +606,39 @@ export default function VideoCreatorForm() {
     setRenderState("idle");
   };
 
+  const handleVideoUploadForAudio = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsExtractingAudio(true);
+    setRenderError("");
+    try {
+      const formData = new FormData();
+      formData.append("video", file);
+
+      const res = await fetch("/api/video/extract-audio", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to extract audio");
+      }
+
+      const blob = await res.blob();
+      const audioFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".mp3", { type: "audio/mp3" });
+      setCustomAudio(audioFile);
+      setVideoUrl(null);
+      setRenderState("idle");
+    } catch (err) {
+      console.error(err);
+      setRenderError(err instanceof Error ? err.message : "تعذر استخراج الصوت من الفيديو");
+    } finally {
+      setIsExtractingAudio(false);
+    }
+  };
+
   const removeCustomAudio = () => {
     setCustomAudio(null);
     setVideoUrl(null);
@@ -959,15 +993,31 @@ export default function VideoCreatorForm() {
                        <audio controls src={URL.createObjectURL(customAudio)} className="w-full mt-3 h-10 rounded-lg outline-none" />
                      </>
                    ) : (
-                     <label className={`w-full flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-5 py-3.5 shadow-sm hover:border-primary/30 hover:shadow-md text-sm font-medium transition-all duration-300 cursor-pointer ${isArabic ? 'text-right' : 'text-left'}`} dir={isArabic ? 'rtl' : 'ltr'}>
-                        <span className="opacity-50 truncate">
-                          {isArabic ? "تصفح لاختيار ملف صوتي مخصص..." : "Özel bir ses dosyası seçin..."}
-                        </span>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                           <CloudArrowUpIcon className="w-5 h-5 text-foreground/40" />
-                        </div>
-                        <input type="file" accept="audio/*" className="hidden" onChange={handleCustomAudioUpload} />
-                     </label>
+                     <div className="flex flex-col gap-3">
+                       <label className={`w-full flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-5 py-3.5 shadow-sm hover:border-primary/30 hover:shadow-md text-sm font-medium transition-all duration-300 cursor-pointer ${isArabic ? 'text-right' : 'text-left'}`} dir={isArabic ? 'rtl' : 'ltr'}>
+                          <span className="opacity-50 truncate">
+                            {isArabic ? "تصفح لاختيار ملف صوتي مخصص..." : "Özel bir ses dosyası seçin..."}
+                          </span>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                             <MusicalNoteIcon className="w-5 h-5 text-foreground/40" />
+                          </div>
+                          <input type="file" accept="audio/*" className="hidden" onChange={handleCustomAudioUpload} />
+                       </label>
+                       
+                       <label className={`w-full flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-5 py-3.5 shadow-sm hover:border-primary/30 hover:shadow-md text-sm font-medium transition-all duration-300 ${isExtractingAudio ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${isArabic ? 'text-right' : 'text-left'}`} dir={isArabic ? 'rtl' : 'ltr'}>
+                          <span className="opacity-70 truncate">
+                            {isExtractingAudio ? (isArabic ? "جاري الاستخراج..." : "Çıkarılıyor...") : (isArabic ? "أو استخرج الصوت من ملف فيديو..." : "Veya videodan sesi çıkarın...")}
+                          </span>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                             {isExtractingAudio ? (
+                               <svg className="animate-spin h-5 w-5 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                             ) : (
+                               <VideoCameraIcon className="w-5 h-5 text-foreground/40" />
+                             )}
+                          </div>
+                          <input type="file" accept="video/*" className="hidden" onChange={handleVideoUploadForAudio} disabled={isExtractingAudio} />
+                       </label>
+                     </div>
                    )}
                 </div>
               )}
