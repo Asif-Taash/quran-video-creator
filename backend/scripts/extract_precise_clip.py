@@ -373,9 +373,12 @@ def extract_clip(reciter_id, surah_id, start_ayah, end_ayah, pad_seconds=0.0):
         exact_text_clean = " ".join(text_for_whisper)
 
         logger.info("=== Phase 4: Micro-Alignment (Stable Whisper) ===")
-        model = get_whisper_model('OdyAsh/faster-whisper-base-ar-quran')
+        model = get_whisper_model('large-v3')
         try:
-            result = model.align(str(macro_clip_path), exact_text_clean, language='ar')
+            # Enable Voice Activity Detection (VAD) to force Whisper to align word boundaries 
+            # based on actual physical voice stopping, rather than linguistic guessing.
+            # This is crucial for Tajweed (Madds) which otherwise get cut early.
+            result = model.align(str(macro_clip_path), exact_text_clean, language='ar', vad=True)
         except Exception as e:
             import traceback
             logger.error(f"Alignment crashed: {e}")

@@ -152,7 +152,7 @@ async function estimateAudioDurationInFrames(localAudioFile: string) {
     const metadata = await parseFile(localAudioFile);
     const seconds = metadata.format.duration;
     if (seconds && seconds > 0) {
-      return Math.max(FPS * 3, Math.ceil(seconds * FPS));
+      return Math.max(1, Math.ceil(seconds * FPS));
     }
   } catch {
     console.warn(`music-metadata failed for ${localAudioFile}, falling back to file-size heuristic`);
@@ -162,7 +162,7 @@ async function estimateAudioDurationInFrames(localAudioFile: string) {
   const fileSizeBytes = stats.size;
   const bitrateBytesPerSec = 16000;
   const seconds = fileSizeBytes / bitrateBytesPerSec;
-  return Math.max(FPS * 3, Math.ceil((seconds + 0.25) * FPS));
+  return Math.max(1, Math.ceil((seconds + 0.25) * FPS));
 }
 
 let cachedServeUrl: string | null = null;
@@ -339,32 +339,32 @@ export async function POST(req: Request) {
 
       if (usePreparedAudio && preparedAudioLocalPath && preparedJsonStr) {
         wordTimingsData = JSON.parse(preparedJsonStr);
-        
+
         if (trimStart > 0 || trimEnd > 0) {
           console.log(`[Video Render] Using prepared audio and trimming from ${trimStart}s to ${trimEnd}s...`);
           const uploadsDir = path.join(process.cwd(), "public", "render-assets", "trimmed-audio");
           await fs.mkdir(uploadsDir, { recursive: true });
           const trimmedFilename = `trimmed-${Date.now()}-${Math.random().toString(36).slice(2)}.mp3`;
           const trimmedAbsolutePath = path.join(uploadsDir, trimmedFilename);
-          
+
           try {
             const toArg = trimEnd > 0 ? `-to ${trimEnd}` : "";
             await execAsync(`ffmpeg -y -i "${preparedAudioLocalPath}" -ss ${trimStart} ${toArg} -c:a libmp3lame -q:a 2 "${trimmedAbsolutePath}"`);
-            
+
             // We must serve it relative to the public folder
             globalAudioPath = `http://localhost:3000/api/serve-audio?file=render-assets/trimmed-audio/${trimmedFilename}`;
             globalAudioDurationInFrames = await estimateAudioDurationInFrames(trimmedAbsolutePath);
             tempFilesToCleanup.push(trimmedAbsolutePath);
-            
+
             // Shift JSON word timings by trimStart
             if (wordTimingsData && wordTimingsData.verses) {
               for (const ayah in wordTimingsData.verses) {
-                  const words = wordTimingsData.verses[ayah].words || [];
-                  for (let i = 0; i < words.length; i++) {
-                      const word = words[i];
-                      word.start = Math.max(0, word.start - (trimStart * 1000));
-                      word.end = Math.max(0, word.end - (trimStart * 1000));
-                  }
+                const words = wordTimingsData.verses[ayah].words || [];
+                for (let i = 0; i < words.length; i++) {
+                  const word = words[i];
+                  word.start = Math.max(0, word.start - (trimStart * 1000));
+                  word.end = Math.max(0, word.end - (trimStart * 1000));
+                }
               }
             }
             apiExtracted = true;
@@ -380,7 +380,7 @@ export async function POST(req: Request) {
           // The preparedAudioLocalPath is typically something like /app/public/renders/temp_audio/macro_...
           const relativePathMatch = preparedAudioLocalPath.match(/public[/\\](.*)/);
           const relativeServePath = relativePathMatch ? relativePathMatch[1].replace(/\\/g, '/') : path.basename(preparedAudioLocalPath);
-          
+
           globalAudioPath = `http://localhost:3000/api/serve-audio?file=${relativeServePath}`;
           globalAudioDurationInFrames = await estimateAudioDurationInFrames(preparedAudioLocalPath);
           apiExtracted = true;
@@ -531,10 +531,10 @@ export async function POST(req: Request) {
 
             if (nextTimings && nextTimings.length > 0) {
               const endMs = nextTimings[0].start;
-              durationInFrames = Math.max(FPS, Math.round(((endMs - startMs) / 1000) * FPS));
+              durationInFrames = Math.max(1, Math.round(((endMs - startMs) / 1000) * FPS));
             } else {
               // For the last verse, duration is determined later by post-processing
-              durationInFrames = Math.max(FPS, Math.round(((timings[timings.length - 1].end - startMs) / 1000) * FPS));
+              durationInFrames = Math.max(1, Math.round(((timings[timings.length - 1].end - startMs) / 1000) * FPS));
             }
           } else {
             // Proportionally assign duration based on character count
@@ -542,9 +542,9 @@ export async function POST(req: Request) {
             const proportion = totalCharsAllVerses > 0 ? verseChars / totalCharsAllVerses : 1 / selectedVerses.length;
 
             if (index === selectedVerses.length - 1) {
-              durationInFrames = Math.max(FPS, Math.round(globalAudioDurationInFrames * proportion));
+              durationInFrames = Math.max(1, Math.round(globalAudioDurationInFrames * proportion));
             } else {
-              durationInFrames = Math.max(FPS, Math.round(globalAudioDurationInFrames * proportion));
+              durationInFrames = Math.max(1, Math.round(globalAudioDurationInFrames * proportion));
             }
           }
         } else {
@@ -607,19 +607,26 @@ export async function POST(req: Request) {
     if (globalAudioPath && verses.length > 0) {
       const currentTotal = verses.reduce((sum, v) => sum + v.durationInFrames, 0);
       const diff = globalAudioDurationInFrames - currentTotal;
-      if (diff > 0) {
+      if (diff !== 0) {
         verses[verses.length - 1].durationInFrames += diff;
+        if (verses[verses.length - 1].durationInFrames < 1) {
+          verses[verses.length - 1].durationInFrames = 1;
+        }
         // Also extend the last word's end time so it stays highlighted during trailing repetitions
         const lastVerse = verses[verses.length - 1];
-        if (lastVerse.wordTimings && lastVerse.wordTimings.length > 0) {
+        if (diff > 0 && lastVerse.wordTimings && lastVerse.wordTimings.length > 0) {
           const lastWord = lastVerse.wordTimings[lastVerse.wordTimings.length - 1];
           const diffMs = (diff / FPS) * 1000;
           lastWord.end += diffMs;
         }
       }
     }
-
-    const totalDurationInFrames = verses.reduce((sum, verse) => sum + verse.durationInFrames, 0);
+    
+    // Ensure the totalDurationInFrames exactly matches globalAudioDurationInFrames when applicable
+    let totalDurationInFrames = verses.reduce((sum, verse) => sum + verse.durationInFrames, 0);
+    if (globalAudioPath) {
+      totalDurationInFrames = globalAudioDurationInFrames;
+    }
     const inputProps: QuranVideoProps = {
       surahNameArabic: fixMojibake(removeTashkeel(apiSurah?.name_arabic || localSurah.name)),
       surahNameTransliteration: fixMojibake(apiSurah?.name_turkish || localSurah.transliteration).toLocaleUpperCase("tr-TR"),

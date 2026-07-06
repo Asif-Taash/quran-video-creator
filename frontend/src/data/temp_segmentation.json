@@ -1,56 +1,58 @@
 [
   {
-    "surah": 23,
-    "ayah": 57,
+    "surah": 45,
+    "ayah": 23,
     "mappings": [
       {
         "part": 1,
-        "translation_text": "Rablerine olan saygıdan dolayı titreyenler,",
+        "translation_text": "(Ey Muhammed!) Hevâ ve hevesini kendine ilâh edinen, Allah'ın kendi ilmi dahilinde saptırdığı, ",
+        "arabic_unit_count": 9
+      },
+      {
+        "part": 2,
+        "translation_text": "kulağını ve kalbini mühürleyip gözüne perde çektiği kimseyi görüyor musun?",
         "arabic_unit_count": 8
-      }
-    ]
-  },
-  {
-    "surah": 23,
-    "ayah": 58,
-    "mappings": [
+      },
       {
-        "part": 1,
-        "translation_text": "Rablerinin âyetlerine inananlar,",
+        "part": 4,
+        "translation_text": "Şimdi onu Allah'tan başka kim hidâyete erdirebilir?",
         "arabic_unit_count": 6
+      },
+      {
+        "part": 4,
+        "translation_text": "Hala düşünmez misiniz?",
+        "arabic_unit_count": 3
       }
     ]
   },
   {
-    "surah": 23,
-    "ayah": 59,
+    "surah": 45,
+    "ayah": 24,
     "mappings": [
       {
         "part": 1,
-        "translation_text": "Rablerine ortak tanımayanlar,",
+        "translation_text": "Hem müşrikler dediler ki: \"Hayat, ancak bu dünya hayatımızdan ibarettir.",
         "arabic_unit_count": 6
-      }
-    ]
-  },
-  {
-    "surah": 23,
-    "ayah": 60,
-    "mappings": [
+      },
       {
-        "part": 1,
-        "translation_text": "Ve, Rablerine dönecekleri için yapmakta oldukları işleri kalpleri titreyerek yapanlar;",
-        "arabic_unit_count": 11
-      }
-    ]
-  },
-  {
-    "surah": 23,
-    "ayah": 61,
-    "mappings": [
+        "part": 2,
+        "translation_text": "Ölürüz ve yaşarız.",
+        "arabic_unit_count": 2
+      },
       {
-        "part": 1,
-        "translation_text": "İşte onlar, iyiliklere koşuşurlar ve iyilik için yarışırlar.",
-        "arabic_unit_count": 8
+        "part": 3,
+        "translation_text": "Bizi ancak geçen zaman yokluğa sürükler.",
+        "arabic_unit_count": 5
+      },
+      {
+        "part": 4,
+        "translation_text": "Halbuki onların bu hususta hiçbir bilgileri yoktur.",
+        "arabic_unit_count": 6
+      },
+      {
+        "part": 5,
+        "translation_text": "Onlar, sadece böyle zannederler.\"",
+        "arabic_unit_count": 5
       }
     ]
   }

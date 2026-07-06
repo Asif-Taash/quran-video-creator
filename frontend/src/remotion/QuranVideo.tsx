@@ -282,9 +282,8 @@ function VerseScene({
   showNumber?: boolean;
 }) {
   const frame = useCurrentFrame();
-
-  const maxFadeIn = Math.min(Math.round(0.7 * 30), Math.floor(durationInFrames * 0.45));
-  const maxFadeOut = Math.min(Math.round(0.7 * 30), Math.floor(durationInFrames * 0.45));
+  const maxFadeIn = Math.min(Math.round(0.6 * 30), Math.floor(durationInFrames * 0.45));
+  const maxFadeOut = Math.min(Math.round(0.6 * 30), Math.floor(durationInFrames * 0.45));
   
   let fadeInEnd = maxFadeIn;
   let fadeOutStart = durationInFrames - maxFadeOut;
@@ -573,14 +572,37 @@ export function QuranVideo({
                     // Skip null/empty strings
                     if (!wordClean) continue;
                     
-                    // Look for this word in timings (allow slight skipping if Whisper missed something)
-                    let foundMatch = false;
                     for (let lookAhead = 0; lookAhead <= 2; lookAhead++) {
                       if (tIdx + lookAhead < verse.wordTimings.length) {
                         const timingClean = cleanArabic(verse.wordTimings[tIdx + lookAhead].w);
                         if (timingClean === wordClean || timingClean.includes(wordClean) || wordClean.includes(timingClean)) {
-                          timingsAligned[i] = verse.wordTimings[tIdx + lookAhead];
-                          tIdx = tIdx + lookAhead + 1; // Advance pointer
+                          // Base match found
+                          let matchedTiming = { ...verse.wordTimings[tIdx + lookAhead] };
+                          let consumed = 1;
+                          
+                          // If Whisper split a long word (e.g. "الضالين" -> "الضا", "لين"), 
+                          // try to consume the next Whisper fragments to capture the full audio duration.
+                          let accumulatedText = timingClean;
+                          while (
+                            accumulatedText.length < wordClean.length && 
+                            tIdx + lookAhead + consumed < verse.wordTimings.length
+                          ) {
+                            const nextFragmentClean = cleanArabic(verse.wordTimings[tIdx + lookAhead + consumed].w);
+                            const remainingExpected = wordClean.substring(accumulatedText.length);
+                            
+                            // Only consume if the next Whisper fragment actually matches the remaining expected text!
+                            if (remainingExpected.startsWith(nextFragmentClean) || nextFragmentClean.includes(remainingExpected)) {
+                                accumulatedText += nextFragmentClean;
+                                matchedTiming.end = verse.wordTimings[tIdx + lookAhead + consumed].end;
+                                consumed++;
+                            } else {
+                                // Whisper skipped the remaining part and moved to another word. Break to avoid eating the next word!
+                                break;
+                            }
+                          }
+
+                          timingsAligned[i] = matchedTiming;
+                          tIdx = tIdx + lookAhead + consumed; // Advance pointer past all consumed fragments
                           foundMatch = true;
                           matchedCount++;
                           break;
@@ -629,8 +651,6 @@ export function QuranVideo({
                 }
 
                 const chunkText = allWords.slice(previousUnits, previousUnits + mapping.arabic_unit_count).join(" ");
-
-                chunkDuration = Math.max(1, chunkDuration);
 
                 return (
                   <Sequence
