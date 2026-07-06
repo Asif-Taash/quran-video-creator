@@ -1,0 +1,644 @@
+@import url('https://fonts.googleapis.com/css2?family=Aref+Ruqaa:wght@400;700&family=Sansita:wght@400;700;800;900&family=Outfit:wght@100;200;300;400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── KFGQPC Uthman Taha Naskh — Authentic Madinah Mushaf Uthmani Font ─── */
+@font-face {
+  font-family: 'KFGQPC Uthman Taha Naskh';
+  src: local('KFGQPC Uthman Taha Naskh'), url('/fonts/UthmanTN1 Ver10.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0600-06FF, U+0750-077F, U+FB50-FDFF, U+FE70-FEFF;
+}
+
+/* ─── Uthmanic Hafs Font for Surah Titles and Basmala ─── */
+@font-face {
+  font-family: 'Uthmanic Hafs';
+  src: url('/fonts/uthmanic_hafs_v20.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    /* ─── Quran Font ─── */
+    --font-uthmani: 'KFGQPC Uthman Taha Naskh', 'Amiri Quran', 'Scheherazade New', 'Noto Naskh Arabic', serif;
+
+    /* Brand */
+    --primary: #C29B4D;
+    --primary-dark: #A38038;
+    --primary-light: #E1C078;
+    --primary-rgb: 194, 155, 77;
+
+    /* Surfaces */
+    --background: #FDFBF7;
+    --surface: #FFFFFF;
+    --surface-2: #F7F5F0;
+
+    /* Mushaf paper */
+    --mushaf-bg: #f8f0d8;
+    --mushaf-border: #c9a84c;
+    --mushaf-border-light: #dfc77a;
+    --mushaf-frame: #e8d490;
+
+    /* Text */
+    --foreground: #1C1917;
+    --foreground-muted: #78716C;
+    --foreground-subtle: #A8A29E;
+
+    /* Borders */
+    --border: #E7E5E4;
+    --border-strong: #D6D3D1;
+
+    /* Accent / Semantic */
+    --accent-green: #15803D;
+    --accent-green-bg: #DCFCE7;
+    --accent-gold-bg: #FEF3C7;
+
+    /* Spacing scale */
+    --radius-sm: 0.5rem;
+    --radius: 0.75rem;
+    --radius-lg: 1rem;
+    --radius-xl: 1.5rem;
+    --radius-2xl: 2rem;
+    --radius-full: 9999px;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.05), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+    --shadow: 0 4px 16px -2px rgb(0 0 0 / 0.06), 0 2px 8px -2px rgb(0 0 0 / 0.04);
+    --shadow-lg: 0 10px 40px -4px rgb(0 0 0 / 0.08), 0 4px 16px -4px rgb(0 0 0 / 0.04);
+    --shadow-glow: 0 0 20px rgb(var(--primary-rgb) / 0.25);
+  }
+
+  .dark {
+    /* Surfaces */
+    --background: #0C0A09;
+    --surface: #1C1917;
+    --surface-2: #292524;
+
+    /* Mushaf paper (dark) */
+    --mushaf-bg: #1a1812;
+    --mushaf-border: #8a7230;
+    --mushaf-border-light: #6a5828;
+    --mushaf-frame: #3d3420;
+
+    /* Text */
+    --foreground: #FAFAF9;
+    --foreground-muted: #A8A29E;
+    --foreground-subtle: #78716C;
+
+    /* Borders */
+    --border: #292524;
+    --border-strong: #44403C;
+
+    /* Accent */
+    --accent-green: #4ADE80;
+    --accent-green-bg: #14532D;
+    --accent-gold-bg: #451A03;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.2);
+    --shadow: 0 4px 16px -2px rgb(0 0 0 / 0.4), 0 2px 8px -2px rgb(0 0 0 / 0.2);
+    --shadow-lg: 0 10px 40px -4px rgb(0 0 0 / 0.5), 0 4px 16px -4px rgb(0 0 0 / 0.3);
+    --shadow-glow: 0 0 30px rgb(var(--primary-rgb) / 0.2);
+  }
+
+  /* ─── Reset & Base ─── */
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    transition: background-color 0.3s ease, color 0.3s ease;
+    min-height: 100dvh;
+  }
+
+  /* ─── Selection Styling ─── */
+  ::selection {
+    background-color: rgb(var(--primary-rgb) / 0.2);
+    color: var(--foreground);
+  }
+
+  /* ─── Focus Visible ─── */
+  :focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* ─── Scrollbar ─── */
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(var(--primary-rgb), 0.5);
+    border-radius: 10px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(var(--primary-rgb), 0.8);
+  }
+
+  /* Fallback and utility for Firefox */
+  html, .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(var(--primary-rgb), 0.5) transparent;
+  }
+
+  /* ─── Arabic / Quran Text Rendering ─── */
+  [dir="rtl"],
+  .arabic-text {
+    direction: rtl;
+    text-align: right;
+    font-feature-settings: "liga" 1, "calt" 1, "kern" 1, "clig" 1;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ─── Uthmani Quran-specific rendering ─── */
+  .font-uthmani,
+  [class*="font-uthmani"] {
+    font-family: var(--font-uthmani);
+    font-feature-settings: "liga" 1, "calt" 1, "clig" 1, "kern" 1;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    font-variant-ligatures: common-ligatures contextual;
+  }
+
+  .font-uthmanic-hafs {
+    font-family: 'Uthmanic Hafs', serif;
+    font-feature-settings: "liga" 1, "calt" 1, "clig" 1, "kern" 1;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    font-variant-ligatures: common-ligatures contextual;
+  }
+
+  /* ─── Reduce Motion ─── */
+  @media (prefers-reduced-motion: reduce) {
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MUSHAF PAPER CONTAINER
+   Simulates the warm cream page of the printed Medina Mushaf with
+   traditional ornamental borders matching the reference image.
+═══════════════════════════════════════════════════════════════════════ */
+@layer components {
+
+  /* ── Paper background with ornamental double-border ────────────────── */
+  .mushaf-page {
+    background-color: var(--mushaf-bg);
+    /* Subtle paper grain */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    border-radius: 0.5rem;
+    padding: 2rem 2.5rem;
+    position: relative;
+
+    /* Outer gold border */
+    border: 3px solid var(--mushaf-border);
+
+    /* Inner border via box-shadow + outline for double-frame effect */
+    outline: 1px solid var(--mushaf-border-light);
+    outline-offset: 6px;
+    box-shadow:
+      inset 0 0 0 6px var(--mushaf-bg),
+      inset 0 0 0 7px var(--mushaf-border-light),
+      0 4px 24px -4px rgb(0 0 0 / 0.1),
+      0 12px 48px -8px rgb(0 0 0 / 0.08);
+
+    /* Ensure space for the inner border */
+    margin: 8px;
+  }
+
+  @media (min-width: 768px) {
+    .mushaf-page {
+      padding: 3rem 3.5rem;
+    }
+  }
+
+  .dark .mushaf-page {
+    background-image: none;
+    box-shadow:
+      inset 0 0 0 6px var(--mushaf-bg),
+      inset 0 0 0 7px var(--mushaf-border-light),
+      0 4px 24px -4px rgb(0 0 0 / 0.5),
+      0 12px 48px -8px rgb(0 0 0 / 0.4);
+  }
+
+  /* ── Ornamental Surah Title Frame ─────────────────────────────────
+   *
+   * Matches the golden title banners in the reference Mushaf image:
+   * A centered gold bar with the Arabic surah name, decorative edges,
+   * and a subtle gradient background.
+   */
+  .surah-title-frame {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg,
+        var(--mushaf-frame) 0%,
+        var(--mushaf-border-light) 30%,
+        var(--primary-light) 50%,
+        var(--mushaf-border-light) 70%,
+        var(--mushaf-frame) 100%);
+    border: 2px solid var(--mushaf-border);
+    border-radius: 2rem;
+    padding: 0.75rem 2rem;
+    position: relative;
+    overflow: hidden;
+    min-height: 3.5rem;
+    box-shadow:
+      0 2px 8px rgb(194 155 77 / 0.2),
+      inset 0 1px 0 rgb(255 255 255 / 0.3),
+      inset 0 -1px 0 rgb(0 0 0 / 0.05);
+  }
+
+  .dark .surah-title-frame {
+    background: linear-gradient(135deg,
+        rgb(60 50 28) 0%,
+        rgb(80 65 35) 30%,
+        rgb(100 80 40) 50%,
+        rgb(80 65 35) 70%,
+        rgb(60 50 28) 100%);
+    box-shadow:
+      0 2px 8px rgb(0 0 0 / 0.3),
+      inset 0 1px 0 rgb(255 255 255 / 0.08),
+      inset 0 -1px 0 rgb(0 0 0 / 0.2);
+  }
+
+  /* Shimmer overlay on the surah title */
+  .surah-title-frame::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        rgb(255 255 255 / 0.12) 25%,
+        rgb(255 255 255 / 0.2) 50%,
+        rgb(255 255 255 / 0.12) 75%,
+        transparent 100%);
+    pointer-events: none;
+  }
+
+  .dark .surah-title-frame::before {
+    background: linear-gradient(90deg,
+        transparent 0%,
+        rgb(255 255 255 / 0.04) 25%,
+        rgb(255 255 255 / 0.06) 50%,
+        rgb(255 255 255 / 0.04) 75%,
+        transparent 100%);
+  }
+
+  .surah-title-text {
+    font-size: clamp(1.4rem, 3.5vw, 2rem);
+    line-height: 2;
+    color: #2a1f0e;
+    position: relative;
+    z-index: 1;
+    text-shadow: 0 1px 2px rgb(255 255 255 / 0.3);
+  }
+
+  .dark .surah-title-text {
+    color: #f0e0b8;
+    text-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  }
+
+  /* ── Bismillah header with decorative ornaments ──────────────────── */
+  .bismillah-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 1.5rem 0 2rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid rgb(194 155 77 / 0.2);
+    text-align: center;
+  }
+
+  .bismillah-ornament {
+    flex: 1;
+    max-width: 80px;
+    height: 2px;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        var(--primary-light) 30%,
+        var(--primary) 50%,
+        var(--primary-light) 70%,
+        transparent 100%);
+    border-radius: 1px;
+    position: relative;
+  }
+
+  .bismillah-ornament::before {
+    content: '✦';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 0.6rem;
+    color: var(--primary);
+    opacity: 0.6;
+  }
+
+  /* Flip the ornament on the right side (RTL context — actually left visually) */
+  .bismillah-header .bismillah-ornament:first-child::before {
+    content: '✦';
+  }
+
+  .bismillah-header .bismillah-ornament:last-child::before {
+    content: '✦';
+  }
+
+  /* ── Verse text block (.quran-ayat) ───────────────────────────────────
+   *
+   * Core visual rules matching the printed Mushaf image:
+   *
+   * text-align: justify         → each line stretches right-to-left margin
+   * text-justify: inter-word    → space added between words only; never
+   *                               between letters (which would break cursive
+   *                               Arabic ligatures like Lam-Alef)
+   * text-align-last: right      → the FINAL line of a verse is NOT force-
+   *                               justified; it right-aligns naturally
+   *                               (RTL "start"), just like the printed page
+   * line-height: 3.0            → ~3× font-size of vertical space between
+   *                               baselines; tashkeel (harakat), maddah,
+   *                               shaddah etc. on one line never touch the
+   *                               text above
+   * letter-spacing: normal      → cursive ligatures (ﻻ etc.) join correctly
+   * word-spacing: 0             → controlled entirely by text-justify
+   * hyphens: none               → no mid-word breaking for Arabic
+   */
+  .quran-ayat {
+    direction: rtl;
+    unicode-bidi: embed;
+    text-align: justify;
+    text-justify: inter-word;
+    text-align-last: right;
+    /* last line right-aligns, not stretched */
+    line-height: 3.0;
+    font-size: clamp(1.55rem, 3.8vw, 2.15rem);
+    /* ~25–34 px responsive */
+    letter-spacing: normal;
+    word-spacing: 0;
+    color: var(--foreground);
+    hyphens: none;
+    overflow-wrap: normal;
+    font-feature-settings: "liga" 1, "calt" 1, "clig" 1, "kern" 1;
+    font-variant-ligatures: common-ligatures contextual;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    margin: 0;
+    padding-block: 0.15rem;
+  }
+
+  /* ── Golden text highlight on selection for Ayahs ── */
+  .quran-ayat::selection,
+  .quran-ayat *::selection,
+  .quran-basmala-text::selection,
+  .quran-basmala-text *::selection {
+    color: var(--primary);
+    background-color: transparent; /* No blocky background, just golden text */
+    text-shadow: 0 0 8px rgb(var(--primary-rgb) / 0.4);
+  }
+
+  /* ── Verse-end rosette badge  ﴿٣﴾  ──────────────────────────────────
+   *
+   * The badge is an inline element appended AFTER the verse text inside
+   * the RTL <p>. In RTL flow, "after" means visually on the LEFT side of
+   * the final line — exactly where the printed Mushaf places its ornament.
+   *
+   * We use the ornamental Arabic parentheses ﴿ (U+FD3E) and ﴾ (U+FD3F)
+   * with the Eastern-Arabic numeral between them: ﴿٣﴾
+   * These Unicode codepoints are specifically designed for Quranic
+   * verse numbering and render as decorative rosette-style brackets in
+   * any proper Arabic font (including UthmanTN1).
+   *
+   * The wrapper .quran-verse-badge keeps the three characters together
+   * as one non-breaking unit and applies the gold colour + sizing.
+   */
+  .quran-verse-badge {
+    display: inline;
+    /* flows naturally in the text stream */
+    white-space: nowrap;
+    /* the three glyphs stay on one "word" */
+    margin-inline-start: 0.35em;
+    color: var(--primary);
+    /* Slightly smaller than body text so the badge doesn't dominate */
+    font-size: 0.82em;
+    font-family: var(--font-uthmani);
+    font-feature-settings: "liga" 1, "calt" 1;
+    vertical-align: baseline;
+    cursor: default;
+    transition: opacity 0.15s ease;
+    opacity: 0.85;
+  }
+
+  .quran-verse-badge:hover {
+    opacity: 1;
+  }
+
+  /* The ﴿ ﴾ ornamental parens — slightly brighter than the numeral */
+  .quran-verse-bracket {
+    color: var(--primary-light);
+    opacity: 0.9;
+  }
+
+  .dark .quran-verse-badge {
+    opacity: 0.75;
+  }
+
+  /* ── Al-Fatiha Basmala (surahId=1, verseNumber=1) ────────────────── */
+  .quran-basmala-line {
+    text-align: center;
+    padding-block: 1.25rem 1.5rem;
+    margin-block-end: 0.5rem;
+    border-bottom: 1px solid rgb(194 155 77 / 0.22);
+    /* Decorative gold dots on either side of the Basmala divider line */
+    position: relative;
+  }
+
+  .quran-basmala-text {
+    direction: rtl;
+    font-size: clamp(1.75rem, 4.2vw, 2.5rem);
+    line-height: 2.8;
+    letter-spacing: normal;
+    word-spacing: 0;
+    color: var(--foreground);
+    font-feature-settings: "liga" 1, "calt" 1, "clig" 1, "kern" 1;
+    font-variant-ligatures: common-ligatures contextual;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    margin: 0;
+  }
+
+  /* ── Active / playing ayah row highlight ─────────────────────────── */
+  .ayah-row-playing {
+    background-color: rgb(194 155 77 / 0.05);
+    border-right: 3px solid var(--primary);
+    padding-right: calc(0.5rem - 3px);
+    border-radius: 0 0.75rem 0.75rem 0;
+  }
+
+  .dark .ayah-row-playing {
+    background-color: rgb(194 155 77 / 0.08);
+  }
+}
+
+
+@layer utilities {
+
+  /* ─── Glow Effect ─── */
+  .glow-primary {
+    box-shadow: var(--shadow-glow);
+  }
+
+  /* ─── Glass Morphism ─── */
+  .glass {
+    background: rgb(255 255 255 / 0.6);
+    backdrop-filter: blur(12px) saturate(180%);
+    -webkit-backdrop-filter: blur(12px) saturate(180%);
+    border: 1px solid rgb(255 255 255 / 0.3);
+  }
+
+  .dark .glass {
+    background: rgb(28 25 23 / 0.7);
+    border: 1px solid rgb(255 255 255 / 0.08);
+  }
+
+  /* ─── Gradient Text ─── */
+  .text-gradient-gold {
+    background: linear-gradient(135deg, var(--primary-light), var(--primary), var(--primary-dark));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ─── Shimmer Skeleton ─── */
+  .skeleton {
+    background: linear-gradient(90deg,
+        var(--surface) 25%,
+        var(--surface-2) 50%,
+        var(--surface) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+
+    100% {
+      background-position: -200% 0;
+    }
+  }
+
+  /* ─── Page Fade In ─── */
+  .fade-in {
+    animation: fadeIn 0.4s ease-out both;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* ─── Slide Up ─── */
+  .slide-up {
+    animation: slideUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(24px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* ─── Breathing Glow ─── */
+  .pulse-glow {
+    animation: pulseGlow 3s ease-in-out infinite;
+  }
+
+  @keyframes pulseGlow {
+
+    0%,
+    100% {
+      box-shadow: 0 0 20px rgb(var(--primary-rgb) / 0.2);
+    }
+
+    50% {
+      box-shadow: 0 0 40px rgb(var(--primary-rgb) / 0.4);
+    }
+  }
+
+  /* ─── Animate Fade In (for translation toggle) ─── */
+  .animate-fadeIn {
+    animation: fadeInSmooth 0.3s ease-out both;
+  }
+
+  @keyframes fadeInSmooth {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* ─── Hide Scrollbar ─── */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

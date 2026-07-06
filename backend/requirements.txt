@@ -1,0 +1,14 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+fastapi==0.111.0
+uvicorn==0.29.0
+sqlalchemy==2.0.30
+psycopg2-binary==2.9.9
+pydantic==2.7.1
+python-multipart==0.0.9
+torch
+torchaudio
+stable-ts
+faster-whisper
+g4f
+nvidia-cublas-cu12
+nvidia-cudnn-cu12

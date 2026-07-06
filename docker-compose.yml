@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: kurannuru
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/kurannuru
+      - CORS_ORIGINS=*
+    depends_on:
+      - db
+    volumes:
+      - ./backend:/app
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: on-failure
+
+  frontend:
+    build:
+      context: ./frontend
+    init: true # This is the magic fix! It kills zombie Chromium processes automatically
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=/backend
+      - INTERNAL_API_URL=http://backend:8000
+      - WATCHPACK_POLLING=true # Ensure hot-reloading works on Windows/WSL
+      - REMOTION_BROWSER_EXECUTABLE=/usr/bin/chromium
+      - LANG=tr_TR.UTF-8
+      - LC_ALL=tr_TR.UTF-8
+      - NODE_OPTIONS=--max-old-space-size=2048 # Force Node to clean memory earlier
+      - FREETYPE_PROPERTIES=cff:no-stem-darkening=1 autofitter:no-stem-darkening=1
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+      - OLLAMA_API_URL=http://host.docker.internal:11434
+    shm_size: '2gb'
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          cpus: '8'
+          memory: 8G
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+      - render_assets:/app/public/render-assets
+      - type: tmpfs
+        target: /app/public/renders
+        tmpfs:
+          size: 512M
+    restart: on-failure
+
+volumes:
+  postgres_data:
+  render_assets:
