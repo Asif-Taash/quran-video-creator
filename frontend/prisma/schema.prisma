@@ -1,0 +1,41 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Lives in the same Postgres instance/database as the Python backend's
+// SQLAlchemy tables (surahs, ayahs) -- no name collision, separate ORM.
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  // Both optional -- a user who never sets them just falls back to their
+  // email / a generic icon everywhere they're shown (AccountMenu, account
+  // page). avatarPath is a path relative to /public (served the same way
+  // as every other uploaded asset, via /api/serve-audio?file=...), not the
+  // raw uploaded bytes -- keeps the DB row small and reuses the existing
+  // static-file convention instead of a new one.
+  name         String?
+  avatarPath   String?
+  createdAt    DateTime @default(now())
+
+  // Set once the owner has clicked a verification link -- null means
+  // "not verified yet" (including every account created before this
+  // column existed, which is the desired default: nobody is silently
+  // marked verified by a migration).
+  emailVerifiedAt DateTime?
+  // Only ONE of each kind of token is ever live per user -- issuing a new
+  // one (forgot-password requested again, verification resent) overwrites
+  // whatever came before, invalidating it. Both are stored HASHED
+  // (sha256, see src/lib/auth/tokens.ts) -- only the raw token is ever
+  // shown to the user (in a real deployment, only ever emailed), the DB
+  // itself never holds anything usable on its own.
+  passwordResetTokenHash   String?   @unique
+  passwordResetExpiresAt  DateTime?
+  emailVerifyTokenHash     String?   @unique
+  emailVerifyExpiresAt    DateTime?
+}

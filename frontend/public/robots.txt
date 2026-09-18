@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+# Primary pages
+Sitemap: https://kurannuru.com/sitemap.xml

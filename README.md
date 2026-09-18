@@ -1,0 +1,81 @@
+# KuranNuru Video Creator
+
+A powerful web application designed to automatically generate high-quality, synchronized Quran recitation videos. It provides a programmatic video rendering pipeline using **Remotion** and **Next.js** on the frontend, and precise audio extraction/alignment using **FastAPI** and **Whisper** on the backend.
+
+## 🚀 Features
+
+- **Programmatic Video Generation**: Uses [Remotion](https://www.remotion.dev/) to render videos directly in the browser/Node environment.
+- **Precise Audio Alignment**: Utilizes Whisper (via `stable-ts` and `faster-whisper`) to extract word-level timestamps from Quran recitations.
+- **Rich Typography & Styling**: Supports custom Arabic fonts (Uthmanic, KFGQPC) and transliterations, styled beautifully with Tailwind CSS.
+- **Custom Backgrounds & Audio**: Allows users to upload custom background images and custom audio recitations for seamless alignment.
+- **GPU Acceleration**: Built-in support for NVIDIA GPUs in Docker for blazingly fast audio processing and rendering.
+
+## 🛠️ Tech Stack
+
+### Frontend
+- **Framework**: Next.js 14
+- **Video Rendering**: Remotion
+- **Styling**: Tailwind CSS, Framer Motion
+- **Language**: TypeScript
+
+### Backend
+- **Framework**: FastAPI (Python)
+- **Database**: PostgreSQL
+- **Caching/Queue**: Redis
+- **AI / Audio Processing**: `stable-ts`, `faster-whisper`, `PyTorch`
+
+## 📋 Prerequisites
+
+Before you begin, ensure you have the following installed on your machine:
+- [Docker](https://docs.docker.com/get-docker/)
+- [Docker Compose](https://docs.docker.com/compose/install/)
+- *(Optional but Highly Recommended)* [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) for GPU acceleration.
+
+## ⚙️ Getting Started
+
+Follow these instructions to get the project up and running on your local machine.
+
+### 1. Clone the repository
+```bash
+git clone https://github.com/yourusername/KuranNuru-Video-Creator.git
+cd KuranNuru-Video-Creator
+```
+
+### 2. Environment Variables
+If you need specific features like HuggingFace integrations, you can export your token or add a `.env` file at the root:
+```bash
+export HUGGINGFACE_TOKEN="your_token_here"
+```
+
+### 3. Build and Run using Docker Compose
+The easiest way to run the entire stack (Frontend, Backend, Postgres, and Redis) is using Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+*(Note: The first build might take a while as it downloads the necessary Docker images, Python dependencies, and Node modules.)*
+
+### 4. Access the Application
+Once the containers are successfully running, you can access the services at:
+- **Frontend (UI)**: [http://localhost:3000](http://localhost:3000)
+- **Backend API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Postgres Database**: `localhost:5433` (User: `user`, Password: `password`, DB: `kurannuru`)
+- **Redis**: `localhost:6380`
+
+## 🛑 Stopping the Application
+To stop the running containers, press `Ctrl+C` in your terminal, and then run:
+```bash
+docker compose down
+```
+If you want to wipe the database and volumes, run:
+```bash
+docker compose down -v
+```
+
+## 📝 Notes
+- **GPU Usage**: The `docker-compose.yml` is pre-configured to request 1 NVIDIA GPU. If you don't have a GPU or encounter errors related to `driver: nvidia`, you may need to remove or comment out the `deploy: resources: reservations: devices` section in the `docker-compose.yml` file under the `backend` and `frontend` services.
+- **Port Conflicts**: Ensure ports `3000`, `8000`, `5433`, and `6380` are not being used by other applications on your host machine.
+
+## 📄 License
+[MIT License](LICENSE)

@@ -1,0 +1,27 @@
+[
+  {
+    "surah": 1,
+    "ayah": 2,
+    "mappings": [
+      {
+        "part": 1,
+        "translation_text": "Hamd o âlemlerin Rabbi,",
+        "word_count": 4,
+        "arabicWidthScale": 1.04
+      }
+    ]
+  },
+  {
+    "surah": 1,
+    "ayah": 7,
+    "mappings": [
+      {
+        "part": 1,
+        "translation_text": "O kendilerine nimet verdiğin mutlu kimselerin yoluna; o gazaba uğramışların ve o sapmışların yoluna değil.",
+        "word_count": 9,
+        "arabicWidthScale": 1.04,
+        "translationWidthScale": 0.9436011904761905
+      }
+    ]
+  }
+]

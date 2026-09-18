@@ -1,0 +1,57 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# user-generated video-creator drafts (see /api/drafts)
+/src/data/drafts/
+/public/render-assets/drafts/
+
+# user-generated gallery entries (see /api/video/gallery, src/lib/videoGallery.ts)
+# -- per-user saved videos, same reasoning as drafts above
+/src/data/gallery/
+/public/render-assets/gallery/
+
+# user-uploaded profile avatars (see /api/auth/profile)
+/public/avatars/
+
+# runtime-generated word-count cache (see src/lib/quranWordMap.ts) -- grows
+# as verses are actually used locally, not source data
+/src/data/quran-word-map-cache.json
