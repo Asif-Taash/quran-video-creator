@@ -1471,8 +1471,13 @@ export default function SegmentTimingEditor({
             </div>
           )}
 
+          {/* ltr even in the Arabic UI: wavesurfer only draws the waveform
+              slices it thinks are on screen, reading scrollLeft as LTR -- an
+              inherited rtl makes scrollLeft negative, so once zoomed in it
+              drew the wrong slices and left the rest of the view blank. */}
           <div
             ref={containerRef}
+            dir="ltr"
             className={`w-full min-h-[140px] flex-shrink-0 bg-background rounded-xl border border-border p-2 overflow-x-auto overflow-y-hidden transition-opacity duration-300 ${
               isReady ? "opacity-100" : "opacity-0 hidden"
             }`}
