@@ -82,9 +82,9 @@ const FONT_PUA_V1_DIR = "fonts/2005/QCF_BSML.fonts/QCF_P";
 const FONT_SURAH_NAME_PATH = "fonts/video-fonts/Ruqaa.ttf";
 const FONT_SURAH_NAME_FAMILY = "Ruqaa";
 
-const FONT_RECITER_NAME_PATH = "fonts/video-fonts/Amiri-Bold.ttf";
-// Not "Amiri": that family is the regular-weight tafsir font (TRANSLATION_FONT_OPTIONS).
-const FONT_RECITER_NAME_FAMILY = "Amiri Header";
+const FONT_RECITER_NAME_PATH = "fonts/video-fonts/Tajawal-Bold.ttf";
+// Not "Tajawal": that family is the regular-weight tafsir font (TRANSLATION_FONT_OPTIONS).
+const FONT_RECITER_NAME_FAMILY = "Tajawal Header";
 
 const FONT_TRANSLITERATION_PATH = "fonts/video-fonts/Sansita-Bold.ttf";
 const FONT_TRANSLITERATION_FAMILY = "Sansita";
