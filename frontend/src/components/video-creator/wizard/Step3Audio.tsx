@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import DropdownSelect from "@/components/ui/DropdownSelect";
 import Spinner from "@/components/ui/Spinner";
 import { MusicalNoteIcon, VideoCameraIcon, XMarkIcon } from "@heroicons/react/24/outline";
@@ -60,6 +61,21 @@ export default function Step3Audio({
   endVerse,
 }: Step3Props) {
   const tx = useT();
+  // One object URL per picked file, released when it's replaced or removed.
+  // It used to be created inline in the JSX: a fresh URL (never released)
+  // on every re-render, each making the <video>/<audio> reload the file.
+  // Created and revoked in the same effect so Strict Mode's mount-unmount-
+  // mount can't leave the player holding an already-revoked URL.
+  const [customAudioPreviewUrl, setCustomAudioPreviewUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!customAudio) {
+      setCustomAudioPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(customAudio);
+    setCustomAudioPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [customAudio]);
   const isReady =
     Boolean(selectedSurah) &&
     startVerse !== null &&
@@ -131,9 +147,9 @@ export default function Step3Audio({
                   </button>
                 </div>
                 {isVideoFile ? (
-                  <video controls src={URL.createObjectURL(customAudio)} className="w-full mt-3 rounded-lg outline-none max-h-64" />
+                  <video controls src={customAudioPreviewUrl ?? undefined} className="w-full mt-3 rounded-lg outline-none max-h-64" />
                 ) : (
-                  <audio controls src={URL.createObjectURL(customAudio)} className="w-full mt-3 h-10 rounded-lg outline-none" />
+                  <audio controls src={customAudioPreviewUrl ?? undefined} className="w-full mt-3 h-10 rounded-lg outline-none" />
                 )}
               </>
               );

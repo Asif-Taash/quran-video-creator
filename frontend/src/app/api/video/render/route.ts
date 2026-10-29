@@ -242,13 +242,27 @@ async function estimateAudioDurationInFrames(localAudioFile: string) {
   return Math.max(1, Math.ceil((seconds + 0.25) * FPS));
 }
 
-let cachedServeUrl: string | null = null;
-// Timestamp (Date.now(), NOT an mtime) of when cachedServeUrl's bundle()
-// call was STARTED -- compared against remotionSourceChangedSince below so
-// an edit made mid-bundle is never missed (see its own "started, not
-// finished" comment).
-let cachedServeUrlBuiltAt = 0;
-let bundlePromise: Promise<string> | null = null;
+// The bundle and the headless browser live on globalThis, not in
+// module-level variables: Next's dev server re-evaluates this module
+// whenever it recompiles the route (after an edit, or after the route sat
+// idle), and a module-level cache was lost each time -- every reload then
+// launched ANOTHER headless browser while the previous one kept running (7
+// were found alive at once, pushing a 14 GB laptop into swap) and rebundled.
+const renderCache = ((globalThis as { __quranRenderCache?: unknown }).__quranRenderCache ??= {
+  serveUrl: null,
+  serveUrlBuiltAt: 0,
+  bundlePromise: null,
+  browserPromise: null,
+}) as {
+  serveUrl: string | null;
+  // Timestamp (Date.now(), NOT an mtime) of when serveUrl's bundle() call
+  // was STARTED -- compared against remotionSourceChangedSince below so an
+  // edit made mid-bundle is never missed (see its own "started, not
+  // finished" comment).
+  serveUrlBuiltAt: number;
+  bundlePromise: Promise<string> | null;
+  browserPromise: ReturnType<typeof import("@remotion/renderer")["openBrowser"]> | null;
+};
 
 // Everything the actual Remotion composition needs lives entirely under
 // src/remotion/ (QuranVideo.tsx, types.ts, Root.tsx, index.ts -- verified:
@@ -301,7 +315,7 @@ async function remotionSourceChangedSince(timestampMs: number): Promise<boolean>
 // external API (acikkuran/tanzil/alquran.cloud) on every single request --
 // including every live-preview reload, adding a full network round-trip to
 // each one for no reason. Cached here (module-scope, same pattern as
-// cachedServeUrl above) keyed by translation+surah, populated once.
+// renderCache.serveUrl above) keyed by translation+surah, populated once.
 const translationCache = new Map<string, Map<number, string>>();
 
 async function getServeUrl() {
@@ -313,15 +327,15 @@ async function getServeUrl() {
   // the end of every request (see this function's own git history), which
   // defeated it completely; the mtime check below is what makes it safe to
   // actually keep instead, by catching a real source edit on its own.
-  if (cachedServeUrl && !(await remotionSourceChangedSince(cachedServeUrlBuiltAt))) {
-    return cachedServeUrl;
+  if (renderCache.serveUrl && !(await remotionSourceChangedSince(renderCache.serveUrlBuiltAt))) {
+    return renderCache.serveUrl;
   }
 
   // Assigned synchronously (no await before it), so concurrent callers --
   // a preview's warm-up and a render -- share one build.
-  if (!bundlePromise) {
+  if (!renderCache.bundlePromise) {
     const buildStartedAt = Date.now();
-    bundlePromise = import("@remotion/bundler").then(({ bundle }) => bundle({
+    renderCache.bundlePromise = import("@remotion/bundler").then(({ bundle }) => bundle({
       entryPoint: path.join(process.cwd(), "src", "remotion", "index.ts"),
       publicDir: path.join(process.cwd(), "public"),
       // Linked, not copied: public/ also holds every user upload, draft and
@@ -335,16 +349,16 @@ async function getServeUrl() {
       // picked it up, so the worst case is one avoidable extra rebundle
       // rather than silently serving stale code. See
       // remotionSourceChangedSince's own comment.
-      cachedServeUrlBuiltAt = buildStartedAt;
+      renderCache.serveUrlBuiltAt = buildStartedAt;
       return url;
     });
   }
 
   try {
-    cachedServeUrl = await bundlePromise;
-    return cachedServeUrl;
+    renderCache.serveUrl = await renderCache.bundlePromise;
+    return renderCache.serveUrl;
   } finally {
-    bundlePromise = null;
+    renderCache.bundlePromise = null;
   }
 }
 
@@ -363,26 +377,23 @@ const RENDER_CHROMIUM_OPTIONS = {
 // click AND every background auto-save render now that those happen
 // routinely. Kept alive here instead and reused across every render this
 // server process ever does -- same "populate once, keep for the process's
-// lifetime" pattern as cachedServeUrl/translationCache/apiSurahCache.
-let cachedBrowserPromise: ReturnType<
-  typeof import("@remotion/renderer")["openBrowser"]
-> | null = null;
+// lifetime" pattern as renderCache.serveUrl/translationCache/apiSurahCache.
 
 async function getBrowserInstance() {
-  // Assigned synchronously, like bundlePromise, so concurrent callers can't
+  // Assigned synchronously, like renderCache.bundlePromise, so concurrent callers can't
   // each launch a browser.
-  if (!cachedBrowserPromise) {
-    cachedBrowserPromise = import("@remotion/renderer").then(({ openBrowser }) => openBrowser("chrome", {
+  if (!renderCache.browserPromise) {
+    renderCache.browserPromise = import("@remotion/renderer").then(({ openBrowser }) => openBrowser("chrome", {
       chromiumOptions: RENDER_CHROMIUM_OPTIONS,
     })).catch((err) => {
       // The LAUNCH itself failed -- don't cache a rejected promise forever,
       // the next render should get a genuine fresh attempt instead of
       // reusing this same failure indefinitely.
-      cachedBrowserPromise = null;
+      renderCache.browserPromise = null;
       throw err;
     });
   }
-  return cachedBrowserPromise;
+  return renderCache.browserPromise;
 }
 
 // renderMedia() wrapper that reuses the one persistent browser instance
@@ -407,7 +418,11 @@ async function renderMediaWithPersistentBrowser(
       "[Video Render] renderMedia failed on the cached browser instance -- discarding it and retrying once with a fresh one:",
       err
     );
-    cachedBrowserPromise = null;
+    // Closed, not just dropped: one that's merely misbehaving (not dead)
+    // would otherwise keep running alongside its replacement.
+    const stale = renderCache.browserPromise;
+    renderCache.browserPromise = null;
+    stale?.then((b) => b.close({ silent: true })).catch(() => undefined);
     const browser = await getBrowserInstance();
     return await renderMedia({ ...options, puppeteerInstance: browser });
   }
@@ -1377,8 +1392,8 @@ export async function POST(req: Request) {
     if (mode === "preview") {
       // A download usually follows the preview, so have the Remotion bundle
       // (a cold webpack build, ~10 s) and the headless browser ready by then.
-      if (!cachedServeUrl) void getServeUrl().catch(() => undefined);
-      if (!cachedBrowserPromise) void getBrowserInstance().catch(() => undefined);
+      if (!renderCache.serveUrl) void getServeUrl().catch(() => undefined);
+      if (!renderCache.browserPromise) void getBrowserInstance().catch(() => undefined);
 
       // `timing` tells the client these props were timed from its own
       // preparedJsonData cut at trimStartMs, so it can re-time them itself
@@ -1435,7 +1450,11 @@ export async function POST(req: Request) {
       x264Preset: "ultrafast",
       imageFormat: "jpeg",
       jpegQuality: 85,
-      concurrency: 8,
+      // 4 tabs render within ~10% of 8 here (measured: the video
+      // background, not tab count, is the bottleneck) at about half the
+      // CPU and memory -- 8 maxed all 8 container cores and pushed a 14 GB
+      // laptop into swap, freezing the desktop during every export.
+      concurrency: 4,
 
       chromiumOptions: RENDER_CHROMIUM_OPTIONS,
       onBrowserLog: (log) => {
@@ -1497,7 +1516,7 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   } finally {
-    // cachedServeUrl is deliberately NOT reset here anymore -- see
+    // renderCache.serveUrl is deliberately NOT reset here anymore -- see
     // getServeUrl's own comment for why blindly wiping it on every request
     // used to defeat the whole point of caching it; staleness is now
     // detected on its own via remotionSourceChangedSince instead.
