@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import quranData from "@/data/quran.json";
 import { getVerseWordMap } from "@/lib/quranWordMap";
+import { fitWordCounts } from "@/remotion/timing";
 
 export async function POST(req: Request) {
   try {
@@ -73,7 +74,8 @@ export async function POST(req: Request) {
           return NextResponse.json({ error: `Invalid start_ms/end_ms in Surah ${item.surah} Ayah ${item.ayah}.` }, { status: 400 });
         }
         if (!hasStart) allMappingsHaveManualTiming = false;
-        totalUnits += mapping.word_count;
+        // A repeat re-shows an earlier part's words and consumes none.
+        if (typeof mapping.repeat_of_part !== "number") totalUnits += mapping.word_count;
       }
 
       const verseData = surahData.verses.find((v: any) => v.id === item.ayah);
@@ -104,26 +106,12 @@ export async function POST(req: Request) {
       // boundaries the user actually dragged -- text would shift to
       // different segments than the ones they timed -- which is strictly
       // worse than rendering with whatever the user explicitly set.
+      //
+      // The correction itself is shared with the client's live re-timing of
+      // the preview (see fitWordCounts), so both read the same counts.
       if (totalUnits !== actualWordCount && !allMappingsHaveManualTiming) {
         console.warn(`[Segmentation Apply] Auto-correcting word count mismatch for Surah ${item.surah} Ayah ${item.ayah}. Expected ${actualWordCount}, got ${totalUnits}`);
-        // Proportionately adjust the mappings. Reserve at least 1 word for
-        // every remaining mapping (including the current one) so earlier
-        // mappings rounding up can never push the total past
-        // actualWordCount and starve the LAST mapping down to 0/negative —
-        // which would silently drop the tail of the ayah from every segment.
-        let newTotal = 0;
-        for (let i = 0; i < item.mappings.length; i++) {
-          const remainingMappings = item.mappings.length - i;
-          if (i === item.mappings.length - 1) {
-            item.mappings[i].word_count = Math.max(1, actualWordCount - newTotal);
-          } else {
-            const proportional = Math.max(1, Math.round((item.mappings[i].word_count / totalUnits) * actualWordCount));
-            const maxAllowed = actualWordCount - newTotal - (remainingMappings - 1);
-            const adjusted = Math.max(1, Math.min(proportional, maxAllowed));
-            item.mappings[i].word_count = adjusted;
-            newTotal += adjusted;
-          }
-        }
+        item.mappings = fitWordCounts(item.mappings, actualWordCount);
       }
     }
 

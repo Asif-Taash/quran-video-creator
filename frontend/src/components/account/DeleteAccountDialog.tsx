@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { useLanguage } from "@/lib/LanguageContext";
+import { useLanguage, useT } from "@/lib/LanguageContext";
 import Spinner from "@/components/ui/Spinner";
 import { EyeIcon, EyeSlashIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 
@@ -31,7 +31,8 @@ export default function DeleteAccountDialog({ open, email, onClose }: Props) {
   const [error, setError] = React.useState<string | null>(null);
   const dialogRef = React.useRef<HTMLDivElement>(null);
 
-  const t = (tr: string, ar: string) => (isAr ? ar : tr);
+  const pick = useT();
+  const t = (tr: string, ar: string, en: string) => pick(ar, tr, en);
 
   React.useEffect(() => {
     if (open) {
@@ -68,17 +69,17 @@ export default function DeleteAccountDialog({ open, email, onClose }: Props) {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         if (data.error === "invalid_password") {
-          setError(t("Şifre hatalı", "كلمة المرور غير صحيحة"));
+          setError(t("Şifre hatalı", "كلمة المرور غير صحيحة", "Incorrect password"));
         } else if (data.error === "not_authenticated") {
-          setError(t("Oturum sona erdi", "انتهت الجلسة"));
+          setError(t("Oturum sona erdi", "انتهت الجلسة", "Session expired"));
         } else {
-          setError(t("Bir hata oluştu, tekrar deneyin", "حدث خطأ، حاول مرة أخرى"));
+          setError(t("Bir hata oluştu, tekrar deneyin", "حدث خطأ، حاول مرة أخرى", "Something went wrong, please try again"));
         }
         return;
       }
       setStep("confirm");
     } catch {
-      setError(t("Bağlantı hatası, tekrar deneyin", "خطأ في الاتصال، حاول مرة أخرى"));
+      setError(t("Bağlantı hatası, tekrar deneyin", "خطأ في الاتصال، حاول مرة أخرى", "Connection error, please try again"));
     } finally {
       setLoading(false);
     }
@@ -96,11 +97,11 @@ export default function DeleteAccountDialog({ open, email, onClose }: Props) {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         if (data.error === "invalid_password") {
-          setError(t("Şifre hatalı", "كلمة المرور غير صحيحة"));
+          setError(t("Şifre hatalı", "كلمة المرور غير صحيحة", "Incorrect password"));
         } else if (data.error === "not_authenticated") {
-          setError(t("Oturum sona erdi", "انتهت الجلسة"));
+          setError(t("Oturum sona erdi", "انتهت الجلسة", "Session expired"));
         } else {
-          setError(t("Bir hata oluştu, tekrar deneyin", "حدث خطأ، حاول مرة أخرى"));
+          setError(t("Bir hata oluştu, tekrar deneyin", "حدث خطأ، حاول مرة أخرى", "Something went wrong, please try again"));
         }
         return;
       }
@@ -108,7 +109,7 @@ export default function DeleteAccountDialog({ open, email, onClose }: Props) {
       router.push("/?deleted=1");
       router.refresh();
     } catch {
-      setError(t("Bağlantı hatası, tekrar deneyin", "خطأ في الاتصال، حاول مرة أخرى"));
+      setError(t("Bağlantı hatası, tekrar deneyin", "خطأ في الاتصال، حاول مرة أخرى", "Connection error, please try again"));
     } finally {
       setLoading(false);
     }
@@ -137,7 +138,7 @@ export default function DeleteAccountDialog({ open, email, onClose }: Props) {
           </span>
           <div>
             <h2 id="delete-account-title" className="text-lg font-bold text-foreground">
-              {t("Hesabı sil", "حذف الحساب")}
+              {t("Hesabı sil", "حذف الحساب", "Delete account")}
             </h2>
             <p className="text-sm text-muted" dir="ltr">
               {email}
@@ -154,10 +155,7 @@ export default function DeleteAccountDialog({ open, email, onClose }: Props) {
         {step === "warning" && (
           <>
             <p className="text-sm text-foreground leading-relaxed">
-              {t(
-                "Hesabınızı kalıcı olarak silmek üzeresiniz. Bu işlem geri alınamaz ve galeri videolarınız dahil tüm verileriniz kaybolur.",
-                "أنت على وشك حذف حسابك نهائياً. لا يمكن التراجع عن هذه العملية وستفقد جميع بياناتك بما في ذلك فيديوهات المعرض."
-              )}
+              {t("Hesabınızı kalıcı olarak silmek üzeresiniz. Bu işlem geri alınamaz ve galeri videolarınız dahil tüm verileriniz kaybolur.", "أنت على وشك حذف حسابك نهائياً. لا يمكن التراجع عن هذه العملية وستفقد جميع بياناتك بما في ذلك فيديوهات المعرض.", "You're about to permanently delete your account. This can't be undone, and all your data, including your gallery videos, will be lost.")}
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
@@ -165,14 +163,14 @@ export default function DeleteAccountDialog({ open, email, onClose }: Props) {
                 onClick={onClose}
                 className="rounded-lg border border-border px-5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-surface-2"
               >
-                {t("İptal", "إلغاء")}
+                {t("İptal", "إلغاء", "Cancel")}
               </button>
               <button
                 type="button"
                 onClick={() => setStep("password")}
                 className="rounded-lg border border-accent-red/50 bg-accent-red-bg/30 px-5 py-2.5 text-sm font-semibold text-accent-red transition-colors hover:bg-accent-red/10"
               >
-                {t("Devam Et", "متابعة")}
+                {t("Devam Et", "متابعة", "Continue")}
               </button>
             </div>
           </>
@@ -181,7 +179,7 @@ export default function DeleteAccountDialog({ open, email, onClose }: Props) {
         {step === "password" && (
           <>
             <label className="mb-2 block text-sm font-medium text-foreground">
-              {t("Kimliğinizi doğrulamak için şifrenizi girin", "أدخل كلمة المرور للتحقق من هويتك")}
+              {t("Kimliğinizi doğrulamak için şifrenizi girin", "أدخل كلمة المرور للتحقق من هويتك", "Enter your password to confirm it's you")}
             </label>
             <div className="relative">
               <input
@@ -198,7 +196,7 @@ export default function DeleteAccountDialog({ open, email, onClose }: Props) {
               />
               <button
                 type="button"
-                aria-label={showPassword ? t("Şifreyi gizle", "إخفاء كلمة المرور") : t("Şifreyi göster", "إظهار كلمة المرور")}
+                aria-label={showPassword ? t("Şifreyi gizle", "إخفاء كلمة المرور", "Hide password") : t("Şifreyi göster", "إظهار كلمة المرور", "Show password")}
                 onClick={() => setShowPassword((prev) => !prev)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer p-1 text-muted transition-colors hover:text-foreground"
               >
@@ -212,7 +210,7 @@ export default function DeleteAccountDialog({ open, email, onClose }: Props) {
                 onClick={() => setStep("warning")}
                 className="rounded-lg border border-border px-5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-surface-2 disabled:opacity-50"
               >
-                {t("Geri", "رجوع")}
+                {t("Geri", "رجوع", "Back")}
               </button>
               <button
                 type="button"
@@ -221,7 +219,7 @@ export default function DeleteAccountDialog({ open, email, onClose }: Props) {
                 className="inline-flex items-center justify-center gap-2 rounded-lg border border-accent-red/50 bg-accent-red-bg/30 px-5 py-2.5 text-sm font-semibold text-accent-red transition-colors hover:bg-accent-red/10 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading && <Spinner size="sm" className="border-accent-red/25 border-t-accent-red" />}
-                {t("Doğrula", "تحقق")}
+                {t("Doğrula", "تحقق", "Verify")}
               </button>
             </div>
           </>
@@ -230,10 +228,7 @@ export default function DeleteAccountDialog({ open, email, onClose }: Props) {
         {step === "confirm" && (
           <>
             <p className="text-sm text-foreground leading-relaxed">
-              {t(
-                "Bu işlem geri alınamaz. Onaylamak için aşağıya DELETE yazın ve kutucuğu işaretleyin.",
-                "لا يمكن التراجع عن هذه العملية. اكتب DELETE أدناه وحدد المربع للتأكيد."
-              )}
+              {t("Bu işlem geri alınamaz. Onaylamak için aşağıya DELETE yazın ve kutucuğu işaretleyin.", "لا يمكن التراجع عن هذه العملية. اكتب DELETE أدناه وحدد المربع للتأكيد.", "This can't be undone. To confirm, type DELETE below and tick the box.")}
             </p>
             <input
               type="text"
@@ -256,10 +251,7 @@ export default function DeleteAccountDialog({ open, email, onClose }: Props) {
                 className="mt-0.5 h-4 w-4 rounded border-border text-accent-red focus:ring-accent-red"
               />
               <span className="text-sm text-foreground">
-                {t(
-                  "Hesabımın ve tüm verilerimin kalıcı olarak silineceğini anlıyorum.",
-                  "أفهم أن حسابي وجميع بياناتي سيتم حذفها نهائياً."
-                )}
+                {t("Hesabımın ve tüm verilerimin kalıcı olarak silineceğini anlıyorum.", "أفهم أن حسابي وجميع بياناتي سيتم حذفها نهائياً.", "I understand that my account and all my data will be permanently deleted.")}
               </span>
             </label>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
@@ -269,7 +261,7 @@ export default function DeleteAccountDialog({ open, email, onClose }: Props) {
                 onClick={() => setStep("password")}
                 className="rounded-lg border border-border px-5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-surface-2 disabled:opacity-50"
               >
-                {t("Geri", "رجوع")}
+                {t("Geri", "رجوع", "Back")}
               </button>
               <button
                 type="button"
@@ -278,7 +270,7 @@ export default function DeleteAccountDialog({ open, email, onClose }: Props) {
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent-red px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading && <Spinner size="sm" className="border-white/40 border-t-white" />}
-                {t("Kalıcı Olarak Sil", "حذف نهائياً")}
+                {t("Kalıcı Olarak Sil", "حذف نهائياً", "Delete Permanently")}
               </button>
             </div>
           </>

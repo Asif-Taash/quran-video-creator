@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { MagnifyingGlassIcon, XMarkIcon } from "@heroicons/react/24/outline";
-import { useLanguage } from "@/lib/LanguageContext";
+import { useLanguage, useT } from "@/lib/LanguageContext";
 import Spinner from "@/components/ui/Spinner";
 import { findWordStartMatches } from "@/lib/arabicSearch";
 
@@ -17,6 +17,7 @@ interface SearchResult {
 }
 
 export default function QuranSearch({ onSelectVerse, getSurahName, onOpenChange }: QuranSearchProps) {
+  const tx = useT();
   const { language } = useLanguage();
   const isArabic = language === "ar";
   const [query, setQuery] = useState("");
@@ -115,12 +116,12 @@ export default function QuranSearch({ onSelectVerse, getSurahName, onOpenChange 
           setResults(mappedResults);
         } else {
           setResults([]);
-          setError(isArabic ? "لم يتم العثور على نتائج" : "Sonuç bulunamadı");
+          setError(tx("لم يتم العثور على نتائج", "Sonuç bulunamadı", "No results found"));
         }
       } catch (err) {
         if (requestId !== searchRequestIdRef.current) return; // superseded by a newer search
         console.error("Search error:", err);
-        setError(isArabic ? "حدث خطأ أثناء البحث" : "Arama sırasında bir hata oluştu");
+        setError(tx("حدث خطأ أثناء البحث", "Arama sırasında bir hata oluştu", "An error occurred while searching"));
         setResults([]);
       } finally {
         if (requestId === searchRequestIdRef.current) setIsLoading(false);
@@ -191,7 +192,7 @@ export default function QuranSearch({ onSelectVerse, getSurahName, onOpenChange 
         <input
           type="text"
           className={`block w-full rounded-xl border-0 py-3 ${isArabic ? 'pr-10 pl-10' : 'pl-10 pr-10'} text-foreground ring-1 ring-inset ring-border placeholder:text-muted-foreground focus:ring-2 focus:ring-inset focus:ring-primary sm:text-sm sm:leading-6 bg-surface shadow-sm`}
-          placeholder={isArabic ? "ابحث عن آية أو كلمة في القرآن..." : "Kur'an'da bir ayet veya kelime arayın..."}
+          placeholder={tx("ابحث عن آية أو كلمة في القرآن...", "Kur'an'da bir ayet veya kelime arayın...", "Search the Quran for an ayah or word...")}
           value={query}
           onChange={(e) => {
              setQuery(e.target.value);
@@ -224,7 +225,7 @@ export default function QuranSearch({ onSelectVerse, getSurahName, onOpenChange 
           {isLoading ? (
             <div className="p-4 flex items-center justify-center gap-2 text-muted-foreground">
               <Spinner size="sm" />
-              <span>{isArabic ? "جاري البحث..." : "Aranıyor..."}</span>
+              <span>{tx("جاري البحث...", "Aranıyor...", "Searching...")}</span>
             </div>
           ) : error ? (
             <div className="p-4 text-sm text-accent-red text-center">{error}</div>
@@ -249,7 +250,7 @@ export default function QuranSearch({ onSelectVerse, getSurahName, onOpenChange 
             </ul>
           ) : (
             <div className="p-4 text-sm text-muted-foreground text-center">
-              {isArabic ? "لا توجد نتائج مطابقة" : "Eşleşen sonuç bulunamadı"}
+              {tx("لا توجد نتائج مطابقة", "Eşleşen sonuç bulunamadı", "No matching results found")}
             </div>
           )}
         </div>

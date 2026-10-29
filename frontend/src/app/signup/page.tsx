@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/layout/Navbar";
 import Spinner from "@/components/ui/Spinner";
-import { useLanguage } from "@/lib/LanguageContext";
+import { useLanguage, useT } from "@/lib/LanguageContext";
 import { EyeIcon, EyeSlashIcon, EnvelopeIcon, LockClosedIcon, UserPlusIcon, CheckCircleIcon } from "@heroicons/react/24/outline";
 
 const INPUT_CLASSES =
@@ -14,6 +14,7 @@ const INPUT_CLASSES =
 const MIN_PASSWORD_LENGTH = 8;
 
 export default function SignupPage() {
+  const tx = useT();
   const { language } = useLanguage();
   const isAr = language === "ar";
   const router = useRouter();
@@ -26,15 +27,15 @@ export default function SignupPage() {
 
   const errorMessage = (code: string) => {
     if (code === "invalid_email") {
-      return isAr ? "البريد الإلكتروني غير صالح" : "Geçersiz e-posta adresi";
+      return tx("البريد الإلكتروني غير صالح", "Geçersiz e-posta adresi", "Invalid email address");
     }
     if (code === "weak_password") {
-      return isAr ? "كلمة المرور يجب أن تكون 8 أحرف على الأقل" : "Şifre en az 8 karakter olmalı";
+      return tx("كلمة المرور يجب أن تكون 8 أحرف على الأقل", "Şifre en az 8 karakter olmalı", "Password must be at least 8 characters");
     }
     if (code === "email_taken") {
-      return isAr ? "هذا البريد الإلكتروني مستخدم بالفعل" : "Bu e-posta zaten kayıtlı";
+      return tx("هذا البريد الإلكتروني مستخدم بالفعل", "Bu e-posta zaten kayıtlı", "This email is already registered");
     }
-    return isAr ? "حدث خطأ، حاول مرة أخرى" : "Bir hata oluştu, tekrar deneyin";
+    return tx("حدث خطأ، حاول مرة أخرى", "Bir hata oluştu, tekrar deneyin", "Something went wrong, please try again");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -80,10 +81,10 @@ export default function SignupPage() {
             </div>
 
             <h1 className="text-2xl font-bold text-foreground mb-1.5 text-center">
-              {isAr ? "إنشاء حساب جديد" : "Yeni Hesap Oluştur"}
+              {tx("إنشاء حساب جديد", "Yeni Hesap Oluştur", "Create a New Account")}
             </h1>
             <p className="text-sm text-muted text-center mb-7">
-              {isAr ? "ابدأ في إنشاء فيديوهاتك مجاناً" : "Videolarınızı ücretsiz oluşturmaya başlayın"}
+              {tx("ابدأ في إنشاء فيديوهاتك مجاناً", "Videolarınızı ücretsiz oluşturmaya başlayın", "Start creating your videos for free")}
             </p>
 
             {error && (
@@ -95,7 +96,7 @@ export default function SignupPage() {
             <form onSubmit={handleSubmit} className="space-y-4" dir={isAr ? "rtl" : "ltr"}>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">
-                  {isAr ? "البريد الإلكتروني" : "E-posta"}
+                  {tx("البريد الإلكتروني", "E-posta", "Email")}
                 </label>
                 <div className="relative">
                   <EnvelopeIcon className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted" />
@@ -113,7 +114,7 @@ export default function SignupPage() {
 
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">
-                  {isAr ? "كلمة المرور" : "Şifre"}
+                  {tx("كلمة المرور", "Şifre", "Password")}
                 </label>
                 <div className="relative">
                   <LockClosedIcon className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted" />
@@ -130,8 +131,8 @@ export default function SignupPage() {
                     type="button"
                     aria-label={
                       showPassword
-                        ? isAr ? "إخفاء كلمة المرور" : "Şifreyi gizle"
-                        : isAr ? "إظهار كلمة المرور" : "Şifreyi göster"
+                        ? tx("إخفاء كلمة المرور", "Şifreyi gizle", "Hide password")
+                        : tx("إظهار كلمة المرور", "Şifreyi göster", "Show password")
                     }
                     onClick={() => setShowPassword((prev) => !prev)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer p-1 text-muted transition-colors hover:text-foreground"
@@ -141,7 +142,7 @@ export default function SignupPage() {
                 </div>
                 <p className={`flex items-center gap-1.5 text-xs transition-colors ${passwordLongEnough ? "text-accent-green" : "text-muted"}`}>
                   <CheckCircleIcon className="h-3.5 w-3.5" />
-                  {isAr ? "8 أحرف على الأقل" : "En az 8 karakter"}
+                  {tx("8 أحرف على الأقل", "En az 8 karakter", "At least 8 characters")}
                 </p>
               </div>
 
@@ -151,15 +152,15 @@ export default function SignupPage() {
                 className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary to-primary-dark px-5 py-3 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading && <Spinner size="sm" className="border-white/40 border-t-white" />}
-                {isAr ? "إنشاء حساب" : "Kayıt Ol"}
+                {tx("إنشاء حساب", "Kayıt Ol", "Sign Up")}
               </button>
             </form>
           </div>
 
           <p className="mt-6 text-center text-sm text-muted">
-            {isAr ? "لديك حساب بالفعل؟" : "Zaten hesabın var mı?"}{" "}
+            {tx("لديك حساب بالفعل؟", "Zaten hesabın var mı?", "Already have an account?")}{" "}
             <Link href="/login" className="text-primary font-semibold hover:underline">
-              {isAr ? "تسجيل الدخول" : "Giriş Yap"}
+              {tx("تسجيل الدخول", "Giriş Yap", "Sign In")}
             </Link>
           </p>
         </div>

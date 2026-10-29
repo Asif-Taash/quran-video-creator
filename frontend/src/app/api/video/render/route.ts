@@ -10,11 +10,16 @@ import quranQcfV1Data from "@/data/quran-qcf-v1.json";
 import diyanetYeniData from "@/data/translations/diyanet_yeni.json";
 import ahmetVarolData from "@/data/translations/ahmet_varol.json";
 import { fixMojibake } from "@/lib/textEncoding";
-import { RECITER_DISPLAY_NAMES } from "@/lib/reciterNames";
+import { DEFAULT_RECITER_ID, RECITER_ARABIC_NAMES, RECITER_DISPLAY_NAMES, getReciter } from "@/lib/reciterNames";
+import { stripAudioInPlace } from "@/lib/silentVideo";
 import { parseFile } from "music-metadata";
 import {
   ARABIC_FONT_OPTIONS,
   ASPECT_RATIO_DIMENSIONS,
+  BACKGROUND_BLUR_MAX,
+  BACKGROUND_DIM_MAX,
+  DEFAULT_BACKGROUND_DIM,
+  DEFAULT_WORD_HIGHLIGHT_COLOR,
   QUALITY_BITRATE,
   QUALITY_SCALE,
   QUALITY_TIMEOUT_MULTIPLIER,
@@ -26,8 +31,11 @@ import {
   type QuranVerse,
   type TranslationFontKey,
 } from "@/remotion/types";
+import { buildVerseTimeline, holdWordsThroughRepeats, repeatWordWindows, shiftReadingsToTrim, shiftWordsToTrim } from "@/remotion/timing";
 import type { VideoConfig } from "remotion";
 import { getSurahWordMap } from "@/lib/quranWordMap";
+import { formatVerseGroupPrefix, getTranslationOption, isRtlTranslation } from "@/lib/translationOptions";
+import { surahEnglishName } from "@/lib/surahEnglishNames";
 import { saveToGallery } from "@/lib/videoGallery";
 import { getSession } from "@/lib/auth/session";
 
@@ -76,37 +84,13 @@ type ApiSurah = {
 
 const FPS = 30;
 const RENDERS_DIR = path.join(process.cwd(), "public", "renders");
-const RECITERS = {
-  mishary_alafasy: {
-    name: "مشاري راشد العفاسي",
-    audioBaseUrl: "https://everyayah.com/data/Alafasy_128kbps",
-  },
-  maher_muaiqly: {
-    name: "ماهر المعيقلي",
-    audioBaseUrl: "https://everyayah.com/data/Maher_AlMuaiqly_64kbps",
-  },
-  ahmed_ajmi: {
-    name: "أحمد العجمي",
-    audioBaseUrl: "https://everyayah.com/data/Ahmed_ibn_Ali_al-Ajamy_128kbps_ketaballah.net",
-  },
-  yasser_dosari: {
-    name: "ياسر الدوسري",
-    audioBaseUrl: "https://everyayah.com/data/Yasser_Ad-Dussary_128kbps",
-  },
-  abdullah_mousa: {
-    name: "عبدالله الموسى",
-    audioBaseUrl: "https://everyayah.com/data/Alafasy_128kbps", // fallback dummy, uses python extraction natively
-  },
-  raad_alkurdi: {
-    name: "رعد محمد الكردي",
-    audioBaseUrl: "https://everyayah.com/data/Alafasy_128kbps", // fallback dummy, uses python extraction natively
-  },
-} as const;
 
 const formatNumber = (num: number) => num.toString().padStart(3, "0");
 
-function audioUrlFor(reciterId: keyof typeof RECITERS, surahId: number, verseId: number) {
-  return `${RECITERS[reciterId].audioBaseUrl}/${formatNumber(surahId)}${formatNumber(verseId)}.mp3`;
+// null when the reciter has no per-ayah set (see reciterNames.ts' everyAyahDir).
+function audioUrlFor(reciterId: string, surahId: number, verseId: number): string | null {
+  const dir = getReciter(reciterId)?.everyAyahDir;
+  return dir ? `https://everyayah.com/data/${dir}/${formatNumber(surahId)}${formatNumber(verseId)}.mp3` : null;
 }
 
 function removeTashkeel(text: string): string {
@@ -412,7 +396,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid video options" }, { status: 400 });
     }
 
-    const reciterId = (formData.get("reciterId") || "mishary_alafasy") as keyof typeof RECITERS;
+    const reciterId = (formData.get("reciterId") as string | null) || DEFAULT_RECITER_ID;
     const translationId = formData.get("translationId") as string || "diyanet_yeni";
     const textScale = Math.max(0.5, Math.min(3, Number(formData.get("textScale")) || 1));
     // Arabic verse and translation each have their own independent
@@ -431,6 +415,20 @@ export async function POST(req: Request) {
     const arabicWidthScale = Math.max(0.4, Math.min(1.04, Number(formData.get("arabicWidthScale")) || 1));
     const translationTextScale = Math.max(0.5, Math.min(3, Number(formData.get("translationTextScale")) || textScale));
     const translationWidthScale = Math.max(0.4, Math.min(1.04, Number(formData.get("translationWidthScale")) || 1));
+    // Absent (older client/draft) means the original look -- see
+    // QuranVideoProps.backgroundDim.
+    const backgroundDimRaw = Number(formData.get("backgroundDim"));
+    const backgroundDim = formData.has("backgroundDim") && Number.isFinite(backgroundDimRaw)
+      ? Math.max(0, Math.min(BACKGROUND_DIM_MAX, backgroundDimRaw))
+      : DEFAULT_BACKGROUND_DIM;
+    const backgroundBlur = Math.max(0, Math.min(BACKGROUND_BLUR_MAX, Number(formData.get("backgroundBlur")) || 0));
+    const backgroundZoom = formData.get("backgroundZoom") === "true";
+    const wordHighlight = formData.get("wordHighlight") === "true";
+    const requestedHighlightColor = formData.get("wordHighlightColor") as string | null;
+    const wordHighlightColor =
+      requestedHighlightColor && /^#[0-9a-fA-F]{6}$/.test(requestedHighlightColor)
+        ? requestedHighlightColor
+        : DEFAULT_WORD_HIGHLIGHT_COLOR;
     const requestedAspectRatio = formData.get("aspectRatio") as string | null;
     const aspectRatio: AspectRatio =
       requestedAspectRatio && requestedAspectRatio in ASPECT_RATIO_DIMENSIONS
@@ -465,7 +463,7 @@ export async function POST(req: Request) {
     // drift apart.
     mode = formData.get("mode") as string | null;
 
-    if (!RECITERS[reciterId]) {
+    if (!getReciter(reciterId)) {
       return NextResponse.json({ error: "Unsupported reciter" }, { status: 400 });
     }
 
@@ -498,36 +496,20 @@ export async function POST(req: Request) {
     // 1935 printing (not the modern standardized edition), and
     // tanzil.net/fawazahmed0's tur-elmalilihamdiya has its quotation marks
     // offset by one verse boundary for passages of continuous quoted speech.
-    // Must stay in sync with TRANSLATION_OPTIONS in
-    // frontend/src/lib/TranslationContext.tsx.
+    // Edition ids/sources come from the same translationOptions module the
+    // client picker uses, so every edition it offers renders here too (an
+    // unknown id used to silently fall back to diyanet_eski's text).
     const LOCAL_TRANSLATIONS: Record<string, Record<string, string>> = {
       "diyanet_yeni": diyanetYeniData,
       "ahmet_varol": ahmetVarolData,
     };
-    const TRANSLATION_SOURCES: Record<string, { source: "tanzil" | "alquran"; ref: string }> = {
-      "diyanet_eski": { source: "tanzil", ref: "tur-diyanetisleri" },
-      "elmalili": { source: "alquran", ref: "tr.yazir" },
-    };
+    const translationOption = getTranslationOption(translationId);
 
-    // Açık Kuran prefixes a translation shared across several verses with a
-    // range like "(2-4)" — the official site itself displays this as
-    // "2,3,4." (comma-separated verse numbers), so reformat to match. Keep in
-    // sync with the identical helper in frontend/src/lib/TranslationContext.tsx.
-    const formatVerseGroupPrefix = (text: string): string =>
-      text.replace(/^\((\d+)-(\d+)\)\s*/, (match, start, end) => {
-        const from = parseInt(start, 10);
-        const to = parseInt(end, 10);
-        if (isNaN(from) || isNaN(to) || to < from) return match;
-        const numbers: number[] = [];
-        for (let n = from; n <= to; n++) numbers.push(n);
-        return `${numbers.join(",")}. `;
-      });
-
-    const isNoneTranslation = translationId === "none";
+    const isNoneTranslation = translationId === "none" || !translationOption;
     const translationCacheKey = `${translationId}:${surahId}`;
     let translationMap = translationCache.get(translationCacheKey) ?? new Map<number, string>();
 
-    if (!isNoneTranslation && !translationCache.has(translationCacheKey)) {
+    if (!isNoneTranslation && translationOption && !translationCache.has(translationCacheKey)) {
       if (LOCAL_TRANSLATIONS[translationId]) {
         const data = LOCAL_TRANSLATIONS[translationId];
         const prefix = `${surahId}:`;
@@ -538,7 +520,7 @@ export async function POST(req: Request) {
         }
         translationCache.set(translationCacheKey, translationMap);
       } else {
-        const { source, ref } = TRANSLATION_SOURCES[translationId] || TRANSLATION_SOURCES["diyanet_eski"];
+        const { source, ref } = translationOption;
         try {
           if (source === "alquran") {
             const res = await fetch(`https://api.alquran.cloud/v1/surah/${surahId}/${ref}`);
@@ -624,6 +606,9 @@ export async function POST(req: Request) {
       await fs.writeFile(absolutePath, buffer);
 
       try {
+        // Background videos are always silent (see lib/silentVideo.ts) --
+        // also fails here for a file ffmpeg can't read, i.e. not a video.
+        await stripAudioInPlace(absolutePath);
         // execFile (argument array), NOT execAsync's shell string -- unlike
         // every other path/filename interpolated into a shell command
         // elsewhere in this file, `filename` here is built from the
@@ -753,40 +738,39 @@ export async function POST(req: Request) {
 
     const selectedVerses = localSurah.verses.filter((verse) => verse.id >= startVerse && verse.id <= endVerse);
 
-    // Only fetch/derive the real-word <-> PUA-glyph-token map for verses that
-    // actually have a segmentation applied — unsegmented verses render as a
-    // single block and never need to slice `text` by real-word ranges.
+    // The real-word <-> PUA-glyph-token map slices `text` by real-word
+    // ranges, which only verses with a segmentation applied need (puaTokenCounts)
+    // -- unsegmented verses render as a single block. Word highlighting also
+    // needs it to find each recited word's glyphs, for every verse
+    // (highlightGlyphCounts, which leaves the slicing alone).
     const segmentedAyahIds = selectedVerses
       .filter((verse) => segmentationData.some((s) => s.surah === surahId && s.ayah === verse.id))
       .map((verse) => verse.id);
+    const wordMapAyahIds = wordHighlight ? selectedVerses.map((verse) => verse.id) : segmentedAyahIds;
     let puaWordMapByAyah: Record<number, { realWordCount: number; puaTokenCounts: number[] }> = {};
-    if (segmentedAyahIds.length > 0) {
+    if (wordMapAyahIds.length > 0) {
       try {
         const targetPuaTotals: Record<number, number> = {};
         for (const verse of selectedVerses) {
-          if (segmentedAyahIds.includes(verse.id)) {
+          if (wordMapAyahIds.includes(verse.id)) {
             targetPuaTotals[verse.id] = verse.text.trim().split(/\s+/).length;
           }
         }
-        puaWordMapByAyah = await getSurahWordMap(surahId, segmentedAyahIds, targetPuaTotals);
+        puaWordMapByAyah = await getSurahWordMap(surahId, wordMapAyahIds, targetPuaTotals);
       } catch (e) {
         console.warn("[Video Render] Failed to fetch real-word/PUA word map:", e);
       }
     }
 
-    const RECITER_KEYS: Record<string, string> = {
-      mishary_alafasy: "mishary",
-      maher_muaiqly: "maher",
-      ahmed_ajmi: "ajmi",
-      yasser_dosari: "yasser",
-      abdullah_mousa: "mousa",
-      raad_alkurdi: "raad_alkurdi"
-    };
-    const shortReciterKey = RECITER_KEYS[reciterId as string] || "mishary";
+    const shortReciterKey = getReciter(reciterId)?.backendKey || "mishary";
 
     let wordTimingsData: any = null;
     let extractionData: any = null;
     let apiExtracted = false;
+    // The timing below came from the client's own preparedJsonData and trim,
+    // which lets the live preview re-time itself without asking again (see
+    // the preview response).
+    let usedPreparedTiming = false;
 
     // 1. Call Backend API for Precise Extraction OR Custom Audio Alignment
     try {
@@ -847,18 +831,17 @@ export async function POST(req: Request) {
             // and content-addressed rather than single-use.
             tempFilesToCleanup.push(trimmedAbsolutePath);
 
-            // Shift JSON word timings by trimStart
+            // Shift JSON word timings by trimStart -- the reading path too,
+            // which holdWordsThroughRepeats compares with the words.
             if (wordTimingsData && wordTimingsData.verses) {
               for (const ayah in wordTimingsData.verses) {
-                const words = wordTimingsData.verses[ayah].words || [];
-                for (let i = 0; i < words.length; i++) {
-                  const word = words[i];
-                  word.start = Math.max(0, word.start - (trimStart * 1000));
-                  word.end = Math.max(0, word.end - (trimStart * 1000));
-                }
+                const verseTiming = wordTimingsData.verses[ayah];
+                verseTiming.words = shiftWordsToTrim(verseTiming.words || [], trimStart * 1000);
               }
+              wordTimingsData.readings = shiftReadingsToTrim(wordTimingsData.readings, trimStart * 1000);
             }
             apiExtracted = true;
+            usedPreparedTiming = true;
             console.log("[Video Render] Successfully trimmed prepared audio");
           } catch (err) {
             console.error("[Video Render] FFmpeg trim error:", err);
@@ -875,6 +858,7 @@ export async function POST(req: Request) {
           globalAudioPath = `/api/serve-audio?file=${relativeServePath}`;
           globalAudioDurationInFrames = await estimateAudioDurationInFrames(preparedAudioLocalPath);
           apiExtracted = true;
+          usedPreparedTiming = true;
         }
       } else if (globalAudioPath && customAudio) {
         console.log(`[Video Render] Requesting custom audio alignment from backend for ${surahId}:${startVerse}-${endVerse}...`);
@@ -986,21 +970,55 @@ export async function POST(req: Request) {
       }
     }
 
+    // The per-ayah fallback below needs a per-ayah set for THIS reciter;
+    // without one, fail clearly rather than render silence or another voice.
+    if (!globalAudioPath && !getReciter(reciterId)?.everyAyahDir) {
+      return NextResponse.json(
+        { error: "Audio extraction for this reciter is unavailable right now. Please try again in a moment." },
+        { status: 502 }
+      );
+    }
+
     // Calculate total character count for proportional duration assignment if using custom audio
     let totalCharsAllVerses = 0;
     if (globalAudioPath && !apiExtracted) {
       for (const verse of selectedVerses) {
         const apiAyah = apiAyahByNumber.get(verse.id);
         const arabicText = fixMojibake(apiAyah?.text_arabic || verse.text);
-        const defaultTranslation = fixMojibake(apiAyah?.text_turkish || "");
+        // The DB's stored text is Turkish -- only a fallback for a Turkish
+        // edition, never for an English/Arabic one.
+        const defaultTranslation = translationOption?.language === "tr" ? fixMojibake(apiAyah?.text_turkish || "") : "";
         const translationText = isNoneTranslation ? "" : (translationMap.get(verse.id) || defaultTranslation);
         totalCharsAllVerses += arabicText.length + translationText.length;
       }
     }
 
-    // Precompute the effective start boundary (in wordTimingsData's ms
-    // coordinate space, i.e. after any trimStart shift) for every selected
-    // verse. A manually-dragged boundary from SegmentTimingEditor -- saved
+    // With aligned word timing for every selected ayah, where each ayah and
+    // each of its chunks sits is the shared rule in remotion/timing.ts --
+    // the same one the live preview re-times itself with on every edit, so
+    // preview and export can't drift apart. null (some ayah without timing)
+    // falls back to the older per-verse logic below.
+    // A repeat inside a part keeps its words current (see holdWordsThroughRepeats).
+    const heldWords = holdWordsThroughRepeats(
+      selectedVerses.map((verse) => ({ id: verse.id, words: wordTimingsData?.verses?.[verse.id]?.words ?? [] })),
+      wordTimingsData?.readings
+    );
+    const wordRepeats = repeatWordWindows(selectedVerses.map((verse) => verse.id), wordTimingsData?.readings);
+    const timeline = apiExtracted && globalAudioPath
+      ? buildVerseTimeline(
+          selectedVerses.map((verse) => ({
+            id: verse.id,
+            words: heldWords.get(verse.id) ?? [],
+            mappings: segmentationData.find((s) => s.surah === surahId && s.ayah === verse.id)?.mappings,
+            repeats: wordRepeats.get(verse.id),
+          })),
+          { trimStartMs: trimStart * 1000, fps: FPS, totalFrames: globalAudioDurationInFrames }
+        )
+      : null;
+
+    // Fallback when `timeline` is null. Precompute the effective start
+    // boundary (in wordTimingsData's ms coordinate space, i.e. after any
+    // trimStart shift) for every selected verse. A manually-dragged boundary from SegmentTimingEditor -- saved
     // on BOTH sides of the boundary by its linked dragging -- takes
     // priority over the word-timing-derived "next verse's first word"
     // default, since the user heard the audio and placed it there
@@ -1025,11 +1043,16 @@ export async function POST(req: Request) {
       return wordTimingsData?.verses?.[verse.id]?.words?.[0]?.start ?? null;
     });
 
-    const verses: QuranVerse[] = await Promise.all(
+    let verses: QuranVerse[] = await Promise.all(
       selectedVerses.map(async (verse, index) => {
+        // The ayah's first appearance on the timeline (see remotion/timing.ts);
+        // the others are added after this map.
+        const firstAppearance = timeline?.find((t) => t.verseIndex === index);
         const apiAyah = apiAyahByNumber.get(verse.id);
         const arabicText = fixMojibake(apiAyah?.text_arabic || verse.text);
-        const defaultTranslation = fixMojibake(apiAyah?.text_turkish || "");
+        // The DB's stored text is Turkish -- only a fallback for a Turkish
+        // edition, never for an English/Arabic one.
+        const defaultTranslation = translationOption?.language === "tr" ? fixMojibake(apiAyah?.text_turkish || "") : "";
         const translationText = isNoneTranslation ? "" : (translationMap.get(verse.id) || defaultTranslation);
 
         let audioRelPath = "";
@@ -1039,7 +1062,9 @@ export async function POST(req: Request) {
         if (globalAudioPath) {
           audioRelPath = globalAudioPath;
 
-          if (apiExtracted && wordTimingsData?.verses?.[verse.id]?.words) {
+          if (firstAppearance) {
+            durationInFrames = firstAppearance.durationInFrames;
+          } else if (apiExtracted && wordTimingsData?.verses?.[verse.id]?.words) {
             const timings = wordTimingsData.verses[verse.id].words;
             // For the very first verse, start from 0 to include any initial audio silence
             const startMs = verseBoundaryMs[index] ?? (index === 0 ? 0 : timings[0].start);
@@ -1067,6 +1092,7 @@ export async function POST(req: Request) {
           const audioRelPathToSave = `renders/temp_audio/${reciterId}_${formatNumber(surahId)}_${formatNumber(verse.id)}.mp3`;
           const audioUrl = audioUrlFor(reciterId, surahId, verse.id);
           try {
+            if (!audioUrl) throw new Error(`No per-ayah audio for reciter ${reciterId}`);
             localAudioFile = await downloadAudioToPublic(audioUrl, audioRelPathToSave);
             audioRelPath = `/api/serve-audio?file=${audioRelPathToSave}`;
             durationInFrames = await estimateAudioDurationInFrames(localAudioFile);
@@ -1087,7 +1113,9 @@ export async function POST(req: Request) {
         }
 
         let wordTimings: any[] | undefined;
-        if (wordTimingsData && wordTimingsData.verses && wordTimingsData.verses[verse.id]) {
+        if (firstAppearance) {
+          wordTimings = firstAppearance.wordTimings;
+        } else if (wordTimingsData && wordTimingsData.verses && wordTimingsData.verses[verse.id]) {
           // Deep clone to avoid modifying shared cache (if any)
           wordTimings = JSON.parse(JSON.stringify(wordTimingsData.verses[verse.id].words));
 
@@ -1103,7 +1131,8 @@ export async function POST(req: Request) {
           }
         }
 
-        const puaWordMap = puaWordMapByAyah[verse.id];
+        const puaWordMap = segmentedAyahIds.includes(verse.id) ? puaWordMapByAyah[verse.id] : undefined;
+        const highlightWordMap = wordHighlight ? puaWordMapByAyah[verse.id] : undefined;
 
         // Manual per-segment timing overrides (from SegmentTimingEditor) are
         // stored in the SAME raw, un-normalized coordinate space as
@@ -1113,18 +1142,14 @@ export async function POST(req: Request) {
         // through above, so QuranVideo.tsx can treat start_ms/end_ms as
         // already verse-relative, matching wordTimings' own coordinate
         // space, with no further conversion needed at render time.
-        let mappings = matchingSegmentation?.mappings;
-        if (mappings && apiExtracted && wordTimingsData?.verses?.[verse.id]?.words?.length) {
+        let mappings = firstAppearance ? firstAppearance.mappings : matchingSegmentation?.mappings;
+        if (!timeline && mappings && apiExtracted && wordTimingsData?.verses?.[verse.id]?.words?.length) {
           const verseStartMs = verseBoundaryMs[index] ?? (index === 0 ? 0 : wordTimingsData.verses[verse.id].words[0].start);
-          mappings = mappings.map((m: any) =>
-            typeof m.start_ms === "number" && typeof m.end_ms === "number"
-              ? {
-                  ...m,
-                  start_ms: m.start_ms - trimStart * 1000 - verseStartMs,
-                  end_ms: m.end_ms - trimStart * 1000 - verseStartMs,
-                }
-              : m
-          );
+          mappings = mappings.map((m: any) => ({
+            ...m,
+            ...(typeof m.start_ms === "number" ? { start_ms: m.start_ms - trimStart * 1000 - verseStartMs } : {}),
+            ...(typeof m.end_ms === "number" ? { end_ms: m.end_ms - trimStart * 1000 - verseStartMs } : {}),
+          }));
         }
 
         // Always attached regardless of the CURRENTLY selected arabicFont --
@@ -1144,6 +1169,7 @@ export async function POST(req: Request) {
           ...(mappings ? { mappings } : {}),
           ...(wordTimings ? { wordTimings } : {}),
           ...(puaWordMap ? { puaTokenCounts: puaWordMap.puaTokenCounts } : {}),
+          ...(highlightWordMap ? { highlightGlyphCounts: highlightWordMap.puaTokenCounts } : {}),
         };
 
         console.log(`[Video Render] Verse data: ${JSON.stringify(verseData, null, 2)}`);
@@ -1152,8 +1178,25 @@ export async function POST(req: Request) {
       })
     );
 
-    // Fix up last verse duration if using custom audio to perfectly match global duration
-    if (globalAudioPath && verses.length > 0) {
+    // One entry per appearance: an ayah the reciter went back to after the
+    // next one began appears again (remotion/timing.ts), with its own
+    // duration, word timing and visible chunks.
+    if (timeline) {
+      verses = timeline.map((t) => {
+        const verse = verses[t.verseIndex];
+        return {
+          ...verse,
+          durationInFrames: t.durationInFrames,
+          wordTimings: t.wordTimings as QuranVerse["wordTimings"],
+          ...(t.wordRepeats ? { wordRepeats: t.wordRepeats } : {}),
+          ...(t.mappings ? { mappings: t.mappings as QuranVerse["mappings"] } : {}),
+        };
+      });
+    }
+
+    // Fix up last verse duration if using custom audio to perfectly match
+    // global duration (`timeline` already sized it).
+    if (globalAudioPath && verses.length > 0 && !timeline) {
       const currentTotal = verses.reduce((sum, v) => sum + v.durationInFrames, 0);
       const diff = globalAudioDurationInFrames - currentTotal;
       if (diff !== 0) {
@@ -1176,12 +1219,35 @@ export async function POST(req: Request) {
     if (globalAudioPath) {
       totalDurationInFrames = globalAudioDurationInFrames;
     }
+    // The video's language: its translation's, or (no translation) the
+    // translation picker's language the client sends as videoLanguage.
+    const requestedVideoLanguage = formData.get("videoLanguage");
+    const videoLanguage =
+      translationOption?.language ??
+      (requestedVideoLanguage === "en" || requestedVideoLanguage === "ar" ? requestedVideoLanguage : "tr");
+    const surahNameTransliteration = fixMojibake(apiSurah?.name_turkish || localSurah.transliteration).toLocaleUpperCase("tr-TR");
+    const surahTitle =
+      videoLanguage === "ar"
+        ? ""
+        : videoLanguage === "en"
+          ? `SURAH ${(surahEnglishName(surahId) ?? localSurah.transliteration).toUpperCase()}`
+          : `${surahNameTransliteration} SURESİ`;
+    // An Arabic video shows the reciter's name in surahTitle's place (the
+    // client sends "" when the user turned it off or left it blank).
+    const reciterName = videoLanguage === "ar" ? String(formData.get("reciterName") ?? "").trim().slice(0, 80) : "";
     const inputProps: QuranVideoProps = {
       surahNameArabic: fixMojibake(removeTashkeel(apiSurah?.name_arabic || localSurah.name)),
-      surahNameTransliteration: fixMojibake(apiSurah?.name_turkish || localSurah.transliteration).toLocaleUpperCase("tr-TR"),
+      surahNameTransliteration,
+      surahTitle,
+      ...(reciterName ? { reciterName } : {}),
       backgroundImagePath,
       backgroundVideoPath,
       backgroundVideoDurationInFrames,
+      backgroundDim,
+      backgroundBlur,
+      backgroundZoom,
+      wordHighlight,
+      wordHighlightColor,
       globalAudioPath,
       isAudioExtracted: apiExtracted,
       verses,
@@ -1195,10 +1261,20 @@ export async function POST(req: Request) {
       translationFont,
       arabicFont,
       ...(customTranslationFontUrl ? { customTranslationFontUrl } : {}),
+      ...(isRtlTranslation(translationId) ? { translationRtl: true } : {}),
     };
 
     if (mode === "preview") {
-      return NextResponse.json({ success: true, inputProps });
+      // `timing` tells the client these props were timed from its own
+      // preparedJsonData cut at trimStartMs, so it can re-time them itself
+      // (remotion/timing.ts) on every segmentation edit instead of waiting
+      // for another round trip. Absent when the server had to time them
+      // from anything else (e.g. the prepared file is gone).
+      return NextResponse.json({
+        success: true,
+        inputProps,
+        ...(timeline && usedPreparedTiming ? { timing: { trimStartMs: trimStart * 1000 } } : {}),
+      });
     }
 
     const filename = `${surahId}-${startVerse}-${endVerse}.mp4`;
@@ -1265,7 +1341,7 @@ export async function POST(req: Request) {
           surahNameTransliteration: inputProps.surahNameTransliteration,
           startVerse,
           endVerse,
-          reciterName: RECITERS[reciterId].name,
+          reciterName: RECITER_ARABIC_NAMES[reciterId],
           reciterNameLatin: RECITER_DISPLAY_NAMES[reciterId],
           aspectRatio,
           ...(draftId ? { draftId } : {}),

@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import Navbar from "@/components/layout/Navbar";
 import Spinner from "@/components/ui/Spinner";
-import { useLanguage } from "@/lib/LanguageContext";
+import { useLanguage, useT } from "@/lib/LanguageContext";
 import { EnvelopeIcon, KeyIcon, ArrowLeftIcon } from "@heroicons/react/24/outline";
 
 const INPUT_CLASSES =
@@ -13,7 +13,7 @@ const INPUT_CLASSES =
 export default function ForgotPasswordPage() {
   const { language } = useLanguage();
   const isAr = language === "ar";
-  const t = (ar: string, tr: string) => (isAr ? ar : tr);
+  const t = useT();
 
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
@@ -33,13 +33,13 @@ export default function ForgotPasswordPage() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        setError(t("حدث خطأ، حاول مرة أخرى", "Bir hata oluştu, tekrar deneyin"));
+        setError(t("حدث خطأ، حاول مرة أخرى", "Bir hata oluştu, tekrar deneyin", "Something went wrong, please try again"));
         return;
       }
       setSent(true);
       setDevResetUrl(data?.devResetUrl ?? null);
     } catch {
-      setError(t("خطأ في الاتصال", "Bağlantı hatası"));
+      setError(t("خطأ في الاتصال", "Bağlantı hatası", "Connection error"));
     } finally {
       setLoading(false);
     }
@@ -60,10 +60,10 @@ export default function ForgotPasswordPage() {
             </div>
 
             <h1 className="text-2xl font-bold text-foreground mb-1.5 text-center">
-              {t("نسيت كلمة المرور؟", "Şifreni mi Unuttun?")}
+              {t("نسيت كلمة المرور؟", "Şifreni mi Unuttun?", "Forgot Your Password?")}
             </h1>
             <p className="text-sm text-muted text-center mb-7">
-              {t("أدخل بريدك الإلكتروني وسنرسل لك رابط إعادة التعيين", "E-postanı gir, sana bir sıfırlama linki gönderelim")}
+              {t("أدخل بريدك الإلكتروني وسنرسل لك رابط إعادة التعيين", "E-postanı gir, sana bir sıfırlama linki gönderelim", "Enter your email and we'll send you a reset link")}
             </p>
 
             {error && (
@@ -75,18 +75,12 @@ export default function ForgotPasswordPage() {
             {sent ? (
               <div className="space-y-4 animate-fade-in">
                 <div className="rounded-xl border border-accent-green/30 bg-accent-green-bg/40 p-4 text-sm text-foreground leading-relaxed">
-                  {t(
-                    "إذا كان هذا البريد مسجلاً لدينا، فسيصلك رابط لإعادة تعيين كلمة المرور.",
-                    "Bu e-posta bize kayıtlıysa, şifre sıfırlama linki gönderildi."
-                  )}
+                  {t("إذا كان هذا البريد مسجلاً لدينا، فسيصلك رابط لإعادة تعيين كلمة المرور.", "Bu e-posta bize kayıtlıysa, şifre sıfırlama linki gönderildi.", "If this email is registered with us, a password reset link has been sent.")}
                 </div>
                 {devResetUrl && (
                   <div className="rounded-xl border border-accent-amber/30 bg-accent-amber-bg/30 p-4">
                     <p className="text-xs text-accent-amber mb-2">
-                      {t(
-                        "وضع تطوير -- لا يوجد بريد فعلي بعد، إليك الرابط مباشرة:",
-                        "Dev mod -- henüz gerçek e-posta yok, linki doğrudan burada:"
-                      )}
+                      {t("وضع تطوير -- لا يوجد بريد فعلي بعد، إليك الرابط مباشرة:", "Dev mod -- henüz gerçek e-posta yok, linki doğrudan burada:", "Dev mode -- no real email yet, here's the link directly:")}
                     </p>
                     <a
                       href={devResetUrl}
@@ -119,7 +113,7 @@ export default function ForgotPasswordPage() {
                   className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary to-primary-dark px-5 py-3 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading && <Spinner size="sm" className="border-white/40 border-t-white" />}
-                  {t("إرسال رابط إعادة التعيين", "Sıfırlama Linki Gönder")}
+                  {t("إرسال رابط إعادة التعيين", "Sıfırlama Linki Gönder", "Send Reset Link")}
                 </button>
               </form>
             )}
@@ -128,7 +122,7 @@ export default function ForgotPasswordPage() {
           <p className="mt-6 text-center text-sm text-muted">
             <Link href="/login" className="inline-flex items-center gap-1.5 text-primary font-semibold hover:underline">
               <ArrowLeftIcon className={`h-4 w-4 ${isAr ? "rotate-180" : ""}`} />
-              {t("العودة لتسجيل الدخول", "Girişe geri dön")}
+              {t("العودة لتسجيل الدخول", "Girişe geri dön", "Back to sign in")}
             </Link>
           </p>
         </div>

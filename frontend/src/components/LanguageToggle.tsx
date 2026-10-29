@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { GlobeAltIcon } from "@heroicons/react/24/outline";
-import { useLanguage } from "@/lib/LanguageContext";
+import { useLanguage, type Language } from "@/lib/LanguageContext";
 
 export function LanguageToggle() {
   const { language, setLanguage } = useLanguage();
@@ -27,7 +27,7 @@ export function LanguageToggle() {
     return <div className="w-9 h-9" />;
   }
 
-  const handleSelect = (lang: "tr" | "ar") => {
+  const handleSelect = (lang: Language) => {
     setLanguage(lang);
     setIsOpen(false);
   };
@@ -37,8 +37,8 @@ export function LanguageToggle() {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center justify-center p-2 rounded-full text-foreground hover:bg-surface transition-colors focus:outline-none focus:ring-2 focus:ring-primary"
-        aria-label="تغيير اللغة / Dili Değiştir"
-        title="تغيير اللغة / Dili Değiştir"
+        aria-label="تغيير اللغة / Dili Değiştir / Change language"
+        title="تغيير اللغة / Dili Değiştir / Change language"
       >
         <GlobeAltIcon className={`w-5 h-5 transition-colors ${isOpen ? 'text-primary' : 'text-foreground/70'}`} />
       </button>
@@ -57,6 +57,13 @@ export function LanguageToggle() {
             className={`w-full text-left px-4 py-2 text-sm font-sans hover:bg-primary/10 transition-colors ${language === 'tr' ? 'text-primary font-bold' : 'text-foreground'}`}
           >
             Türkçe
+          </button>
+          <button
+            onClick={() => handleSelect("en")}
+            className={`w-full text-left px-4 py-2 text-sm font-sans hover:bg-primary/10 transition-colors ${language === 'en' ? 'text-primary font-bold' : 'text-foreground'}`}
+            dir="ltr"
+          >
+            English
           </button>
         </div>
       )}

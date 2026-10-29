@@ -1,14 +1,25 @@
 "use client";
 
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import DropdownSelect from "@/components/ui/DropdownSelect";
 import TranslationSelector from "@/components/quran/TranslationSelector";
 import QuranSearch from "../QuranSearch";
 import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { fixMojibake } from "@/lib/textEncoding";
-import { ARABIC_FONT_OPTIONS, TRANSLATION_FONT_OPTIONS, type ArabicFontKey, type TranslationFontKey } from "@/remotion/types";
+import {
+  ARABIC_FONT_OPTIONS,
+  TRANSLATION_FONT_OPTIONS,
+  resolveTranslationFont,
+  translationFontStack,
+  translationFontSupports,
+  type ArabicFontKey,
+  type TranslationFontKey,
+} from "@/remotion/types";
+import { useTranslationContext } from "@/lib/TranslationContext";
+import { surahEnglishName } from "@/lib/surahEnglishNames";
 import type { Surah, Verse, ApiSurah, RenderState } from "../VideoCreatorForm";
 
+import { useLanguage, useT } from "@/lib/LanguageContext";
 interface Step1Props {
   isArabic: boolean;
   surahs: Surah[];
@@ -52,18 +63,6 @@ interface Step1Props {
   onCustomTranslationFontUpload: (file: File) => void;
 }
 
-// Mirrors QuranVideo.tsx's own TRANSLATION_FONT_FILES registry (kept as a
-// separate, duplicated literal there rather than shared through types.ts,
-// same as the QCF v2 page-font directory below) -- so this preview box's
-// translation text can switch fonts instantly, exactly like the real
-// live-preview player already does.
-const TRANSLATION_FONT_FILES: Record<TranslationFontKey, { path: string; format: "opentype" | "woff2" }> = {
-  aileron: { path: "/fonts/video-fonts/Aileron-Thin.otf", format: "opentype" },
-  inter: { path: "/fonts/video-fonts/Inter-Regular.woff2", format: "woff2" },
-  notosans: { path: "/fonts/video-fonts/NotoSans-Regular.woff2", format: "woff2" },
-  poppins: { path: "/fonts/video-fonts/Poppins-Regular.woff2", format: "woff2" },
-};
-
 const CUSTOM_TRANSLATION_FONT_FAMILY = "CustomTranslationFont";
 
 // Same heuristic as QuranVideo.tsx's guessFontFormat -- a user-uploaded
@@ -104,21 +103,88 @@ export default function Step1SurahVerse({
   customTranslationFontUrl,
   onCustomTranslationFontUpload,
 }: Step1Props) {
+  const tx = useT();
   const customFontInputRef = useRef<HTMLInputElement>(null);
+  const { selectedTranslation, translationLanguage } = useTranslationContext();
+  // The translation preview's direction follows the TRANSLATION's language,
+  // not the interface's (an English translation stays LTR in the Arabic UI).
+  const translationRtl = selectedTranslation.language === "ar";
+  const hasCustomFont = Boolean(customTranslationFontUrl);
+  const { language } = useLanguage();
 
   // "custom" itself is only ever a REAL selectable option once a file has
   // actually been uploaded (this session or restored from a saved draft --
   // see customTranslationFontName) -- picking it before that just opens the
   // file picker instead of selecting a family nothing has been given yet.
+  //
+  // Only fonts whose glyphs cover the selected translation language are
+  // listed (Arabic fonts for an Arabic tafsir, Latin ones for Turkish/
+  // English -- see TRANSLATION_FONT_OPTIONS' languages); VideoCreatorForm
+  // switches to that language's default font when the language changes.
   const translationFontOptions = [
-    ...(Object.keys(TRANSLATION_FONT_OPTIONS) as TranslationFontKey[]).map((key) => ({
-      value: key,
-      label: TRANSLATION_FONT_OPTIONS[key].label,
-    })),
+    ...(Object.keys(TRANSLATION_FONT_OPTIONS) as TranslationFontKey[])
+      .filter((key) => translationFontSupports(key, translationLanguage))
+      .map((key) => ({
+        value: key,
+        label: TRANSLATION_FONT_OPTIONS[key].label,
+      })),
     customTranslationFontName
-      ? { value: "custom", label: isArabic ? "الخط المخصص" : "Özel Yazı Tipi", subtitle: customTranslationFontName }
-      : { value: "custom", label: isArabic ? "خط خارجي (تحميل ملف)..." : "Özel Yazı Tipi (Dosya Yükle)..." },
+      ? { value: "custom", label: tx("الخط المخصص", "Özel Yazı Tipi", "Custom Font"), subtitle: customTranslationFontName }
+      : { value: "custom", label: tx("خط خارجي (تحميل ملف)...", "Özel Yazı Tipi (Dosya Yükle)...", "Custom Font (Upload File)...") },
   ];
+
+  // Joined into strings first so the memo below only recomputes when the
+  // pages/font actually change, not on every new selectedVersesContent array.
+  const v2Pages = Array.from(new Set(selectedVersesContent.map((v) => v.page).filter(Boolean))).join(",");
+  const v1Pages = Array.from(new Set(selectedVersesContent.map((v) => v.pageV1).filter(Boolean))).join(",");
+  const fontFaceCss = useMemo(
+    () =>
+      [
+        ...(v2Pages ? v2Pages.split(",") : []).map(
+          (page) => `
+                  @font-face {
+                    font-family: 'p${page}';
+                    src: url('/fonts/2013/QCF2BSMLfonts/QCF2${page.padStart(3, "0")}.ttf') format('truetype');
+                    font-weight: normal;
+                    font-style: normal;
+                    font-display: swap;
+                  }
+                `
+        ),
+        ...(v1Pages ? v1Pages.split(",") : []).map(
+          (page) => `
+                  @font-face {
+                    font-family: 'pv1-${page}';
+                    src: url('/fonts/2005/QCF_BSML.fonts/QCF_P${page.padStart(3, "0")}.ttf') format('truetype');
+                    font-weight: normal;
+                    font-style: normal;
+                    font-display: swap;
+                  }
+                `
+        ),
+        ...(Object.keys(TRANSLATION_FONT_OPTIONS) as TranslationFontKey[]).map((key) => {
+          const { family, file, format, weight } = TRANSLATION_FONT_OPTIONS[key];
+          return `
+                  @font-face {
+                    font-family: '${family}';
+                    src: url('/${file}') format('${format}');
+                    font-weight: ${weight};
+                    font-display: swap;
+                  }
+                `;
+        }),
+        customTranslationFontUrl
+          ? `
+                  @font-face {
+                    font-family: '${CUSTOM_TRANSLATION_FONT_FAMILY}';
+                    src: url('${customTranslationFontUrl}') format('${guessFontFormat(customTranslationFontUrl)}');
+                    font-display: swap;
+                  }
+                `
+          : "",
+      ].join("\n"),
+    [v2Pages, v1Pages, customTranslationFontUrl]
+  );
 
   const handleTranslationFontSelect = (value: string | number) => {
     if (value === "custom" && !customTranslationFontName) {
@@ -130,15 +196,20 @@ export default function Step1SurahVerse({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      {/* Surah / translation / first ayah at 4:6:2 -- the translation cell
+          holds two pickers (language + edition), the ayah cell just a
+          number. */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,4fr)_minmax(0,6fr)_minmax(0,2fr)]">
         <DropdownSelect
-          label={isArabic ? "السورة" : "Sure"}
-          placeholder={isArabic ? "اختر السورة..." : "Sure seçin..."}
+          label={tx("السورة", "Sure", "Surah")}
+          placeholder={tx("اختر السورة...", "Sure seçin...", "Choose a surah...")}
           options={surahs.map((surah) => {
             const turkishName = surahTurkishNames.get(surah.id);
             let label: string;
             if (isArabic) {
               label = `سورة ${fixMojibake(surah.name)}`;
+            } else if (language === "en") {
+              label = `Surah ${surahEnglishName(surah.id) ?? fixMojibake(surah.transliteration)}`;
             } else if (turkishName) {
               label = `${fixMojibake(turkishName)} Suresi`;
             } else {
@@ -162,12 +233,12 @@ export default function Step1SurahVerse({
           showNumberBadge
           disabled={false}
           enableSearch={true}
-          searchPlaceholder={isArabic ? "ابحث عن سورة..." : "Sure ara..."}
+          searchPlaceholder={tx("ابحث عن سورة...", "Sure ara...", "Search surahs...")}
         />
 
         <div className="space-y-1.5 flex flex-col justify-end">
           <label className="text-sm font-medium text-foreground">
-            {isArabic ? "الترجمة" : "Çeviri"}
+            {tx("الترجمة", "Çeviri", "Translation")}
           </label>
           <div className="h-[50px] flex items-center w-full">
             <TranslationSelector className="w-full" forceShow={true} />
@@ -176,7 +247,7 @@ export default function Step1SurahVerse({
 
         <div className="space-y-1.5">
           <label className="text-sm font-medium text-foreground">
-            {isArabic ? "الآية الأولى" : "İlk Ayet"}
+            {tx("الآية الأولى", "İlk Ayet", "First Ayah")}
           </label>
           <input
             type="number"
@@ -202,8 +273,8 @@ export default function Step1SurahVerse({
             disabled={!selectedSurah}
             placeholder={
               selectedSurah
-                ? (isArabic ? "رقم الآية..." : "Ayet numarası...")
-                : (isArabic ? "أولاً اختر السورة" : "Önce sure seçin")
+                ? (tx("رقم الآية...", "Ayet numarası...", "Ayah number..."))
+                : (tx("أولاً اختر السورة", "Önce sure seçin", "Choose a surah first"))
             }
             className="w-full h-[50px] rounded-xl border border-border bg-background px-4 py-2.5 text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
             dir={isArabic ? "rtl" : "ltr"}
@@ -213,11 +284,11 @@ export default function Step1SurahVerse({
 
       <div className="grid grid-cols-2 gap-4">
         <DropdownSelect
-          label={isArabic ? "الخط العربي" : "Arapça Yazı Tipi"}
-          placeholder={isArabic ? "اختر الخط..." : "Yazı tipi seçin..."}
+          label={tx("الخط العربي", "Arapça Yazı Tipi", "Arabic Font")}
+          placeholder={tx("اختر الخط...", "Yazı tipi seçin...", "Choose a font...")}
           options={(Object.keys(ARABIC_FONT_OPTIONS) as ArabicFontKey[]).map((key) => ({
             value: key,
-            label: isArabic ? ARABIC_FONT_OPTIONS[key].labelAr : ARABIC_FONT_OPTIONS[key].labelTr,
+            label: tx(ARABIC_FONT_OPTIONS[key].labelAr, ARABIC_FONT_OPTIONS[key].labelTr, ARABIC_FONT_OPTIONS[key].labelEn),
           }))}
           value={arabicFont}
           onChange={(val) => onArabicFontChange(val as ArabicFontKey)}
@@ -226,10 +297,10 @@ export default function Step1SurahVerse({
 
         <div>
           <DropdownSelect
-            label={isArabic ? "خط الترجمة" : "Çeviri Yazı Tipi"}
-            placeholder={isArabic ? "اختر الخط..." : "Yazı tipi seçin..."}
+            label={tx("خط الترجمة", "Çeviri Yazı Tipi", "Translation Font")}
+            placeholder={tx("اختر الخط...", "Yazı tipi seçin...", "Choose a font...")}
             options={translationFontOptions}
-            value={translationFont}
+            value={resolveTranslationFont(translationFont, translationLanguage, hasCustomFont)}
             onChange={handleTranslationFontSelect}
             isRtl={isArabic}
           />
@@ -254,6 +325,7 @@ export default function Step1SurahVerse({
             const surah = surahs.find((s) => s.id === id);
             if (!surah) return "";
             if (isArabic) return fixMojibake(surah.name);
+            if (language === "en") return surahEnglishName(id) ?? fixMojibake(surah.transliteration);
             const turkishName = surahTurkishNames.get(id);
             return turkishName ? fixMojibake(turkishName) : fixMojibake(surah.transliteration);
           }}
@@ -276,9 +348,7 @@ export default function Step1SurahVerse({
         <div className="animate-slide-up mt-6 space-y-5 rounded-2xl border border-border/50 bg-gradient-to-br from-surface/80 to-background p-4 sm:p-5 shadow-inner-soft backdrop-blur-sm transition-all duration-300">
           <div className="flex items-center justify-between gap-2 px-1 flex-wrap">
             <h3 className="text-sm font-semibold text-foreground/80">
-              {isArabic
-                ? `الآيات المختارة (${versesArray.length})`
-                : `Seçili Ayetler (${versesArray.length})`}
+              {tx(`الآيات المختارة (${versesArray.length})`, `Seçili Ayetler (${versesArray.length})`, `Selected Ayahs (${versesArray.length})`)}
             </h3>
             <div className="flex items-center gap-2">
               <button
@@ -287,7 +357,7 @@ export default function Step1SurahVerse({
                 disabled={endVerse >= selectedSurah.total_verses}
                 className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary transition-all hover:bg-primary/20 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                + {isArabic ? "أضف الآية التالية" : "Sonraki Ayeti Ekle"}
+                + {tx("أضف الآية التالية", "Sonraki Ayeti Ekle", "Add Next Ayah")}
               </button>
               <button
                 type="button"
@@ -295,11 +365,15 @@ export default function Step1SurahVerse({
                 disabled={endVerse <= startVerse}
                 className="inline-flex items-center gap-1 rounded-lg bg-accent-red-bg/60 px-2.5 py-1 text-xs font-medium text-accent-red transition-all hover:bg-accent-red-bg disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                - {isArabic ? "إزالة آخر آية" : "Son Ayeti Kaldır"}
+                - {tx("إزالة آخر آية", "Son Ayeti Kaldır", "Remove Last Ayah")}
               </button>
             </div>
             <span className="text-xs font-medium text-muted-foreground">
-              {isArabic ? fixMojibake(selectedSurah.name) : fixMojibake(selectedSurah.transliteration)}
+              {isArabic
+                ? fixMojibake(selectedSurah.name)
+                : language === "en"
+                  ? surahEnglishName(selectedSurah.id) ?? fixMojibake(selectedSurah.transliteration)
+                  : fixMojibake(selectedSurah.transliteration)}
             </span>
           </div>
 
@@ -313,55 +387,13 @@ export default function Step1SurahVerse({
             reasoning as QuranVideo.tsx's own PageFontStyles -- so switching
             the dropdown here is instant, no re-render-triggered flash of
             missing glyphs. Translation fonts (built-in + optional custom
-            upload) are declared the same way, for the same reason. */}
-          <style
-            dangerouslySetInnerHTML={{
-              __html: [
-                ...Array.from(new Set(selectedVersesContent.map((v) => v.page).filter(Boolean))).map(
-                  (page) => `
-                  @font-face {
-                    font-family: 'p${page}';
-                    src: url('/fonts/2013/QCF2BSMLfonts/QCF2${String(page).padStart(3, "0")}.ttf') format('truetype');
-                    font-weight: normal;
-                    font-style: normal;
-                    font-display: swap;
-                  }
-                `
-                ),
-                ...Array.from(new Set(selectedVersesContent.map((v) => v.pageV1).filter(Boolean))).map(
-                  (page) => `
-                  @font-face {
-                    font-family: 'pv1-${page}';
-                    src: url('/fonts/2005/QCF_BSML.fonts/QCF_P${String(page).padStart(3, "0")}.ttf') format('truetype');
-                    font-weight: normal;
-                    font-style: normal;
-                    font-display: swap;
-                  }
-                `
-                ),
-                ...(Object.keys(TRANSLATION_FONT_OPTIONS) as TranslationFontKey[]).map((key) => {
-                  const { family } = TRANSLATION_FONT_OPTIONS[key];
-                  const { path, format } = TRANSLATION_FONT_FILES[key];
-                  return `
-                  @font-face {
-                    font-family: '${family}';
-                    src: url('${path}') format('${format}');
-                    font-display: swap;
-                  }
-                `;
-                }),
-                customTranslationFontUrl
-                  ? `
-                  @font-face {
-                    font-family: '${CUSTOM_TRANSLATION_FONT_FAMILY}';
-                    src: url('${customTranslationFontUrl}') format('${guessFontFormat(customTranslationFontUrl)}');
-                    font-display: swap;
-                  }
-                `
-                  : "",
-              ].join("\n"),
-            }}
-          />
+            upload) are declared the same way, for the same reason. The CSS
+            is a plain text child built once per set of pages (see
+            fontFaceCss): rewriting this tag's content -- which
+            dangerouslySetInnerHTML did on EVERY render, even with
+            identical CSS -- makes the browser rebuild all its FontFaces,
+            blanking every web-font text on the page for a moment. */}
+          <style>{fontFaceCss}</style>
 
           <div className="max-h-[420px] space-y-4 overflow-y-auto custom-scrollbar pr-1 -mr-1">
             {selectedVersesContent.map((verse) => {
@@ -369,12 +401,15 @@ export default function Step1SurahVerse({
               const arabicText = isQcf1 ? (verse.textV1 ?? verse.text) : verse.text;
               const arabicPage = isQcf1 ? (verse.pageV1 ?? verse.page) : verse.page;
               const arabicStyle = { fontFamily: arabicPage ? `'${isQcf1 ? "pv1-" : "p"}${arabicPage}'` : undefined };
-              const translationFontFamily =
-                translationFont === "custom"
-                  ? customTranslationFontUrl
-                    ? `'${CUSTOM_TRANSLATION_FONT_FAMILY}', Arial, sans-serif`
-                    : undefined
-                  : `'${TRANSLATION_FONT_OPTIONS[translationFont].family}', Arial, sans-serif`;
+              // Same resolution as the real video (QuranVideo.tsx): the
+              // chosen font if it covers the translation's script, else that
+              // script's default.
+              const translationScript = translationRtl ? "ar" : "tr";
+              const translationFontFamily = translationFontStack(
+                resolveTranslationFont(translationFont, translationScript, hasCustomFont),
+                translationScript,
+                CUSTOM_TRANSLATION_FONT_FAMILY
+              );
 
               return (
                 <div
@@ -388,10 +423,10 @@ export default function Step1SurahVerse({
                     {lowConfidenceAyahs.has(verse.id) && (
                       <span
                         className="flex items-center gap-1 rounded-full bg-accent-amber-bg/60 border border-accent-amber/30 px-2 py-0.5 text-[11px] font-medium text-accent-amber"
-                        title={isArabic ? "لم يصل الذكاء الاصطناعي لنتيجة موثوقة لهذه الآية — يُنصح بمراجعة التقسيم في نافذة التوقيت" : "Yapay zeka bu ayet için güvenilir bir sonuca ulaşamadı — bölümlemeyi zamanlama penceresinde kontrol etmeniz önerilir"}
+                        title={tx("لم يصل الذكاء الاصطناعي لنتيجة موثوقة لهذه الآية — يُنصح بمراجعة التقسيم في نافذة التوقيت", "Yapay zeka bu ayet için güvenilir bir sonuca ulaşamadı — bölümlemeyi zamanlama penceresinde kontrol etmeniz önerilir", "The AI couldn't reach a reliable result for this ayah — we recommend checking the segmentation in the timing window")}
                       >
                         <ExclamationTriangleIcon className="w-3.5 h-3.5" />
-                        {isArabic ? "يحتاج مراجعة" : "Kontrol gerekli"}
+                        {tx("يحتاج مراجعة", "Kontrol gerekli", "Needs review")}
                       </span>
                     )}
                   </div>
@@ -417,7 +452,7 @@ export default function Step1SurahVerse({
                   </p>
                   {verse.translation && (
                     <p
-                      dir={isArabic ? "rtl" : "ltr"}
+                      dir={translationRtl ? "rtl" : "ltr"}
                       className="border-t border-border/40 pt-2 text-xs sm:text-sm leading-relaxed text-primary break-words"
                       style={{ fontFamily: translationFontFamily }}
                     >

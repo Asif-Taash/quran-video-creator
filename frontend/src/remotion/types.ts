@@ -4,28 +4,33 @@ export type VerseMapping = {
   // Count of REAL Uthmani words (not QCF glyph tokens) this segment covers —
   // indexes directly into wordTimings, which is aligned the same way.
   word_count: number;
-  // Manual timing override set via the waveform-based SegmentTimingEditor —
-  // when present, takes absolute priority over any wordTimings/word_count-
-  // derived timing for this segment. Verse-relative milliseconds (same
-  // coordinate space wordTimings ends up in after render/route.ts's
-  // normalization), NOT raw prepared-audio-clip-relative milliseconds.
+  // A boundary the user moved in the waveform-based SegmentTimingEditor --
+  // overrides the word-derived edge on its own side only (see
+  // remotion/timing.ts for the rule). As saved, both are on the untrimmed
+  // prepared clip's timeline and set together; in the props QuranVideo.tsx
+  // receives they are verse-relative milliseconds (same space as
+  // wordTimings), and only the edges that differ from the words remain.
   start_ms?: number;
   end_ms?: number;
   // Explicit, already-resolved Arabic text for this segment, straight from
-  // SegmentTimingEditor. Only trusted VERBATIM for a "repeat" segment (see
-  // repeat_of_part below) -- that's the one case cumulative word_count math
-  // can't reconstruct at all (a repeat intentionally re-displays an EARLIER
-  // segment's exact words, not the "next" sequential range). For every
-  // OTHER segment, QuranVideo.tsx/buildTimingEditorSegments deliberately
-  // IGNORE this and always re-derive the word range live instead, even
-  // though it's saved here too -- this text is frozen in whichever QCF
-  // encoding was selected at save time, so trusting it verbatim after a
-  // LATER arabicFont switch rendered garbled glyphs (right encoding for the
-  // font it was saved under, wrong one for whatever's picked now), reported
-  // as "the old font's ayah shows garbage after switching to the new one,
-  // even inside the timing editor". Re-deriving live has no such problem --
-  // it always slices whichever of verse.text/textV1 matches the CURRENTLY
-  // selected font.
+  // SegmentTimingEditor -- saved for reference/debugging, but frozen in
+  // whichever QCF encoding was selected at save time, so trusting it
+  // verbatim after a LATER arabicFont switch renders garbled glyphs (right
+  // encoding for the font it was saved under, wrong one for whatever's
+  // picked now). Both QuranVideo.tsx and VideoCreatorForm.tsx's
+  // buildTimingEditorSegments deliberately IGNORE this for every segment,
+  // including "repeat" ones (repeat_of_part below) -- a repeat used to be
+  // the one exception that still trusted this snapshot, since it re-
+  // displays an EARLIER segment's exact words rather than the "next"
+  // sequential range the cumulative word_count math assumes, but both now
+  // instead re-derive live from the SOURCE part's own word range (the one
+  // repeat_of_part points at), through the exact same real-word -> QCF
+  // glyph-token slicing every other segment already used -- reported as
+  // "a repeated/duplicated segment shows garbage after switching to the
+  // old font", fixed the same way the original non-repeat version of this
+  // bug was. Only falls back to this frozen field (then to the repeat's
+  // OWN, generally wrong, range) if the source part no longer exists --
+  // e.g. the segmentation was re-split/merged since the repeat was made.
   arabic_text?: string;
   // Which EARLIER segment (1-based `part` number, same ayah) this one is a
   // "repeat" of -- see arabic_text above. Set once by
@@ -33,6 +38,10 @@ export type VerseMapping = {
   // own repeatOfId, translated into a part number stable across the
   // session-local ids SegmentTimingEditor regenerates on every reopen.
   repeat_of_part?: number;
+  // Not shown in this appearance of the ayah: when the reciter goes back to
+  // an ayah after the next one began, the ayah appears again and each
+  // appearance shows only its own chunks (set by remotion/timing.ts).
+  hidden?: boolean;
   // Whether this segment displays the ayah number before its translation.
   // Tied to the segment's own content/origin (set once when the segment is
   // first created, then carried through duplicate/split/merge in
@@ -85,6 +94,9 @@ export type QuranVerse = {
   pageV1?: number;
   mappings?: VerseMapping[];
   wordTimings?: WordTiming[];
+  // Every later reading of a word (the reciter went back), on wordTimings'
+  // timeline: `i` indexes wordTimings. Only the word highlight uses them.
+  wordRepeats?: { i: number; start: number; end: number }[];
   // Per-real-word count of QCF v2 glyph tokens in `text` (same order as
   // wordTimings). Lets a real-word range from `mappings` be converted into
   // the glyph-token range needed to slice `text` for display. Deliberately
@@ -92,8 +104,21 @@ export type QuranVerse = {
   // existing 1:1 real-word assumption for that case (same tolerant path
   // already used whenever this is unavailable for v2 too).
   puaTokenCounts?: number[];
+  // The same per-real-word glyph-token counts, but sent for EVERY verse
+  // (not just split ones) while word highlighting is on, and used ONLY to
+  // map the word being recited onto the glyphs on screen. Kept apart from
+  // puaTokenCounts because that one also decides how a verse's text is
+  // sliced, and setting it on an unsplit verse would change its layout
+  // (the ayah-number glyph would stop being fused onto the last word).
+  highlightGlyphCounts?: number[];
   absoluteStartFrame?: number;
 };
+
+export const DEFAULT_BACKGROUND_DIM = 0.2;
+export const WORD_HIGHLIGHT_COLORS = ["#F2C14E", "#6EE7B7", "#7DD3FC", "#FDA4AF"] as const;
+export const DEFAULT_WORD_HIGHLIGHT_COLOR = WORD_HIGHLIGHT_COLORS[0];
+export const BACKGROUND_DIM_MAX = 0.85;
+export const BACKGROUND_BLUR_MAX = 24;
 
 export type AspectRatio = "portrait" | "landscape" | "square";
 
@@ -180,6 +205,15 @@ export const QUALITY_TIER_OPTIONS: { value: QualityTier; label: string }[] = [
 export type QuranVideoProps = {
   surahNameArabic: string;
   surahNameTransliteration: string;
+  // The Latin line under the Arabic surah name, already in the video's
+  // language ("YÛNUS SURESİ", "SURAH YUNUS"); "" hides it (an Arabic video,
+  // where the Arabic name above already says it). Omitted on projects saved
+  // before this existed, which keep the original Turkish line.
+  surahTitle?: string;
+  // An Arabic video's second header line: the reciter's name, in Arabic,
+  // where other languages show surahTitle (which is "" for Arabic). Absent
+  // or "" keeps the Arabic surah name alone and centered.
+  reciterName?: string;
   backgroundImagePath: string | null;
   // When set, takes priority over backgroundImagePath and is rendered
   // muted/looped instead (see QuranVideo.tsx). backgroundVideoDurationInFrames
@@ -189,6 +223,21 @@ export type QuranVideoProps = {
   // than the audio-driven total duration.
   backgroundVideoPath?: string | null;
   backgroundVideoDurationInFrames?: number | null;
+  // How the background image/video is shown, set in Step2Background.tsx.
+  // backgroundDim darkens it (0 = untouched, BACKGROUND_DIM_MAX = nearly
+  // black) and defaults to 0.2 -- the original fixed 0.8 opacity over black,
+  // so older drafts/renders look exactly as before. backgroundBlur is a CSS
+  // blur radius in composition pixels (renderMedia's quality `scale` grows
+  // it with everything else). backgroundZoom slowly pushes in over the
+  // whole video (a Ken Burns move) -- mostly for still images.
+  backgroundDim?: number;
+  backgroundBlur?: number;
+  backgroundZoom?: boolean;
+  // Draws the Arabic word currently being recited in wordHighlightColor
+  // (needs aligned word timing, i.e. a built-in reciter or an aligned
+  // upload). Off by default, so older drafts/renders look as before.
+  wordHighlight?: boolean;
+  wordHighlightColor?: string;
   globalAudioPath?: string | null;
   isAudioExtracted?: boolean;
   verses: QuranVerse[];
@@ -225,6 +274,11 @@ export type QuranVideoProps = {
   // way background images/custom audio already are, so it works both live
   // in the browser preview and during the actual server-side render.
   customTranslationFontUrl?: string;
+  // The selected translation is right-to-left (an Arabic tafsir, see
+  // translationOptions.ts). Its text then renders RTL, in translationFont if
+  // that's one of the Arabic fonts (see TRANSLATION_FONT_OPTIONS' languages),
+  // otherwise in the default Arabic one.
+  translationRtl?: boolean;
   // Which Arabic verse script/font to use -- one of ARABIC_FONT_OPTIONS'
   // keys below. Defaults to "qcf2" (the original, only-ever font -- 2013
   // King Fahd Complex print) everywhere it's read, same reasoning as
@@ -232,18 +286,67 @@ export type QuranVideoProps = {
   arabicFont?: ArabicFontKey;
 };
 
-// The full set of translation fonts QuranVideo.tsx knows how to render --
-// each self-hosted the same way as every other font in this project (see
-// PageFontStyles), all confirmed to cover the Turkish alphabet (Ç ç Ğ ğ İ ı
-// Ö ö Ş ş Ü ü) since the translation text is Turkish. Shared here (not just
-// declared inline in QuranVideo.tsx) so VideoPreviewPlayer.tsx's font
-// picker can offer exactly these choices without duplicating the list.
+// Languages a translation font can serve -- the same set as
+// translationOptions.ts' TranslationLanguage (kept local so this
+// Remotion-side module doesn't import app code).
+export type TranslationFontLanguage = "tr" | "en" | "ar";
+
+// The full set of translation fonts QuranVideo.tsx knows how to render, each
+// self-hosted under public/ (`file`) and declared by PageFontStyles /
+// Step1SurahVerse.tsx. `languages` is which translation languages the font's
+// glyphs actually cover (checked with fc-query against Turkish letters
+// Ç ç Ğ ğ İ ı Ö ö Ş ş Ü ü, basic Latin, and Arabic letters/digits/
+// punctuation), so the font picker only offers fonts that can render the
+// selected translation. The Latin fonts are Turkish-alphabet-scoped WOFF2
+// subsets (enough for English too); the Arabic ones are SIL OFL 1.1 fonts
+// from the Google Fonts repository. `weight` is the CSS font-weight value,
+// a range for variable fonts.
 export const TRANSLATION_FONT_OPTIONS = {
-  aileron: { label: "Aileron", family: "Aileron Thin" },
-  inter: { label: "Inter", family: "Inter" },
-  notosans: { label: "Noto Sans", family: "Noto Sans" },
-  poppins: { label: "Poppins", family: "Poppins" },
+  aileron: { label: "Aileron", family: "Aileron Thin", file: "fonts/video-fonts/Aileron-Thin.otf", format: "opentype", weight: "300", languages: ["tr", "en"] },
+  inter: { label: "Inter", family: "Inter", file: "fonts/video-fonts/Inter-Regular.woff2", format: "woff2", weight: "400", languages: ["tr", "en"] },
+  notosans: { label: "Noto Sans", family: "Noto Sans", file: "fonts/video-fonts/NotoSans-Regular.woff2", format: "woff2", weight: "400", languages: ["tr", "en"] },
+  poppins: { label: "Poppins", family: "Poppins", file: "fonts/video-fonts/Poppins-Regular.woff2", format: "woff2", weight: "400", languages: ["tr", "en"] },
+  naskh: { label: "Noto Naskh Arabic", family: "Noto Naskh Arabic", file: "fonts/video-fonts/NotoNaskhArabic.ttf", format: "truetype", weight: "400 700", languages: ["ar"] },
+  amiri: { label: "Amiri", family: "Amiri", file: "fonts/video-fonts/Amiri-Regular.ttf", format: "truetype", weight: "400", languages: ["ar"] },
+  cairo: { label: "Cairo", family: "Cairo", file: "fonts/video-fonts/Cairo.ttf", format: "truetype", weight: "200 1000", languages: ["ar"] },
+  tajawal: { label: "Tajawal", family: "Tajawal", file: "fonts/video-fonts/Tajawal-Regular.ttf", format: "truetype", weight: "400", languages: ["ar"] },
 } as const;
+
+export const DEFAULT_TRANSLATION_FONT: Record<TranslationFontLanguage, TranslationFontKey> = {
+  tr: "aileron",
+  en: "aileron",
+  ar: "naskh",
+};
+
+export function translationFontSupports(font: TranslationFontKey, language: TranslationFontLanguage): boolean {
+  return (TRANSLATION_FONT_OPTIONS[font].languages as readonly TranslationFontLanguage[]).includes(language);
+}
+
+// The font a translation in `language` actually renders in: the chosen one
+// when it covers that language's letters, otherwise the language's default
+// (e.g. a project saved with a Latin font before switching to an Arabic
+// tafsir). A custom upload is trusted as-is -- unless no file has been
+// uploaded yet, in which case there's nothing to render with.
+export function resolveTranslationFont(
+  font: TranslationFontKey | "custom",
+  language: TranslationFontLanguage,
+  hasCustomFile: boolean
+): TranslationFontKey | "custom" {
+  if (font === "custom") return hasCustomFile ? "custom" : DEFAULT_TRANSLATION_FONT[language];
+  return translationFontSupports(font, language) ? font : DEFAULT_TRANSLATION_FONT[language];
+}
+
+// CSS font-family stack for a resolved translation font, with a fallback in
+// the same script (an Arabic font must never fall back to a Latin one).
+export function translationFontStack(
+  font: TranslationFontKey | "custom",
+  language: TranslationFontLanguage,
+  customFamily: string
+): string {
+  const fallback = language === "ar" ? `${TRANSLATION_FONT_OPTIONS.naskh.family}, serif` : "Arial, sans-serif";
+  const family = font === "custom" ? customFamily : TRANSLATION_FONT_OPTIONS[font].family;
+  return `${family}, ${fallback}`;
+}
 
 // The two Arabic verse scripts QuranVideo.tsx can render -- "qcf2" is the
 // original, only-ever one (2013 King Fahd Complex print, PUA text in
@@ -259,8 +362,8 @@ export const TRANSLATION_FONT_OPTIONS = {
 // next to the default -- applied everywhere the verse font-size is set
 // (QuranVideo.tsx's VERSE_FONT_SIZE and Step1SurahVerse.tsx's preview box).
 export const ARABIC_FONT_OPTIONS = {
-  qcf2: { labelAr: "الخط الجديد", labelTr: "Yeni Yazı Tipi (2013)", sizeMultiplier: 1 },
-  qcf1: { labelAr: "الخط القديم", labelTr: "Eski Yazı Tipi (2005)", sizeMultiplier: 1.15 },
+  qcf2: { labelAr: "الخط الجديد", labelTr: "Yeni Yazı Tipi (2013)", labelEn: "New Script (2013)", sizeMultiplier: 1 },
+  qcf1: { labelAr: "الخط القديم", labelTr: "Eski Yazı Tipi (2005)", labelEn: "Old Script (2005)", sizeMultiplier: 1.15 },
 } as const;
 
 export type ArabicFontKey = keyof typeof ARABIC_FONT_OPTIONS;

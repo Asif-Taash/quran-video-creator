@@ -2,6 +2,7 @@
 
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
 
+import { useT } from "@/lib/LanguageContext";
 export interface WizardStepMeta {
   label: string;
   optional?: boolean;
@@ -36,6 +37,7 @@ export default function WizardShell({
   headerExtra,
   hideFooterNav,
 }: WizardShellProps) {
+  const tx = useT();
   const currentMeta = steps[currentStep - 1];
 
   return (
@@ -114,7 +116,7 @@ export default function WizardShell({
             ) : (
               <>
                 <ChevronLeftIcon className="h-4 w-4" />
-                {"Geri"}
+                {tx("رجوع", "Geri", "Back")}
               </>
             )}
           </button>
@@ -126,7 +128,7 @@ export default function WizardShell({
                 onClick={onSkip}
                 className="rounded-lg px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-surface"
               >
-                {isArabic ? "تخطي" : "Atla"}
+                {tx("تخطي", "Atla", "Skip")}
               </button>
             )}
             <button
@@ -142,7 +144,7 @@ export default function WizardShell({
                 </>
               ) : (
                 <>
-                  {"İleri"}
+                  {tx("التالي", "İleri", "Next")}
                   <ChevronRightIcon className="h-4 w-4" />
                 </>
               )}

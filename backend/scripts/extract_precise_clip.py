@@ -10,7 +10,10 @@ import subprocess
 from pathlib import Path
 import re
 import threading
+import time
 import uuid
+
+import job_control
 
 # Configure Logging
 logging.basicConfig(
@@ -108,7 +111,27 @@ RECITERS_MP3QURAN = {
     "mishary": "https://server8.mp3quran.net/afs/{surah:03d}.mp3",
     "yasser": "https://server11.mp3quran.net/yasser/{surah:03d}.mp3",
     "mousa": "https://server14.mp3quran.net/mousa/Rewayat-Hafs-A-n-Assem/{surah:03d}.mp3",
-    "raad_alkurdi": "https://server6.mp3quran.net/kurdi/{surah:03d}.mp3"
+    "raad_alkurdi": "https://server6.mp3quran.net/kurdi/{surah:03d}.mp3",
+    # Each folder below is exactly the recording mp3quran's ayat_timing API
+    # times for the read id in RECITERS_TIMING_ID (its `folder_url`), so the
+    # approximate analysis window always matches the audio being cut.
+    "sudais": "https://cdn.mp3quran.net/audio/abdulrahman-sudais/r1/{surah:03d}.mp3",
+    "shuraim": "https://cdn.mp3quran.net/audio/saud-shuraim/r1/{surah:03d}.mp3",
+    "ghamdi": "https://cdn.mp3quran.net/audio/saad-ghamdi/r1/{surah:03d}.mp3",
+    "shatri": "https://cdn.mp3quran.net/audio/abubakr-shatri/r1/{surah:03d}.mp3",
+    "husary": "https://cdn.mp3quran.net/audio/mahmoud-husary/r1/{surah:03d}.mp3",
+    "minshawi": "https://cdn.mp3quran.net/audio/muhammad-minshawi/r1/{surah:03d}.mp3",
+    "abdulbasit": "https://cdn.mp3quran.net/audio/abdulbasit-abdulsamad/r3/{surah:03d}.mp3",
+    "qatami": "https://cdn.mp3quran.net/audio/nasser-qatami/r1/{surah:03d}.mp3",
+    "abkar": "https://cdn.mp3quran.net/audio/idrees-abkar/r1/{surah:03d}.mp3",
+    "fares_abbad": "https://cdn.mp3quran.net/audio/fares-abbad/r1/{surah:03d}.mp3",
+    "jalil": "https://cdn.mp3quran.net/audio/khalid-jalil/r1/{surah:03d}.mp3",
+    "ali_jaber": "https://cdn.mp3quran.net/audio/ali-jaber/r1/{surah:03d}.mp3",
+    "ayyub": "https://cdn.mp3quran.net/audio/muhammad-ayyub/r1/{surah:03d}.mp3",
+    "juhani": "https://cdn.mp3quran.net/audio/abdullah-juhani/r1/{surah:03d}.mp3",
+    "baleela": "https://cdn.mp3quran.net/audio/bandar-baleela/r1/{surah:03d}.mp3",
+    "salimi": "https://cdn.mp3quran.net/audio/mansour-salimi/r1/{surah:03d}.mp3",
+    "nufais": "https://cdn.mp3quran.net/audio/ahmad-nufais/r1/{surah:03d}.mp3",
 }
 
 RECITERS_TIMING_ID = {
@@ -117,8 +140,60 @@ RECITERS_TIMING_ID = {
     "mishary": 123,
     "yasser": 92,
     "mousa": 243,
-    "raad_alkurdi": 221
+    "raad_alkurdi": 221,
+    "sudais": 54,
+    "shuraim": 31,
+    "ghamdi": 30,
+    "shatri": 4,
+    "husary": 118,
+    "minshawi": 112,
+    "abdulbasit": 53,
+    "qatami": 86,
+    "abkar": 12,
+    "fares_abbad": 81,
+    "jalil": 20,
+    "ali_jaber": 76,
+    "ayyub": 109,
+    "juhani": 62,
+    "baleela": 217,
+    "salimi": 245,
+    "nufais": 259,
 }
+
+# Backup for when mp3quran can't be reached: the same reciter's complete
+# surah recordings (whole surahs, never per-ayah files) -- each set checked
+# to hold all 114 surahs. These can be DIFFERENT recordings from mp3quran's,
+# so mp3quran's ayat_timing must never be applied to one (see
+# is_backup_recording). Most are on QuranicAudio; mousa isn't, so his comes
+# from archive.org (slower, but complete). No full-surah backup was found
+# for jalil, salimi or nufais.
+_QURANICAUDIO = "https://download.quranicaudio.com/quran/{}/{{surah:03d}}.mp3"
+RECITERS_BACKUP = {
+    "ajmi": _QURANICAUDIO.format("ahmed_ibn_3ali_al-3ajamy"),
+    # Not maher_256: that set is missing surah 5.
+    "maher": _QURANICAUDIO.format("maher_almu3aiqly/year1440"),
+    "mishary": _QURANICAUDIO.format("mishaari_raashid_al_3afaasee"),
+    "yasser": _QURANICAUDIO.format("yasser_ad-dussary"),
+    "mousa": "https://archive.org/download/AbdullahAlmousa/{surah:03d}.mp3",
+    "raad_alkurdi": _QURANICAUDIO.format("raad_mohammad_al_kurdi/mp3"),
+    "sudais": _QURANICAUDIO.format("abdurrahmaan_as-sudays"),
+    "shuraim": _QURANICAUDIO.format("sa3ood_al-shuraym"),
+    "ghamdi": _QURANICAUDIO.format("sa3d_al-ghaamidi/complete"),
+    "shatri": _QURANICAUDIO.format("abu_bakr_ash-shaatree"),
+    "husary": _QURANICAUDIO.format("mahmood_khaleel_al-husaree"),
+    "minshawi": _QURANICAUDIO.format("muhammad_siddeeq_al-minshaawee"),
+    "abdulbasit": _QURANICAUDIO.format("abdul_basit_murattal"),
+    "qatami": _QURANICAUDIO.format("nasser_bin_ali_alqatami"),
+    "abkar": _QURANICAUDIO.format("idrees_abkar"),
+    "fares_abbad": _QURANICAUDIO.format("fares"),
+    "ali_jaber": _QURANICAUDIO.format("ali_jaber"),
+    "ayyub": _QURANICAUDIO.format("muhammad_ayyoob"),
+    "juhani": _QURANICAUDIO.format("abdullaah_3awwaad_al-juhaynee"),
+    "baleela": _QURANICAUDIO.format("bandar_baleela/complete"),
+}
+# A backup copy is cached under its own name (still matching the
+# "*_full.mp3" eviction glob), so it's never mistaken for mp3quran's file.
+BACKUP_CACHE_SUFFIX = "_backup_full.mp3"
 
 HUROOF_MUQATTAAH = {
     "الم": "ألف لام ميم",
@@ -142,47 +217,138 @@ def clean_arabic(text):
     text = re.sub(r'[\u0617-\u061A\u064B-\u0652\u06D6-\u06DC\u06DF-\u06E8\u06EA-\u06ED]', '', text)
     return text.strip()
 
-def download_full_surah(reciter_id, surah_id):
-    url = RECITERS_MP3QURAN[reciter_id].format(surah=surah_id)
+_surah_download_locks = {}
+_surah_download_locks_guard = threading.Lock()
+
+
+def _surah_download_lock(reciter_id, surah_id):
+    with _surah_download_locks_guard:
+        return _surah_download_locks.setdefault((reciter_id, surah_id), threading.Lock())
+
+
+def is_backup_recording(path):
+    """True for a backup-source file (see RECITERS_BACKUP)."""
+    return Path(path).name.endswith(BACKUP_CACHE_SUFFIX)
+
+
+def _download_surah_file(url, cache_file, timeout, deadline_s, source):
+    """Download `url`, strip its cover art/tags into `cache_file`. Raises on
+    any failure -- including a transfer that can't finish within
+    `deadline_s` (urllib's `timeout` only bounds each single socket
+    operation, so a trickling server could otherwise hold the request for
+    many minutes) and a body shorter than its Content-Length. Only a
+    complete file ever lands at `cache_file`."""
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    tag = uuid.uuid4().hex[:8]
+    temp_file = WORK_DIR / f"temp_raw_{cache_file.stem}_{tag}.mp3"
+    # Same directory as cache_file so os.replace is atomic; the name doesn't
+    # match the "*_full.mp3" cache glob.
+    temp_out = SURAH_CACHE_DIR / f".{cache_file.stem}_{tag}.part.mp3"
+    started = time.monotonic()
+    job_control.report("download", source=source)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response, open(temp_file, 'wb') as f:
+            expected = int(response.headers.get("Content-Length") or 0)
+            body_started = time.monotonic()
+            received = 0
+            while True:
+                # Small reads, so the checks below run every few seconds
+                # even on a slow server.
+                chunk = response.read(1 << 16)
+                if not chunk:
+                    break
+                f.write(chunk)
+                received += len(chunk)
+                job_control.check_cancelled()
+                if expected:
+                    job_control.report("download", percent=100 * received / expected)
+                now = time.monotonic()
+                if now - started > deadline_s:
+                    raise TimeoutError(f"download still running after {deadline_s}s")
+                # A server trickling data (seen from mp3quran: 4 MB, then a
+                # few KB/s) is given up on as soon as its own speed shows it
+                # can't finish in time, rather than only at the deadline.
+                if expected and now - body_started > 20:
+                    speed = received / (now - body_started)
+                    if (now - started) + (expected - received) / speed > deadline_s:
+                        raise TimeoutError(
+                            f"too slow to finish within {deadline_s}s "
+                            f"({speed / 1024:.0f} KB/s for {expected / (1 << 20):.0f} MB)")
+        if expected and received != expected:
+            raise IOError(f"incomplete download ({received} of {expected} bytes)")
+
+        logger.info("Sanitizing audio file (stripping cover art and junk data)...")
+        try:
+            subprocess.run([
+                "ffmpeg", "-y",
+                "-i", str(temp_file),
+                "-vn",                  # Strip video (cover art)
+                "-map", "0:a",          # Only map audio stream explicitly
+                "-c:a", "copy",         # Copy audio stream without re-encoding
+                "-map_metadata", "-1",  # Strip metadata (tags, covers)
+                str(temp_out)
+            ], check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to sanitize audio: {e.output.decode(errors='ignore')}")
+            raise
+        os.replace(temp_out, cache_file)
+    finally:
+        temp_file.unlink(missing_ok=True)
+        temp_out.unlink(missing_ok=True)
+
+
+def download_full_surah(reciter_id, surah_id, allow_backup=False):
+    """Cached path of the reciter's whole-surah mp3 from mp3quran -- or, with
+    allow_backup, from its RECITERS_BACKUP source when mp3quran can't be
+    reached. Callers passing allow_backup must check is_backup_recording()
+    on the result before using any mp3quran timing for it."""
     # Use persistent cache directory instead of temp
     cache_file = SURAH_CACHE_DIR / f"{reciter_id}_{surah_id:03d}_full.mp3"
-    
-    if cache_file.exists():
-        logger.info(f"Full Surah {surah_id} for {reciter_id} found in cache.")
-        # Touch the file to update access time for LRU eviction
-        cache_file.touch()
-        return cache_file
+    backup_template = RECITERS_BACKUP.get(reciter_id) if allow_backup else None
+    backup_file = SURAH_CACHE_DIR / f"{reciter_id}_{surah_id:03d}{BACKUP_CACHE_SUFFIX}"
 
-    logger.info(f"Downloading full Surah {surah_id} from {url}...")
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    
-    temp_file = WORK_DIR / f"temp_raw_{reciter_id}_{surah_id:03d}.mp3"
-    with urllib.request.urlopen(req, timeout=120) as response:
-        with open(temp_file, 'wb') as f:
-            f.write(response.read())
-            
-    logger.info("Sanitizing audio file (stripping cover art and junk data)...")
+    # One download per surah at a time: a retry sent while the first attempt
+    # is still downloading waits for it (then finds the cache) instead of
+    # downloading the same file again alongside it -- cancellably, so an
+    # abandoned request doesn't sit in this queue either.
+    lock = _surah_download_lock(reciter_id, surah_id)
+    while not lock.acquire(timeout=1):
+        job_control.report("waiting")
+        job_control.check_cancelled()
     try:
-        subprocess.run([
-            "ffmpeg", "-y",
-            "-i", str(temp_file),
-            "-vn",                  # Strip video (cover art)
-            "-map", "0:a",          # Only map audio stream explicitly
-            "-c:a", "copy",         # Copy audio stream without re-encoding
-            "-map_metadata", "-1",  # Strip metadata (tags, covers)
-            str(cache_file)
-        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to sanitize audio: {e.output.decode(errors='ignore')}")
-        if temp_file.exists(): temp_file.unlink()
-        raise e
-        
-    if temp_file.exists():
-        temp_file.unlink()
-    
+        for cached in ([cache_file, backup_file] if backup_template else [cache_file]):
+            if cached.exists():
+                logger.info(f"Full Surah {surah_id} for {reciter_id} found in cache"
+                            f"{' (backup recording)' if cached == backup_file else ''}.")
+                # Touch the file to update access time for LRU eviction
+                cached.touch()
+                return cached
+
+        url = RECITERS_MP3QURAN[reciter_id].format(surah=surah_id)
+        logger.info(f"Downloading full Surah {surah_id} from {url}...")
+        try:
+            # With a backup to fall back on, give up on a struggling mp3quran
+            # quickly rather than after minutes.
+            if backup_template:
+                _download_surah_file(url, cache_file, timeout=20, deadline_s=240, source="mp3quran")
+            else:
+                _download_surah_file(url, cache_file, timeout=120, deadline_s=1800, source="mp3quran")
+            result = cache_file
+        except job_control.Cancelled:
+            raise
+        except Exception as e:
+            if not backup_template:
+                raise
+            backup_url = backup_template.format(surah=surah_id)
+            logger.warning(f"mp3quran download failed ({e}); downloading the backup recording {backup_url}...")
+            _download_surah_file(backup_url, backup_file, timeout=60, deadline_s=1800, source="backup")
+            result = backup_file
+    finally:
+        lock.release()
+
     # Enforce cache size limit
     _enforce_surah_cache_limit()
-    return cache_file
+    return result
 
 def fetch_surah_texts(surah_id):
     # Check in-memory cache first

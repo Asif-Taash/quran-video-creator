@@ -22,6 +22,7 @@ import {
 import Spinner from "@/components/ui/Spinner";
 import type { ArabicFontKey } from "@/remotion/types";
 
+import { useT } from "@/lib/LanguageContext";
 // qcf1 ("الخط القديم") is the size users already find just right here; qcf2
 // ("الخط الجديد") renders visibly BIGGER glyphs at the same font-size -- the
 // exact inverse of why QuranVideo.tsx scales qcf1 UP by 1.15x for the real
@@ -77,6 +78,22 @@ export interface SegmentTimingInput {
   // duplicated first-chunk segment keep its ayah number no matter where it
   // lands in the timeline.
   isFirstOfAyah?: boolean;
+  // Index (among its ayah's REAL Uthmani words) of this segment's first
+  // word -- what lets split/word-shift below look up the real timing of the
+  // words around a new boundary (see the ayahWords prop). Kept in sync by
+  // split/merge; undefined for blank segments and repeats.
+  wordStart?: number;
+}
+
+// Real-word timing for one ayah: `times[i]` is when the reciter starts/ends
+// real word i, in seconds on `audioUrl`'s timeline (the same one segments'
+// startSec/endSec arrive in). A waqf sign is its own "word" with no sound,
+// so its entry has end <= start. `glyphCounts[i]` is how many whitespace
+// tokens of arabicText real word i renders as (QCF glyph text isn't 1:1
+// with real words); omitted when unknown, which is treated as 1 per word.
+export interface AyahWordTiming {
+  times: { start: number; end: number }[];
+  glyphCounts?: number[];
 }
 
 export interface SegmentTimingResult {
@@ -133,16 +150,12 @@ interface SegmentTimingEditorProps {
   // instead of the original (which otherwise silently "undoes" every cut
   // the instant the panel is closed and reopened -- see trimOffsetRef).
   onPersistTrimmedAudio?: (blob: Blob, sessionOffsetSeconds: number) => void;
-  // Fired on every translation-text keystroke (not just on "حفظ التوقيت"),
-  // so the live video preview updates instantly -- same spirit as
-  // VideoPreviewPlayer's resize boxes, which patch the preview on every
-  // drag tick instead of waiting for an explicit save. Identifies the
-  // target mapping by (ayah, part) rather than this editor's own
-  // session-local segment id, since that id is regenerated fresh every time
-  // the editor reopens and means nothing to the caller. Only ever called
-  // for a REAL segment (never a "repeat" one, which is read-only here and
-  // has no translation_text of its own to edit -- see isRepeat below).
-  onLiveTranslationEdit?: (ayah: number, part: number, text: string) => void;
+  // Fired with the full current result set (the same shape onConfirm gets)
+  // after every edit -- split, word move, boundary drag, repeat, undo/redo,
+  // translation text -- so the caller can show the unsaved state in the
+  // video preview right away. "حفظ التوقيت" (onConfirm) is still what
+  // commits it.
+  onLiveChange?: (results: SegmentTimingResult[]) => void;
   // Which Arabic verse script arabicText/page below are ALREADY resolved
   // against (see VideoCreatorForm's buildTimingEditorSegments/
   // sliceArabicForWordRange, which pick verse.text/.page or
@@ -159,6 +172,12 @@ interface SegmentTimingEditorProps {
   // rules for it are likewise already declared globally by
   // Step1SurahVerse.tsx.
   translationFontFamily: string;
+  // Per-ayah real-word timing (see AyahWordTiming). When present for an
+  // ayah, splitting a segment or shifting a word between two segments puts
+  // the new boundary exactly where the reciter starts the first word of the
+  // later segment, instead of dividing time proportionally by word count.
+  // Ayahs missing from it keep that proportional behaviour.
+  ayahWords?: Record<number, AyahWordTiming>;
 }
 
 // Kept low-opacity (~0.12) so the waveform bars stay clearly visible
@@ -255,6 +274,17 @@ interface EditorSnapshot {
 // conflict/flicker against each other).
 const MIN_REGION_WIDTH = 0.3;
 
+// Moves the boundary shared by segs[i] and segs[i + 1] to `at` (in place),
+// clamped so neither ends up narrower than MIN_REGION_WIDTH.
+function placeBoundary(segs: SegmentTimingInput[], i: number, at: number) {
+  const lo = segs[i].startSec + MIN_REGION_WIDTH;
+  const hi = segs[i + 1].endSec - MIN_REGION_WIDTH;
+  if (lo > hi) return;
+  const b = Math.min(hi, Math.max(lo, at));
+  segs[i] = { ...segs[i], endSec: b };
+  segs[i + 1] = { ...segs[i + 1], startSec: b };
+}
+
 export default function SegmentTimingEditor({
   audioUrl,
   ayahLabel,
@@ -267,10 +297,12 @@ export default function SegmentTimingEditor({
   onToggleSegmentation,
   onTrimOnly,
   onPersistTrimmedAudio,
-  onLiveTranslationEdit,
+  onLiveChange,
   arabicFont,
   translationFontFamily,
+  ayahWords,
 }: SegmentTimingEditorProps) {
+  const tx = useT();
   // See arabicFont's own comment above -- 'p{page}' for qcf2, 'pv1-{page}'
   // for qcf1, matching QuranVideo.tsx/Step1SurahVerse.tsx's own naming.
   const arabicFontFamilyPrefix = arabicFont === "qcf1" ? "pv1-" : "p";
@@ -338,6 +370,41 @@ export default function SegmentTimingEditor({
   // whatever's currently loaded) be converted back to the absolute
   // coordinates the parent/render pipeline actually needs.
   const trimOffsetRef = useRef<number>(0);
+
+  // Read through a ref so the split/word-shift callbacks below always see
+  // the latest timing without being recreated on every parent render (the
+  // caller builds a fresh object each render).
+  const ayahWordsRef = useRef(ayahWords);
+  ayahWordsRef.current = ayahWords;
+
+  // How many arabicText tokens each of seg's real words spans -- null when
+  // that can't be derived reliably (no timing for the ayah, a repeat/blank
+  // segment, or counts that don't add up to the segment's actual tokens),
+  // in which case callers keep the plain one-token-per-word behaviour.
+  const wordGlyphCounts = useCallback((seg: SegmentTimingInput): number[] | null => {
+    const info = ayahWordsRef.current?.[seg.ayah];
+    if (!info || seg.repeatOfId || seg.isBlank || seg.wordStart === undefined) return null;
+    if (seg.wordStart + seg.wordCount > info.times.length) return null;
+    const counts = info.glyphCounts
+      ? info.glyphCounts.slice(seg.wordStart, seg.wordStart + seg.wordCount)
+      : new Array<number>(seg.wordCount).fill(1);
+    const tokens = (seg.arabicText || "").trim().split(/\s+/).filter(Boolean);
+    if (counts.length !== seg.wordCount || counts.reduce((a, b) => a + b, 0) !== tokens.length) return null;
+    return counts;
+  }, []);
+
+  // Waqf signs are words with no sound -- they stay with the word before
+  // them and never open a segment.
+  const isSilentWord = useCallback((ayah: number, wordIdx: number) => {
+    const t = ayahWordsRef.current?.[ayah]?.times[wordIdx];
+    return !t || t.end <= t.start;
+  }, []);
+
+  // When the reciter starts real word `wordIdx` of `ayah`, on the CURRENTLY
+  // loaded audio's timeline (shifted by any client-side cut).
+  const wordOnset = useCallback((ayah: number, wordIdx: number) => {
+    return ayahWordsRef.current![ayah].times[wordIdx].start - trimOffsetRef.current;
+  }, []);
   // Every blob URL created by a cut this session -- NOT revoked as each new
   // cut supersedes the last, because undo/redo (see history refs below)
   // must be able to reload an EARLIER cut's blob at any point, not just the
@@ -381,10 +448,13 @@ export default function SegmentTimingEditor({
     });
   }, []);
 
+  // Set by the first real edit -- see the onLiveChange effect.
+  const hasEditsRef = useRef(false);
   // Records the state as it was BEFORE an edit (== whatever was last
   // committed) onto the undo stack, then advances the committed baseline to
   // `next`. Call this right before applying any edit, structural or drag.
   const commitChange = useCallback((next: SegmentTimingInput[], audioSrc?: string, trimOffset?: number) => {
+    hasEditsRef.current = true;
     undoStackRef.current.push(lastCommittedRef.current);
     redoStackRef.current = [];
     lastCommittedRef.current = {
@@ -456,20 +526,34 @@ export default function SegmentTimingEditor({
     boundaries[0] = trimStart;
     boundaries[n] = trimEnd;
     const span = trimEnd - trimStart;
-    const rawWidths = segs.map((s) => Math.max(0, s.endSec - s.startSec));
-    const rawTotal = rawWidths.reduce((a, b) => a + b, 0);
-    let widths = rawTotal > 0 && span > 0
-      ? rawWidths.map((w) => (w / rawTotal) * span)
-      : new Array(n).fill(span / n);
     const minW = Math.min(MIN_REGION_WIDTH, span / n);
-    widths = widths.map((w) => Math.max(minW, w));
-    const widthSum = widths.reduce((a, b) => a + b, 0);
-    if (widthSum > 0) widths = widths.map((w) => (w / widthSum) * span);
-    let cursor = trimStart;
-    for (let k = 0; k < n; k++) {
-      cursor += widths[k];
-      boundaries[k + 1] = k === n - 1 ? trimEnd : cursor;
+
+    // Each interior boundary sits exactly where the segment after it starts
+    // -- its first word's real onset when derived from word timing, or a
+    // boundary the user already split/shifted/dragged/saved -- so a pause
+    // between two segments stays with the earlier one's text instead of
+    // being smeared across the whole clip. A start that can't be used as-is
+    // (missing, out of order, or closer than minW to its neighbour) is fixed
+    // up locally -- interpolated, then pushed just far enough apart -- and
+    // every other boundary stays exact: the video times an untouched
+    // boundary from the words (remotion/timing.ts), so moving one here that
+    // the user didn't move would make the editor disagree with the video,
+    // and saving would turn the moved positions into real overrides.
+    const starts = segs.slice(1).map((s) => s.startSec);
+    for (let k = 1; k < n; k++) {
+      const s = starts[k - 1];
+      boundaries[k] = Number.isFinite(s) && s > trimStart && s < trimEnd ? s : NaN;
     }
+    for (let k = 1; k < n; k++) {
+      if (Number.isFinite(boundaries[k])) continue;
+      let j = k;
+      while (j < n && !Number.isFinite(boundaries[j])) j++;
+      const lo = boundaries[k - 1];
+      const step = (boundaries[j] - lo) / (j - k + 1);
+      for (let m = k; m < j; m++) boundaries[m] = lo + step * (m - k + 1);
+    }
+    for (let k = 1; k < n; k++) boundaries[k] = Math.max(boundaries[k], boundaries[k - 1] + minW);
+    for (let k = n - 1; k >= 1; k--) boundaries[k] = Math.min(boundaries[k], boundaries[k + 1] - minW);
 
     // Dark, non-interactive shading over whatever falls outside the trim
     // range -- makes it immediately visible (not just theoretically
@@ -721,9 +805,15 @@ export default function SegmentTimingEditor({
     if (lastSyncedIsSegmentedRef.current === isSegmented) return;
     lastSyncedIsSegmentedRef.current = isSegmented;
     if (!isReady) return;
-    commitChange(initialSegments);
-    setLocalSegments(initialSegments);
-    buildRegions(initialSegments);
+    // initialSegments are on `audioUrl`'s timeline; a client-side cut made
+    // this session (applyTrimOnly) has the regions on the cut's own.
+    const offset = trimOffsetRef.current;
+    const segs = offset
+      ? initialSegments.map((seg) => ({ ...seg, startSec: Math.max(0, seg.startSec - offset), endSec: Math.max(0, seg.endSec - offset) }))
+      : initialSegments;
+    commitChange(segs);
+    setLocalSegments(segs);
+    buildRegions(segs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSegmented, isReady]);
 
@@ -791,9 +881,13 @@ export default function SegmentTimingEditor({
     }
   }, [isPlaying, totalDuration]);
 
-  // Splits one segment into two roughly even halves by word count (first
-  // half keeps the larger share on an odd count). Each half's time range is
-  // proportional to how many of the original words it keeps; the shared
+  // Splits one segment into two roughly even halves (first half keeps the
+  // larger share on an odd count). With real word timing for the ayah
+  // (ayahWords), the split falls between two real words -- never just
+  // before a waqf sign, which stays with the word it follows -- and the new
+  // boundary sits exactly where the reciter starts the second half's first
+  // word. Without it, the split is by arabicText token and each half's time
+  // range is proportional to how many tokens it keeps. Either way the shared
   // boundary is still freely draggable afterward like any other. The second
   // half's translation starts EMPTY -- there's no reliable way to guess
   // where in the Turkish sentence the split should fall, so the user
@@ -810,15 +904,34 @@ export default function SegmentTimingEditor({
     if (words.length < 2) return;
     if (end - start < MIN_REGION_WIDTH * 2) return;
 
-    const splitIdx = Math.ceil(words.length / 2);
-    const firstWords = words.slice(0, splitIdx);
-    const secondWords = words.slice(splitIdx);
-
-    const perWordShare = (end - start) / words.length;
-    const boundary = Math.min(
-      end - MIN_REGION_WIDTH,
-      Math.max(start + MIN_REGION_WIDTH, start + perWordShare * splitIdx)
-    );
+    // [tokens in the first half, real words in each half, wordStart of the
+    // second half, preferred boundary time]
+    let split: { tokens: number; firstCount: number; secondCount: number; secondStart?: number; at: number } | null = null;
+    const counts = wordGlyphCounts(seg);
+    if (counts && seg.wordCount >= 2) {
+      let k = Math.ceil(seg.wordCount / 2);
+      while (k < seg.wordCount && isSilentWord(seg.ayah, seg.wordStart! + k)) k++;
+      const tokens = counts.slice(0, k).reduce((a, b) => a + b, 0);
+      if (k < seg.wordCount && tokens > 0 && tokens < words.length) {
+        split = {
+          tokens,
+          firstCount: k,
+          secondCount: seg.wordCount - k,
+          secondStart: seg.wordStart! + k,
+          at: wordOnset(seg.ayah, seg.wordStart! + k),
+        };
+      }
+    }
+    if (!split) {
+      const splitIdx = Math.ceil(words.length / 2);
+      split = {
+        tokens: splitIdx,
+        firstCount: splitIdx,
+        secondCount: words.length - splitIdx,
+        at: start + ((end - start) / words.length) * splitIdx,
+      };
+    }
+    const boundary = Math.min(end - MIN_REGION_WIDTH, Math.max(start + MIN_REGION_WIDTH, split.at));
 
     splitCounterRef.current += 1;
     const suffix = splitCounterRef.current;
@@ -826,16 +939,17 @@ export default function SegmentTimingEditor({
     const first: SegmentTimingInput = {
       ...seg,
       id: `${seg.id}-split${suffix}a`,
-      arabicText: firstWords.join(" "),
-      wordCount: firstWords.length,
+      arabicText: words.slice(0, split.tokens).join(" "),
+      wordCount: split.firstCount,
       startSec: start,
       endSec: boundary,
     };
     const second: SegmentTimingInput = {
       ...seg,
       id: `${seg.id}-split${suffix}b`,
-      arabicText: secondWords.join(" "),
-      wordCount: secondWords.length,
+      arabicText: words.slice(split.tokens).join(" "),
+      wordCount: split.secondCount,
+      wordStart: split.secondStart,
       translation_text: "",
       startSec: boundary,
       endSec: end,
@@ -852,16 +966,44 @@ export default function SegmentTimingEditor({
     commitChange(next);
     setLocalSegments(next);
     buildRegions(next);
-  }, [localSegments, buildRegions, commitChange]);
+  }, [localSegments, buildRegions, commitChange, wordGlyphCounts, isSilentWord, wordOnset]);
+
+  // Plans moving one word across the boundary between two adjacent segments
+  // of the same ayah -- the next segment's first word back into `seg`
+  // (fromEnd false), or seg's last word forward into `nextSeg` (fromEnd
+  // true). With real word timing, "one word" is one REAL word together with
+  // any waqf signs right after it (they belong with it), and `at` is where
+  // the boundary belongs afterwards: the reciter's onset of whichever word
+  // now opens the later segment. `absorbs` says whether the move empties the
+  // giving segment. Without timing: one token, boundary left alone, and
+  // absorbs is null (the caller decides by whether any tokens are left).
+  const planWordShift = useCallback((seg: SegmentTimingInput, nextSeg: SegmentTimingInput, fromEnd: boolean) => {
+    const curCounts = wordGlyphCounts(seg);
+    const nextCounts = wordGlyphCounts(nextSeg);
+    if (!curCounts || !nextCounts || nextSeg.wordStart !== seg.wordStart! + seg.wordCount) {
+      return { tokens: 1, words: 1, at: null as number | null, absorbs: null as boolean | null };
+    }
+    const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+    if (!fromEnd) {
+      let m = 1;
+      while (m < nextSeg.wordCount && isSilentWord(seg.ayah, nextSeg.wordStart! + m)) m++;
+      const absorbs = m >= nextSeg.wordCount;
+      return { tokens: sum(nextCounts.slice(0, m)), words: m, at: absorbs ? null : wordOnset(seg.ayah, nextSeg.wordStart! + m), absorbs };
+    }
+    let j = seg.wordCount - 1;
+    while (j > 0 && isSilentWord(seg.ayah, seg.wordStart! + j)) j--;
+    const absorbs = j === 0;
+    return { tokens: sum(curCounts.slice(j)), words: seg.wordCount - j, at: absorbs ? null : wordOnset(seg.ayah, seg.wordStart! + j), absorbs };
+  }, [wordGlyphCounts, isSilentWord, wordOnset]);
 
   // Pulls the NEXT segment's first word into this one (same ayah only) --
-  // the "+" counterpart of the old word_count adjustment. Only touches
-  // which TEXT belongs to which segment, not the timing boundary between
-  // them (that's still whatever the user drags on the waveform
-  // separately). If the next segment is left with no words at all, it's
-  // absorbed entirely: its translation text merges in and its time range
-  // extends to cover what was the next segment's, since an empty segment
-  // has nowhere else to keep its slot in the timeline.
+  // the "+" counterpart of the old word_count adjustment. With real word
+  // timing the boundary between the two follows the word (see
+  // planWordShift); without it only the TEXT moves and the boundary stays
+  // wherever the user dragged it. If the next segment is left with no words
+  // at all, it's absorbed entirely: its translation text merges in and its
+  // time range extends to cover what was the next segment's, since an empty
+  // segment has nowhere else to keep its slot in the timeline.
   const addWordFromNext = useCallback((id: string) => {
     const idx = localSegments.findIndex((s) => s.id === id);
     if (idx === -1 || idx >= localSegments.length - 1) return;
@@ -872,14 +1014,15 @@ export default function SegmentTimingEditor({
     const nextWords = (nextSeg.arabicText || "").trim().split(/\s+/).filter(Boolean);
     if (nextWords.length === 0) return;
     const curWords = (seg.arabicText || "").trim().split(/\s+/).filter(Boolean);
-    const newCurArabic = [...curWords, nextWords[0]].join(" ");
-    const remainingNextWords = nextWords.slice(1);
+    const shift = planWordShift(seg, nextSeg, false);
+    const newCurArabic = [...curWords, ...nextWords.slice(0, shift.tokens)].join(" ");
+    const remainingNextWords = nextWords.slice(shift.tokens);
 
     const next = localSegments.map((s) => {
       const r = regionsByIdRef.current.get(s.id);
       return r ? { ...s, startSec: r.start, endSec: r.end } : s;
     });
-    if (remainingNextWords.length === 0) {
+    if (shift.absorbs ?? remainingNextWords.length === 0) {
       const nextRegion = regionsByIdRef.current.get(nextSeg.id);
       const end = nextRegion ? nextRegion.end : nextSeg.endSec;
       next.splice(idx, 2, {
@@ -890,17 +1033,24 @@ export default function SegmentTimingEditor({
         endSec: end,
       });
     } else {
-      next[idx] = { ...next[idx], arabicText: newCurArabic, wordCount: seg.wordCount + 1 };
-      next[idx + 1] = { ...next[idx + 1], arabicText: remainingNextWords.join(" "), wordCount: nextSeg.wordCount - 1 };
+      next[idx] = { ...next[idx], arabicText: newCurArabic, wordCount: seg.wordCount + shift.words };
+      next[idx + 1] = {
+        ...next[idx + 1],
+        arabicText: remainingNextWords.join(" "),
+        wordCount: nextSeg.wordCount - shift.words,
+        wordStart: nextSeg.wordStart === undefined ? undefined : nextSeg.wordStart + shift.words,
+      };
+      if (shift.at !== null) placeBoundary(next, idx, shift.at);
     }
     commitChange(next);
     setLocalSegments(next);
     buildRegions(next);
-  }, [localSegments, buildRegions, commitChange]);
+  }, [localSegments, buildRegions, commitChange, planWordShift]);
 
   // Gives this segment's LAST word back to the next one (same ayah only) --
-  // the "-" counterpart, mirroring addWordFromNext. If this segment is left
-  // with no words at all, it's absorbed into the next one entirely (its
+  // the "-" counterpart, mirroring addWordFromNext (including the boundary
+  // following the word when real timing is available). If this segment is
+  // left with no words at all, it's absorbed into the next one entirely (its
   // translation text merges in, prepended since it came first; the next
   // segment's range extends backward to cover what was this segment's).
   const returnWordToNext = useCallback((id: string) => {
@@ -912,16 +1062,17 @@ export default function SegmentTimingEditor({
 
     const curWords = (seg.arabicText || "").trim().split(/\s+/).filter(Boolean);
     if (curWords.length === 0) return;
-    const givenWord = curWords[curWords.length - 1];
-    const remainingCurWords = curWords.slice(0, -1);
+    const shift = planWordShift(seg, nextSeg, true);
+    const givenWords = curWords.slice(curWords.length - shift.tokens);
+    const remainingCurWords = curWords.slice(0, curWords.length - shift.tokens);
     const nextWords = (nextSeg.arabicText || "").trim().split(/\s+/).filter(Boolean);
-    const newNextArabic = [givenWord, ...nextWords].join(" ");
+    const newNextArabic = [...givenWords, ...nextWords].join(" ");
 
     const next = localSegments.map((s) => {
       const r = regionsByIdRef.current.get(s.id);
       return r ? { ...s, startSec: r.start, endSec: r.end } : s;
     });
-    if (remainingCurWords.length === 0) {
+    if (shift.absorbs ?? remainingCurWords.length === 0) {
       const region = regionsByIdRef.current.get(seg.id);
       const start = region ? region.start : seg.startSec;
       next.splice(idx, 2, {
@@ -934,15 +1085,22 @@ export default function SegmentTimingEditor({
         // let that get silently dropped just because the merge spreads from
         // nextSeg's object.
         isFirstOfAyah: seg.isFirstOfAyah || nextSeg.isFirstOfAyah,
+        wordStart: seg.wordStart,
       });
     } else {
-      next[idx] = { ...next[idx], arabicText: remainingCurWords.join(" "), wordCount: seg.wordCount - 1 };
-      next[idx + 1] = { ...next[idx + 1], arabicText: newNextArabic, wordCount: nextSeg.wordCount + 1 };
+      next[idx] = { ...next[idx], arabicText: remainingCurWords.join(" "), wordCount: seg.wordCount - shift.words };
+      next[idx + 1] = {
+        ...next[idx + 1],
+        arabicText: newNextArabic,
+        wordCount: nextSeg.wordCount + shift.words,
+        wordStart: nextSeg.wordStart === undefined ? undefined : nextSeg.wordStart - shift.words,
+      };
+      if (shift.at !== null) placeBoundary(next, idx, shift.at);
     }
     commitChange(next);
     setLocalSegments(next);
     buildRegions(next);
-  }, [localSegments, buildRegions, commitChange]);
+  }, [localSegments, buildRegions, commitChange, planWordShift]);
 
   // Inserts a "repeat" of this segment right after it -- same text/content
   // (mirrored live via resolveContent, never copied), independent timing.
@@ -955,39 +1113,63 @@ export default function SegmentTimingEditor({
     const seg = localSegments[idx];
     if (seg.repeatOfId) return;
 
-    repeatCounterRef.current += 1;
-    const newSeg: SegmentTimingInput = {
-      ...seg,
-      id: `${seg.id}-repeat${repeatCounterRef.current}`,
-      repeatOfId: seg.id,
-    };
-
     const next = localSegments.map((s) => {
       const r = regionsByIdRef.current.get(s.id);
       return r ? { ...s, startSec: r.start, endSec: r.end } : s;
     });
+    // The repeat takes the second half of the original's slot, so no other
+    // boundary moves; the user then drags it to where the reciter repeats.
+    const { startSec, endSec } = next[idx];
+    if (endSec - startSec < MIN_REGION_WIDTH * 2) return;
+    const mid = (startSec + endSec) / 2;
+    repeatCounterRef.current += 1;
+    const newSeg: SegmentTimingInput = {
+      ...next[idx],
+      id: `${seg.id}-repeat${repeatCounterRef.current}`,
+      repeatOfId: seg.id,
+      startSec: mid,
+      endSec,
+    };
+    next[idx] = { ...next[idx], endSec: mid };
     next.splice(idx + 1, 0, newSeg);
     commitChange(next);
     setLocalSegments(next);
     buildRegions(next);
   }, [localSegments, buildRegions, commitChange]);
 
-  // Swaps this segment with its neighbor in the sequence -- the mechanism
-  // for placing a freshly-duplicated repeat at its correct position in the
+  // Swaps a repeat with its neighbor in the sequence -- the mechanism for
+  // placing a freshly-duplicated repeat at its correct position in the
   // timeline (segments are always played back in array order, so moving a
   // repeat past the segments that come between it and its real position in
   // the recording is how the user tells the editor "the reciter said this
-  // again HERE").
+  // again HERE"). Only a repeat moves -- a regular segment's words come in
+  // recitation order (its word range follows from its position) -- and never
+  // ahead of the segment it repeats. It may pass another ayah's segments:
+  // the reciter can go back to an ayah after starting the next, and the
+  // video then shows that ayah again there (see remotion/timing.ts). The two
+  // swap places inside the span they share, each keeping its own length, so
+  // no other boundary moves.
+  const canMoveSegment = (idx: number, direction: -1 | 1) => {
+    const seg = localSegments[idx];
+    const other = localSegments[idx + direction];
+    return !!seg?.repeatOfId && !!other && !(direction === -1 && other.id === seg.repeatOfId);
+  };
   const moveSegment = useCallback((id: string, direction: -1 | 1) => {
     const idx = localSegments.findIndex((s) => s.id === id);
     const targetIdx = idx + direction;
     if (idx === -1 || targetIdx < 0 || targetIdx >= localSegments.length) return;
+    const seg = localSegments[idx];
+    if (!canMoveSegment(idx, direction)) return;
 
     const next = localSegments.map((s) => {
       const r = regionsByIdRef.current.get(s.id);
       return r ? { ...s, startSec: r.start, endSec: r.end } : s;
     });
-    [next[idx], next[targetIdx]] = [next[targetIdx], next[idx]];
+    const lo = Math.min(idx, targetIdx);
+    const [a, b] = [next[lo], next[lo + 1]];
+    const mid = a.startSec + (b.endSec - b.startSec);
+    next[lo] = { ...b, startSec: a.startSec, endSec: mid };
+    next[lo + 1] = { ...a, startSec: mid, endSec: b.endSec };
     commitChange(next);
     setLocalSegments(next);
     buildRegions(next);
@@ -1024,25 +1206,19 @@ export default function SegmentTimingEditor({
   }, [localSegments, buildRegions, commitChange]);
 
   const updateTranslationText = useCallback((id: string, text: string) => {
-    setLocalSegments((prev) => {
-      const seg = prev.find((s) => s.id === id);
-      // Live-patch the actual video preview immediately, same as every
-      // other live control here -- (ayah, part) is this segment's CURRENT
-      // position, which only stays valid until the next structural edit
-      // (split/merge/reorder) is confirmed; onLiveTranslationEdit is purely
-      // a preview nicety, "حفظ التوقيت" remains the authoritative save.
-      if (seg) onLiveTranslationEdit?.(seg.ayah, seg.part, text);
-      return prev.map((s) => (s.id === id ? { ...s, translation_text: text } : s));
-    });
-  }, [onLiveTranslationEdit]);
+    hasEditsRef.current = true;
+    setLocalSegments((prev) => prev.map((s) => (s.id === id ? { ...s, translation_text: text } : s)));
+  }, []);
 
-  const handleConfirm = () => {
-    // Region positions are relative to whatever's CURRENTLY loaded, which
-    // after one or more client-side cuts (see applyTrimOnly) is no longer
-    // the original file -- shift back to original-file-absolute coordinates
-    // via trimOffsetRef, since that's the frame the parent/render pipeline
-    // expects (it re-crops the ORIGINAL prepared audio, not this preview).
-    const results: SegmentTimingResult[] = localSegments.map((seg) => {
+  // Every segment as it stands right now, for onConfirm and onLiveChange
+  // alike. Region positions are relative to whatever's CURRENTLY loaded,
+  // which after one or more client-side cuts (see applyTrimOnly) is no
+  // longer the original file -- shift back to original-file-absolute
+  // coordinates via trimOffsetRef, since that's the frame the parent/render
+  // pipeline expects (it re-crops the ORIGINAL prepared audio, not this
+  // preview).
+  const buildResults = (): SegmentTimingResult[] =>
+    localSegments.map((seg) => {
       const resolved = resolveContent(seg);
       const region = regionsByIdRef.current.get(seg.id);
       const start = (region ? region.start : seg.startSec) + trimOffsetRef.current;
@@ -1060,6 +1236,19 @@ export default function SegmentTimingEditor({
         repeatOfId: seg.repeatOfId,
       };
     });
+
+  // Live preview of the unsaved state: after every committed edit (each
+  // bumps historyVersion -- drags only on release, not per mouse move),
+  // undo/redo and text change. Nothing is sent until the user has actually
+  // changed something, so merely opening the panel never touches the preview.
+  useEffect(() => {
+    if (!isReady || !hasEditsRef.current || !onLiveChange) return;
+    onLiveChange(buildResults());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyVersion, localSegments, isReady]);
+
+  const handleConfirm = () => {
+    const results = buildResults();
 
     // A client-side cut is currently loaded (audioUrl prop is still the
     // ORIGINAL file, but WaveSurfer has a cut blob loaded instead) -- hand
@@ -1231,7 +1420,7 @@ export default function SegmentTimingEditor({
       >
         <div className="p-4 sm:p-5 border-b border-border flex items-center justify-between bg-surface">
           <h2 className="text-base sm:text-lg font-bold text-foreground">
-            {isArabic ? `ضبط توقيت الأقسام — ${ayahLabel}` : `Bölüm Zamanlamasını Ayarla — ${ayahLabel}`}
+            {tx(`ضبط توقيت الأقسام — ${ayahLabel}`, `Bölüm Zamanlamasını Ayarla — ${ayahLabel}`, `Adjust Segment Timing — ${ayahLabel}`)}
           </h2>
           <button
             onClick={onCancel}
@@ -1244,9 +1433,7 @@ export default function SegmentTimingEditor({
         <div className="p-4 sm:p-6 flex-1 flex flex-col overflow-y-auto">
           <div className="flex items-start justify-between gap-3 mb-4">
             <p className="text-xs sm:text-sm text-muted-foreground flex-1">
-              {isArabic
-                ? "اسحب حواف المناطق الملوّنة لضبط توقيت كل قسم. الجزء الأسود في الطرفين سيُقصّ من الفيديو."
-                : "Bölümleri ayarlamak için renkli kenarları sürükleyin. Koyu kısımlar videodan kesilecek."}
+              {tx("اسحب حواف المناطق الملوّنة لضبط توقيت كل قسم. الجزء الأسود في الطرفين سيُقصّ من الفيديو.", "Bölümleri ayarlamak için renkli kenarları sürükleyin. Koyu kısımlar videodan kesilecek.", "Drag the colored edges to adjust the segments. The dark parts will be cut from the video.")}
             </p>
             <button
               type="button"
@@ -1267,10 +1454,10 @@ export default function SegmentTimingEditor({
               )}
               <span className="whitespace-nowrap">
                 {isSegmenting
-                  ? (isArabic ? "جاري التقسيم..." : "Bölümleniyor...")
+                  ? (tx("جاري التقسيم...", "Bölümleniyor...", "Splitting..."))
                   : isSegmented
-                  ? (isArabic ? "إزالة التقسيم" : "Bölümlemeyi Kaldır")
-                  : (isArabic ? "تقسيم الآيات الطويلة" : "Uzun Ayetleri Bölümle")}
+                  ? (tx("إزالة التقسيم", "Bölümlemeyi Kaldır", "Remove Splitting"))
+                  : (tx("تقسيم الآيات الطويلة", "Uzun Ayetleri Bölümle", "Split Long Ayahs"))}
               </span>
             </button>
           </div>
@@ -1279,7 +1466,7 @@ export default function SegmentTimingEditor({
             <div className="h-[120px] flex items-center justify-center gap-2 bg-background rounded-xl border border-border">
               <Spinner size="sm" />
               <span className="text-sm font-medium text-muted-foreground">
-                {isArabic ? "جاري تحميل الموجات الصوتية..." : "Ses dalgaları yükleniyor..."}
+                {tx("جاري تحميل الموجات الصوتية...", "Ses dalgaları yükleniyor...", "Loading waveform...")}
               </span>
             </div>
           )}
@@ -1293,7 +1480,7 @@ export default function SegmentTimingEditor({
 
           {isReady && (
             <div className="flex items-center gap-3 mt-4 px-2">
-              <span className="text-muted-foreground" title={isArabic ? "تصغير" : "Uzaklaştır"}>
+              <span className="text-muted-foreground" title={tx("تصغير", "Uzaklaştır", "Zoom out")}>
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
                 </svg>
@@ -1307,13 +1494,13 @@ export default function SegmentTimingEditor({
                 className="flex-1 h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
                 dir="ltr"
               />
-              <span className="text-muted-foreground" title={isArabic ? "تكبير" : "Yakınlaştır"}>
+              <span className="text-muted-foreground" title={tx("تكبير", "Yakınlaştır", "Zoom in")}>
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
                 </svg>
               </span>
               <span className="text-xs text-muted-foreground whitespace-nowrap">
-                {isArabic ? "الإجمالي:" : "Toplam:"} <span className="font-bold">{formatTime(totalDuration)}</span>
+                {tx("الإجمالي:", "Toplam:", "Total:")} <span className="font-bold">{formatTime(totalDuration)}</span>
               </span>
             </div>
           )}
@@ -1326,7 +1513,7 @@ export default function SegmentTimingEditor({
           {isReady && (
             <div className="flex items-center justify-between gap-3 mt-3 rounded-xl border border-border bg-background/70 px-3 py-2.5">
               <span className="text-xs text-muted-foreground">
-                {isArabic ? "مدة الصوت بعد القص:" : "Kesim sonrası süre:"}{" "}
+                {tx("مدة الصوت بعد القص:", "Kesim sonrası süre:", "Duration after cut:")}{" "}
                 <span className="font-bold text-foreground">{formatTime(Math.max(0, liveTrimEnd - liveTrimStart))}</span>
               </span>
               <div className="flex items-center gap-1.5">
@@ -1335,7 +1522,7 @@ export default function SegmentTimingEditor({
                   onClick={handleUndo}
                   disabled={!canUndo}
                   className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                  title={isArabic ? "تراجع" : "Geri al"}
+                  title={tx("تراجع", "Geri al", "Undo")}
                 >
                   <ArrowUturnLeftIcon className="w-4 h-4" />
                 </button>
@@ -1344,7 +1531,7 @@ export default function SegmentTimingEditor({
                   onClick={handleRedo}
                   disabled={!canRedo}
                   className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                  title={isArabic ? "إعادة" : "Yinele"}
+                  title={tx("إعادة", "Yinele", "Redo")}
                 >
                   <ArrowUturnRightIcon className="w-4 h-4" />
                 </button>
@@ -1355,7 +1542,7 @@ export default function SegmentTimingEditor({
                   className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isTrimming ? <Spinner size="sm" /> : <ScissorsIcon className="w-3.5 h-3.5" />}
-                  {isArabic ? "قص الصوت الآن" : "Sesi Şimdi Kes"}
+                  {tx("قص الصوت الآن", "Sesi Şimdi Kes", "Cut Audio Now")}
                 </button>
               </div>
             </div>
@@ -1370,7 +1557,7 @@ export default function SegmentTimingEditor({
             <div className="mt-4 rounded-xl border border-border bg-background/70 p-4">
               <div className="flex items-center justify-between gap-3 mb-3">
                 <span className="text-xs font-semibold text-muted-foreground">
-                  {isArabic ? "معاينة حية" : "Canlı Önizleme"}
+                  {tx("معاينة حية", "Canlı Önizleme", "Live Preview")}
                 </span>
                 <button
                   onClick={togglePreview}
@@ -1378,8 +1565,8 @@ export default function SegmentTimingEditor({
                 >
                   {isPlaying ? <PauseIcon className="w-3.5 h-3.5" /> : <PlayIcon className="w-3.5 h-3.5" />}
                   {isPlaying
-                    ? (isArabic ? "إيقاف" : "Durdur")
-                    : (isArabic ? "تشغيل المعاينة" : "Önizlemeyi Oynat")}
+                    ? (tx("إيقاف", "Durdur", "Stop"))
+                    : (tx("تشغيل المعاينة", "Önizlemeyi Oynat", "Play Preview"))}
                 </button>
               </div>
               {activeSegment ? (
@@ -1401,7 +1588,9 @@ export default function SegmentTimingEditor({
                       </p>
                     )}
                     <p
-                      dir={isArabic ? "rtl" : "ltr"}
+                      // From the text itself, not the interface language: an
+                      // Arabic tafsir is RTL, an English/Turkish one LTR.
+                      dir="auto"
                       className="text-base text-primary break-words"
                       style={{ fontFamily: translationFontFamily }}
                     >
@@ -1411,9 +1600,7 @@ export default function SegmentTimingEditor({
                 </div>
               ) : (
                 <p className="text-xs text-muted-foreground italic">
-                  {isArabic
-                    ? "اضغط \"تشغيل المعاينة\" لمشاهدة النص كما سيظهر بالضبط في الفيديو النهائي."
-                    : "Son videoda tam olarak nasıl görüneceğini izlemek için \"Önizlemeyi Oynat\"a basın."}
+                  {tx("اضغط \"تشغيل المعاينة\" لمشاهدة النص كما سيظهر بالضبط في الفيديو النهائي.", "Son videoda tam olarak nasıl görüneceğini izlemek için \"Önizlemeyi Oynat\"a basın.", "Press \"Play Preview\" to watch exactly how it will look in the final video.")}
                 </p>
               )}
             </div>
@@ -1453,14 +1640,12 @@ export default function SegmentTimingEditor({
                       <span className="flex-1 min-w-0 flex flex-col gap-2.5">
                         {isRepeat && (
                           <span className="text-[11px] font-medium text-primary">
-                            {isArabic
-                              ? `🔁 تكرار للقسم ${parentIdx + 1}`
-                              : `🔁 ${parentIdx + 1}. bölümün tekrarı`}
+                            {tx(`🔁 تكرار للقسم ${parentIdx + 1}`, `🔁 ${parentIdx + 1}. bölümün tekrarı`, `🔁 Repeat of segment ${parentIdx + 1}`)}
                           </span>
                         )}
                         {seg.isBlank && (
                           <span className="text-[11px] font-medium text-accent-amber">
-                            {isArabic ? "✚ قسم مُضاف يدويًا" : "✚ Elle eklenen bölüm"}
+                            {tx("✚ قسم مُضاف يدويًا", "✚ Elle eklenen bölüm", "✚ Manually added segment")}
                           </span>
                         )}
                         {resolved.arabicText && (
@@ -1491,10 +1676,10 @@ export default function SegmentTimingEditor({
                             }
                           }}
                           rows={1}
-                          dir={isArabic ? "rtl" : "ltr"}
+                          dir="auto"
                           style={{ fontFamily: translationFontFamily }}
-                          placeholder={isArabic ? "اكتب نص الترجمة لهذا القسم..." : "Bu bölümün çeviri metnini yazın..."}
-                          title={isRepeat ? (isArabic ? "عدّل النص من القسم الأصلي" : "Metni orijinal bölümden düzenleyin") : undefined}
+                          placeholder={tx("اكتب نص الترجمة لهذا القسم...", "Bu bölümün çeviri metnini yazın...", "Type this segment's translation text...")}
+                          title={isRepeat ? (tx("عدّل النص من القسم الأصلي", "Metni orijinal bölümden düzenleyin", "Edit the text from the original segment")) : undefined}
                           className={`translation-textarea w-full resize-none overflow-hidden rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-[13px] sm:text-sm hover:border-border focus:outline-none transition-colors ${
                             isRepeat ? "text-muted-foreground/70 cursor-not-allowed" : "text-muted-foreground focus:border-primary focus:bg-background"
                           }`}
@@ -1516,17 +1701,17 @@ export default function SegmentTimingEditor({
                         <div className="flex flex-col overflow-hidden rounded-lg border border-border">
                           <button
                             onClick={() => moveSegment(seg.id, -1)}
-                            disabled={idx === 0}
+                            disabled={!canMoveSegment(idx, -1)}
                             className="flex items-center justify-center w-6 h-4 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                            title={isArabic ? "نقل لأعلى" : "Yukarı taşı"}
+                            title={tx("نقل لأعلى", "Yukarı taşı", "Move up")}
                           >
                             <ChevronUpIcon className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => moveSegment(seg.id, 1)}
-                            disabled={idx === localSegments.length - 1}
+                            disabled={!canMoveSegment(idx, 1)}
                             className="flex items-center justify-center w-6 h-4 border-t border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                            title={isArabic ? "نقل لأسفل" : "Aşağı taşı"}
+                            title={tx("نقل لأسفل", "Aşağı taşı", "Move down")}
                           >
                             <ChevronDownIcon className="w-3.5 h-3.5" />
                           </button>
@@ -1537,7 +1722,7 @@ export default function SegmentTimingEditor({
                         <button
                           onClick={() => playSegment(seg.id)}
                           className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-                          title={isArabic ? "تشغيل هذا القسم" : "Bu bölümü oynat"}
+                          title={tx("تشغيل هذا القسم", "Bu bölümü oynat", "Play this segment")}
                         >
                           {playingId === seg.id ? <PauseIcon className="w-3.5 h-3.5" /> : <PlayIcon className="w-3.5 h-3.5" />}
                         </button>
@@ -1545,7 +1730,7 @@ export default function SegmentTimingEditor({
                           onClick={() => duplicateSegment(seg.id)}
                           disabled={!canDuplicate}
                           className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-full border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                          title={isArabic ? "تكرار هذا القسم (نفس النص، توقيت مستقل)" : "Bu bölümü tekrarla (aynı metin, bağımsız zamanlama)"}
+                          title={tx("تكرار هذا القسم (نفس النص، توقيت مستقل)", "Bu bölümü tekrarla (aynı metin, bağımsız zamanlama)", "Repeat this segment (same text, independent timing)")}
                         >
                           <DocumentDuplicateIcon className="w-3.5 h-3.5" />
                         </button>
@@ -1558,8 +1743,8 @@ export default function SegmentTimingEditor({
                           className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-full border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                           title={
                             hasDependentRepeats
-                              ? (isArabic ? "لا يمكن تقسيم قسم له تكرار — احذف التكرار أولاً" : "Tekrarı olan bir bölüm ayrılamaz — önce tekrarı silin")
-                              : (isArabic ? "تقسيم هذا القسم إلى قسمين" : "Bu bölümü ikiye ayır")
+                              ? (tx("لا يمكن تقسيم قسم له تكرار — احذف التكرار أولاً", "Tekrarı olan bir bölüm ayrılamaz — önce tekrarı silin", "A segment that has a repeat can't be split — delete the repeat first"))
+                              : (tx("تقسيم هذا القسم إلى قسمين", "Bu bölümü ikiye ayır", "Split this segment in two"))
                           }
                         >
                           <ScissorsIcon className="w-3.5 h-3.5" />
@@ -1568,7 +1753,7 @@ export default function SegmentTimingEditor({
                           onClick={() => returnWordToNext(seg.id)}
                           disabled={!canShiftWord}
                           className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-full border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                          title={isArabic ? "إرجاع كلمة (إلى القسم التالي)" : "Kelime geri ver (sonraki bölüme)"}
+                          title={tx("إرجاع كلمة (إلى القسم التالي)", "Kelime geri ver (sonraki bölüme)", "Give a word back (to the next segment)")}
                         >
                           <MinusCircleIcon className="w-3.5 h-3.5" />
                         </button>
@@ -1576,7 +1761,7 @@ export default function SegmentTimingEditor({
                           onClick={() => addWordFromNext(seg.id)}
                           disabled={!canShiftWord}
                           className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-full border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                          title={isArabic ? "إضافة كلمة (من القسم التالي)" : "Kelime ekle (sonraki bölümden)"}
+                          title={tx("إضافة كلمة (من القسم التالي)", "Kelime ekle (sonraki bölümden)", "Add a word (from the next segment)")}
                         >
                           <PlusCircleIcon className="w-3.5 h-3.5" />
                         </button>
@@ -1587,8 +1772,8 @@ export default function SegmentTimingEditor({
                             className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-full border border-accent-red/30 text-accent-red hover:bg-accent-red-bg/60 transition-colors"
                             title={
                               isRepeat
-                                ? (isArabic ? "حذف هذا التكرار" : "Bu tekrarı sil")
-                                : (isArabic ? "حذف هذا القسم" : "Bu bölümü sil")
+                                ? (tx("حذف هذا التكرار", "Bu tekrarı sil", "Delete this repeat"))
+                                : (tx("حذف هذا القسم", "Bu bölümü sil", "Delete this segment"))
                             }
                           >
                             <TrashIcon className="w-3.5 h-3.5" />
@@ -1607,7 +1792,7 @@ export default function SegmentTimingEditor({
               onClick={onCancel}
               className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl border border-border bg-background text-foreground hover:bg-border transition-colors font-medium sm:font-bold text-sm"
             >
-              {isArabic ? "إلغاء" : "İptal"}
+              {tx("إلغاء", "İptal", "Cancel")}
             </button>
             <button
               onClick={handleConfirm}
@@ -1615,7 +1800,7 @@ export default function SegmentTimingEditor({
               className="flex items-center justify-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-2 sm:py-2.5 rounded-lg sm:rounded-xl bg-primary text-white hover:bg-primary-dark transition-all disabled:opacity-50 shadow-lg shadow-primary/25 font-semibold sm:font-bold text-sm"
             >
               <CheckIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span>{isArabic ? "حفظ التوقيت" : "Zamanlamayı Kaydet"}</span>
+              <span>{tx("حفظ التوقيت", "Zamanlamayı Kaydet", "Save Timing")}</span>
             </button>
           </div>
         </div>

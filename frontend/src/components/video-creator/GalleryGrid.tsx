@@ -4,15 +4,15 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { TrashIcon, ArrowDownTrayIcon, ArrowRightIcon, PencilSquareIcon, FilmIcon } from "@heroicons/react/24/outline";
-import { useLanguage } from "@/lib/LanguageContext";
+import { useLanguage, useT } from "@/lib/LanguageContext";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { latinNameForArabicReciterName } from "@/lib/reciterNames";
 import type { GalleryEntry } from "@/lib/videoGallery";
 
-const ASPECT_RATIO_LABEL: Record<GalleryEntry["aspectRatio"], { ar: string; tr: string }> = {
-  portrait: { ar: "عمودي", tr: "Dikey" },
-  landscape: { ar: "أفقي", tr: "Yatay" },
-  square: { ar: "مربع", tr: "Kare" },
+const ASPECT_RATIO_LABEL: Record<GalleryEntry["aspectRatio"], { ar: string; tr: string; en: string }> = {
+  portrait: { ar: "عمودي", tr: "Dikey", en: "Portrait" },
+  landscape: { ar: "أفقي", tr: "Yatay", en: "Landscape" },
+  square: { ar: "مربع", tr: "Kare", en: "Square" },
 };
 
 function formatSize(bytes: number): string {
@@ -29,6 +29,7 @@ function formatDate(iso: string, locale: string): string {
 }
 
 export default function GalleryGrid({ entries: initialEntries }: { entries: GalleryEntry[] }) {
+  const tx = useT();
   const { language } = useLanguage();
   const isArabic = language === "ar";
   const [entries, setEntries] = useState(initialEntries);
@@ -89,12 +90,10 @@ export default function GalleryGrid({ entries: initialEntries }: { entries: Gall
           </span>
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-foreground">
-              {isArabic ? "الفيديوهات المحفوظة" : "Kaydedilen Videolar"}
+              {tx("الفيديوهات المحفوظة", "Kaydedilen Videolar", "Saved Videos")}
             </h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              {isArabic
-                ? `آخر ${entries.length} فيديو أنشأته يبقى هنا للتنزيل لاحقًا.`
-                : `Oluşturduğunuz son ${entries.length} video burada, daha sonra indirmeniz için tutulur.`}
+              {tx(`آخر ${entries.length} فيديو أنشأته يبقى هنا للتنزيل لاحقًا.`, `Oluşturduğunuz son ${entries.length} video burada, daha sonra indirmeniz için tutulur.`, `Your last ${entries.length} videos are kept here so you can download them later.`)}
             </p>
           </div>
         </div>
@@ -102,16 +101,14 @@ export default function GalleryGrid({ entries: initialEntries }: { entries: Gall
           href="/"
           className="flex-shrink-0 flex items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-primary to-primary-dark px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg hover:shadow-primary/25"
         >
-          {isArabic ? "إنشاء فيديو جديد" : "Yeni Video Oluştur"}
+          {tx("إنشاء فيديو جديد", "Yeni Video Oluştur", "Create New Video")}
           <ArrowRightIcon className={`h-4 w-4 ${isArabic ? "rotate-180" : ""}`} />
         </Link>
       </div>
 
       {entries.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border/60 bg-surface/30 p-10 text-center text-muted-foreground">
-          {isArabic
-            ? "لا توجد فيديوهات محفوظة بعد. أنشئ فيديو من الصفحة الرئيسية وستظهر هنا تلقائيًا."
-            : "Henüz kaydedilmiş video yok. Ana sayfadan bir video oluşturun, otomatik olarak burada görünecek."}
+          {tx("لا توجد فيديوهات محفوظة بعد. أنشئ فيديو من الصفحة الرئيسية وستظهر هنا تلقائيًا.", "Henüz kaydedilmiş video yok. Ana sayfadan bir video oluşturun, otomatik olarak burada görünecek.", "No saved videos yet. Create a video from the home page and it will show up here automatically.")}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -152,23 +149,24 @@ export default function GalleryGrid({ entries: initialEntries }: { entries: Gall
                     <div className="min-w-0">
                       <p className="font-bold text-foreground truncate" dir={isArabic ? "rtl" : "ltr"}>
                         {/* surahNameTransliteration is the plain Turkish name
-                            (already uppercased, tr-TR) -- " SURESİ" appended
-                            the same way QuranVideo.tsx's own header does it, so
-                            this matches the video's own on-screen title exactly. */}
-                        {isArabic ? entry.surahNameArabic : `${entry.surahNameTransliteration} SURESİ`}
+                            (already uppercased, tr-TR) -- " SURESİ" appended /
+                            "سورة" prepended the same way QuranVideo.tsx's own
+                            header does it, so this matches the video's own
+                            on-screen title exactly. */}
+                        {tx(`سورة ${entry.surahNameArabic}`, `${entry.surahNameTransliteration} SURESİ`, `SURAH ${entry.surahNameTransliteration}`)}
                       </p>
                       <p className="text-xs text-muted-foreground truncate">
-                        {isArabic ? "آية" : "Ayet"} {entry.startVerse}-{entry.endVerse} ·{" "}
+                        {tx("آية", "Ayet", "Ayah")} {entry.startVerse}-{entry.endVerse} ·{" "}
                         {isArabic ? entry.reciterName : reciterDisplay}
                       </p>
                     </div>
                     <span className="flex-shrink-0 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary">
-                      {isArabic ? ratioLabel.ar : ratioLabel.tr}
+                      {tx(ratioLabel.ar, ratioLabel.tr, ratioLabel.en)}
                     </span>
                   </div>
 
                   <p className="text-xs text-muted-foreground" dir="ltr">
-                    {formatDate(entry.createdAt, isArabic ? "ar" : "tr-TR")} · {formatSize(entry.sizeBytes)}
+                    {formatDate(entry.createdAt, tx("ar", "tr-TR", "en-US"))} · {formatSize(entry.sizeBytes)}
                   </p>
                   {/* Only shown once this entry has actually been
                       re-rendered at least once since its first save (see
@@ -180,8 +178,8 @@ export default function GalleryGrid({ entries: initialEntries }: { entries: Gall
                       the one right above. */}
                   {entry.updatedAt && entry.updatedAt !== entry.createdAt && (
                     <p className="text-xs text-primary/80" dir="ltr">
-                      {isArabic ? "آخر تحديث: " : "Son güncelleme: "}
-                      {formatDate(entry.updatedAt, isArabic ? "ar" : "tr-TR")}
+                      {tx("آخر تحديث: ", "Son güncelleme: ", "Last updated: ")}
+                      {formatDate(entry.updatedAt, tx("ar", "tr-TR", "en-US"))}
                     </p>
                   )}
 
@@ -192,7 +190,7 @@ export default function GalleryGrid({ entries: initialEntries }: { entries: Gall
                       className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-primary to-primary-dark py-2 text-sm font-semibold text-white transition-all hover:shadow-md hover:shadow-primary/25"
                     >
                       <ArrowDownTrayIcon className="h-4 w-4" />
-                      {isArabic ? "تنزيل" : "İndir"}
+                      {tx("تنزيل", "İndir", "Download")}
                     </a>
                     {/* Only ever present for a video rendered after this field
                         was introduced (see GalleryEntry.draftId) -- an older
@@ -205,7 +203,7 @@ export default function GalleryGrid({ entries: initialEntries }: { entries: Gall
                     {entry.draftId && (
                       <Link
                         href={`/?draft=${entry.draftId}`}
-                        title={isArabic ? "تعديل" : "Düzenle"}
+                        title={tx("تعديل", "Düzenle", "Edit")}
                         className="flex items-center justify-center rounded-lg border border-border px-3 text-primary hover:bg-primary/10 transition-colors"
                       >
                         <PencilSquareIcon className="h-4 w-4" />
@@ -216,7 +214,7 @@ export default function GalleryGrid({ entries: initialEntries }: { entries: Gall
                       onClick={() => setConfirmDeleteId(entry.id)}
                       disabled={deletingId === entry.id}
                       className="flex items-center justify-center rounded-lg border border-border px-3 text-accent-red hover:bg-accent-red-bg/60 transition-colors disabled:opacity-50"
-                      title={isArabic ? "حذف" : "Sil"}
+                      title={tx("حذف", "Sil", "Delete")}
                     >
                       <TrashIcon className="h-4 w-4" />
                     </button>
@@ -230,10 +228,10 @@ export default function GalleryGrid({ entries: initialEntries }: { entries: Gall
 
       <ConfirmDialog
         open={confirmDeleteId !== null}
-        title={isArabic ? "حذف الفيديو" : "Videoyu Sil"}
-        message={isArabic ? "هل تريد حذف هذا الفيديو نهائيًا؟" : "Bu videoyu kalıcı olarak silmek istiyor musunuz?"}
-        confirmLabel={isArabic ? "حذف" : "Sil"}
-        cancelLabel={isArabic ? "إلغاء" : "İptal"}
+        title={tx("حذف الفيديو", "Videoyu Sil", "Delete Video")}
+        message={tx("هل تريد حذف هذا الفيديو نهائيًا؟", "Bu videoyu kalıcı olarak silmek istiyor musunuz?", "Do you want to permanently delete this video?")}
+        confirmLabel={tx("حذف", "Sil", "Delete")}
+        cancelLabel={tx("إلغاء", "İptal", "Cancel")}
         onConfirm={() => {
           if (confirmDeleteId) handleDelete(confirmDeleteId);
         }}

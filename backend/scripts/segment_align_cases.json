@@ -1,0 +1,1680 @@
+[
+ {
+  "surah": 67,
+  "ayah": 24,
+  "tokens": [
+   "قُلْ",
+   "هُوَ",
+   "ٱلَّذِى",
+   "ذَرَأَكُمْ",
+   "فِى",
+   "ٱلْأَرْضِ",
+   "وَإِلَيْهِ",
+   "تُحْشَرُونَ"
+  ],
+  "segments": [
+   "De ki: \"O, sizi yeryüzünde yaratıp çoğaltandır.",
+   "Ancak O'nun huzurunda toplanacaksınız.\""
+  ],
+  "word_counts": [
+   6,
+   2
+  ]
+ },
+ {
+  "surah": 67,
+  "ayah": 23,
+  "tokens": [
+   "قُلْ",
+   "هُوَ",
+   "ٱلَّذِىٓ",
+   "أَنشَأَكُمْ",
+   "وَجَعَلَ",
+   "لَكُمُ",
+   "ٱلسَّمْعَ",
+   "وَٱلْأَبْصَٰرَ",
+   "وَٱلْأَفْـِٔدَةَ",
+   "ۖ",
+   "قَلِيلًۭا",
+   "مَّا",
+   "تَشْكُرُونَ"
+  ],
+  "segments": [
+   "De ki: \"O, sizi yaratan ve size kulaklar, gözler ve kalpler verendir.",
+   "Ne kadar da az şükrediyorsunuz!\""
+  ],
+  "word_counts": [
+   10,
+   3
+  ]
+ },
+ {
+  "surah": 11,
+  "ayah": 15,
+  "tokens": [
+   "مَن",
+   "كَانَ",
+   "يُرِيدُ",
+   "ٱلْحَيَوٰةَ",
+   "ٱلدُّنْيَا",
+   "وَزِينَتَهَا",
+   "نُوَفِّ",
+   "إِلَيْهِمْ",
+   "أَعْمَٰلَهُمْ",
+   "فِيهَا",
+   "وَهُمْ",
+   "فِيهَا",
+   "لَا",
+   "يُبْخَسُونَ"
+  ],
+  "segments": [
+   "Her kim dünya hayatını ve güzelliklerini isterse biz onlara amellerinin karşılığını orada tamamen öderiz.",
+   "Bu hususta kendilerine bir densizlik yapılmaz."
+  ],
+  "word_counts": [
+   10,
+   4
+  ]
+ },
+ {
+  "surah": 11,
+  "ayah": 16,
+  "tokens": [
+   "أُو۟لَٰٓئِكَ",
+   "ٱلَّذِينَ",
+   "لَيْسَ",
+   "لَهُمْ",
+   "فِى",
+   "ٱلْءَاخِرَةِ",
+   "إِلَّا",
+   "ٱلنَّارُ",
+   "ۖ",
+   "وَحَبِطَ",
+   "مَا",
+   "صَنَعُوا۟",
+   "فِيهَا",
+   "وَبَٰطِلٌۭ",
+   "مَّا",
+   "كَانُوا۟",
+   "يَعْمَلُونَ"
+  ],
+  "segments": [
+   "Fakat onlar öyle kimselerdir ki, ahirette kendilerine ateşten başka bir şey yoktur.",
+   "İşledikleri şeyler orada boşuna gitmiştir.",
+   "Zaten bütün yaptıkları da batıldır."
+  ],
+  "word_counts": [
+   9,
+   4,
+   4
+  ]
+ },
+ {
+  "surah": 2,
+  "ayah": 286,
+  "tokens": [
+   "لَا",
+   "يُكَلِّفُ",
+   "ٱللَّهُ",
+   "نَفْسًا",
+   "إِلَّا",
+   "وُسْعَهَا",
+   "ۚ",
+   "لَهَا",
+   "مَا",
+   "كَسَبَتْ",
+   "وَعَلَيْهَا",
+   "مَا",
+   "ٱكْتَسَبَتْ",
+   "ۗ",
+   "رَبَّنَا",
+   "لَا",
+   "تُؤَاخِذْنَآ",
+   "إِن",
+   "نَّسِينَآ",
+   "أَوْ",
+   "أَخْطَأْنَا",
+   "ۚ",
+   "رَبَّنَا",
+   "وَلَا",
+   "تَحْمِلْ",
+   "عَلَيْنَآ",
+   "إِصْرًۭا",
+   "كَمَا",
+   "حَمَلْتَهُۥ",
+   "عَلَى",
+   "ٱلَّذِينَ",
+   "مِن",
+   "قَبْلِنَا",
+   "ۚ",
+   "رَبَّنَا",
+   "وَلَا",
+   "تُحَمِّلْنَا",
+   "مَا",
+   "لَا",
+   "طَاقَةَ",
+   "لَنَا",
+   "بِهِۦ",
+   "ۖ",
+   "وَٱعْفُ",
+   "عَنَّا",
+   "وَٱغْفِرْ",
+   "لَنَا",
+   "وَٱرْحَمْنَآ",
+   "ۚ",
+   "أَنتَ",
+   "مَوْلَىٰنَا",
+   "فَٱنصُرْنَا",
+   "عَلَى",
+   "ٱلْقَوْمِ",
+   "ٱلْكَٰفِرِينَ"
+  ],
+  "segments": [
+   "Allah hiç kimseye gücünün yeteceğinden başka yük yüklemez.",
+   "Herkesin kazandığı hayır kendisine, yaptığı kötülüğün zararı yine kendisinedir.",
+   "Ey Rabbimiz, eğer unuttuk ya da yanıldıysak bizi tutup sorguya çekme!",
+   "Ey Rabbimiz, bize bizden öncekilere yüklediğin gibi ağır yük yükleme!",
+   "Ey Rabbimiz, bize gücümüzün yetmeyeceği yükü de yükleme!",
+   "Bağışla bizi, mağfiret et bizi, rahmet et bize!",
+   "Sensin bizim Mevlamız, kâfir kavimlere karşı yardım et bize."
+  ],
+  "word_counts": [
+   7,
+   7,
+   8,
+   12,
+   9,
+   6,
+   6
+  ]
+ },
+ {
+  "surah": 4,
+  "ayah": 106,
+  "tokens": [
+   "وَٱسْتَغْفِرِ",
+   "ٱللَّهَ",
+   "ۖ",
+   "إِنَّ",
+   "ٱللَّهَ",
+   "كَانَ",
+   "غَفُورًۭا",
+   "رَّحِيمًۭا"
+  ],
+  "segments": [
+   "Allah'tan bağışlama dile.",
+   "Şüphesiz Allah, çok bağışlayandır, çok merhamet edendir."
+  ],
+  "word_counts": [
+   3,
+   5
+  ]
+ },
+ {
+  "surah": 4,
+  "ayah": 107,
+  "tokens": [
+   "وَلَا",
+   "تُجَٰدِلْ",
+   "عَنِ",
+   "ٱلَّذِينَ",
+   "يَخْتَانُونَ",
+   "أَنفُسَهُمْ",
+   "ۚ",
+   "إِنَّ",
+   "ٱللَّهَ",
+   "لَا",
+   "يُحِبُّ",
+   "مَن",
+   "كَانَ",
+   "خَوَّانًا",
+   "أَثِيمًۭا"
+  ],
+  "segments": [
+   "Kendilerine hainlik edenleri savunma.",
+   "Zira Allah, hiçbir haini, hiçbir günahkarı sevmez."
+  ],
+  "word_counts": [
+   7,
+   8
+  ]
+ },
+ {
+  "surah": 4,
+  "ayah": 108,
+  "tokens": [
+   "يَسْتَخْفُونَ",
+   "مِنَ",
+   "ٱلنَّاسِ",
+   "وَلَا",
+   "يَسْتَخْفُونَ",
+   "مِنَ",
+   "ٱللَّهِ",
+   "وَهُوَ",
+   "مَعَهُمْ",
+   "إِذْ",
+   "يُبَيِّتُونَ",
+   "مَا",
+   "لَا",
+   "يَرْضَىٰ",
+   "مِنَ",
+   "ٱلْقَوْلِ",
+   "ۚ",
+   "وَكَانَ",
+   "ٱللَّهُ",
+   "بِمَا",
+   "يَعْمَلُونَ",
+   "مُحِيطًا"
+  ],
+  "segments": [
+   "Bunlar, insanlardan gizlenmeye çalışırlar da Allah'tan gizlenmezler.",
+   "Halbuki Allah, geceleyin, razı olmayacağı sözleri kurarlarken onlarla beraberdir.",
+   "Allah, onların yaptıklarını (ilmiyle) kuşatmıştır."
+  ],
+  "word_counts": [
+   7,
+   10,
+   5
+  ]
+ },
+ {
+  "surah": 9,
+  "ayah": 112,
+  "tokens": [
+   "ٱلتَّٰٓئِبُونَ",
+   "ٱلْعَٰبِدُونَ",
+   "ٱلْحَٰمِدُونَ",
+   "ٱلسَّٰٓئِحُونَ",
+   "ٱلرَّٰكِعُونَ",
+   "ٱلسَّٰجِدُونَ",
+   "ٱلْءَامِرُونَ",
+   "بِٱلْمَعْرُوفِ",
+   "وَٱلنَّاهُونَ",
+   "عَنِ",
+   "ٱلْمُنكَرِ",
+   "وَٱلْحَٰفِظُونَ",
+   "لِحُدُودِ",
+   "ٱللَّهِ",
+   "ۗ",
+   "وَبَشِّرِ",
+   "ٱلْمُؤْمِنِينَ"
+  ],
+  "segments": [
+   "Bunlar, tövbe edenler, ibadet edenler, hamdedenler, oruç tutanlar, rüku' ve secde edenler, iyiliği emredip kötülükten alıkoyanlar ve Allah'ın koyduğu sınırları hakkıyla koruyanlardır.",
+   "Mü'minleri müjdele."
+  ],
+  "word_counts": [
+   15,
+   2
+  ]
+ },
+ {
+  "surah": 11,
+  "ayah": 6,
+  "tokens": [
+   "۞",
+   "وَمَا",
+   "مِن",
+   "دَآبَّةٍۢ",
+   "فِى",
+   "ٱلْأَرْضِ",
+   "إِلَّا",
+   "عَلَى",
+   "ٱللَّهِ",
+   "رِزْقُهَا",
+   "وَيَعْلَمُ",
+   "مُسْتَقَرَّهَا",
+   "وَمُسْتَوْدَعَهَا",
+   "ۚ",
+   "كُلٌّۭ",
+   "فِى",
+   "كِتَٰبٍۢ",
+   "مُّبِينٍۢ"
+  ],
+  "segments": [
+   "Yeryüzünde hiçbir canlı yoktur ki, rızkı Allah'a ait olmasın.",
+   "Her birinin (dünyada) duracakları yeri de, (öldükten sonra) emaneten konulacakları yeri de O bilir.",
+   "Bunların hepsi açık bir kitapta (Levh-i Mahfuz'da yazılı)dır."
+  ],
+  "word_counts": [
+   10,
+   4,
+   4
+  ]
+ },
+ {
+  "surah": 43,
+  "ayah": 78,
+  "tokens": [
+   "لَقَدْ",
+   "جِئْنَٰكُم",
+   "بِٱلْحَقِّ",
+   "وَلَٰكِنَّ",
+   "أَكْثَرَكُمْ",
+   "لِلْحَقِّ",
+   "كَٰرِهُونَ"
+  ],
+  "segments": [
+   "Andolsun ki biz size hakkı getirdik.",
+   "Fakat sizin çoğunuz haktan hoşlanmıyorsunuz."
+  ],
+  "word_counts": [
+   3,
+   4
+  ]
+ },
+ {
+  "surah": 3,
+  "ayah": 32,
+  "tokens": [
+   "قُلْ",
+   "أَطِيعُوا۟",
+   "ٱللَّهَ",
+   "وَٱلرَّسُولَ",
+   "ۖ",
+   "فَإِن",
+   "تَوَلَّوْا۟",
+   "فَإِنَّ",
+   "ٱللَّهَ",
+   "لَا",
+   "يُحِبُّ",
+   "ٱلْكَٰفِرِينَ"
+  ],
+  "segments": [
+   "De ki: \"Allah'a ve Peygamber'e itaat edin.\"",
+   "Eğer yüz çevirirlerse şüphe yok ki Allah kafirleri sevmez."
+  ],
+  "word_counts": [
+   5,
+   7
+  ]
+ },
+ {
+  "surah": 16,
+  "ayah": 104,
+  "tokens": [
+   "إِنَّ",
+   "ٱلَّذِينَ",
+   "لَا",
+   "يُؤْمِنُونَ",
+   "بِـَٔايَٰتِ",
+   "ٱللَّهِ",
+   "لَا",
+   "يَهْدِيهِمُ",
+   "ٱللَّهُ",
+   "وَلَهُمْ",
+   "عَذَابٌ",
+   "أَلِيمٌ"
+  ],
+  "segments": [
+   "Allah'ın ayetlerine inanmayanları, Allah elbette doğru yola iletmez.",
+   "Onlar için elem dolu bir azap vardır."
+  ],
+  "word_counts": [
+   9,
+   3
+  ]
+ },
+ {
+  "surah": 14,
+  "ayah": 22,
+  "tokens": [
+   "وَقَالَ",
+   "ٱلشَّيْطَٰنُ",
+   "لَمَّا",
+   "قُضِىَ",
+   "ٱلْأَمْرُ",
+   "إِنَّ",
+   "ٱللَّهَ",
+   "وَعَدَكُمْ",
+   "وَعْدَ",
+   "ٱلْحَقِّ",
+   "وَوَعَدتُّكُمْ",
+   "فَأَخْلَفْتُكُمْ",
+   "ۖ",
+   "وَمَا",
+   "كَانَ",
+   "لِىَ",
+   "عَلَيْكُم",
+   "مِّن",
+   "سُلْطَٰنٍ",
+   "إِلَّآ",
+   "أَن",
+   "دَعَوْتُكُمْ",
+   "فَٱسْتَجَبْتُمْ",
+   "لِى",
+   "ۖ",
+   "فَلَا",
+   "تَلُومُونِى",
+   "وَلُومُوٓا۟",
+   "أَنفُسَكُم",
+   "ۖ",
+   "مَّآ",
+   "أَنَا۠",
+   "بِمُصْرِخِكُمْ",
+   "وَمَآ",
+   "أَنتُم",
+   "بِمُصْرِخِىَّ",
+   "ۖ",
+   "إِنِّى",
+   "كَفَرْتُ",
+   "بِمَآ",
+   "أَشْرَكْتُمُونِ",
+   "مِن",
+   "قَبْلُ",
+   "ۗ",
+   "إِنَّ",
+   "ٱلظَّٰلِمِينَ",
+   "لَهُمْ",
+   "عَذَابٌ",
+   "أَلِيمٌۭ"
+  ],
+  "segments": [
+   "İş bitirilince şeytan da diyecek ki: \"Şüphesiz Allah, size gerçek olanı söz verdi.",
+   "Ben de size söz verdim ama yalancı çıktım.",
+   "Zaten benim sizi zorlayacak bir gücüm yoktu.",
+   "Ben sadece sizi çağırdım, siz de hemen bana geliverdiniz.",
+   "O halde beni kınamayın, kendinizi kınayın.",
+   "Artık ben sizi kurtaramam, siz de beni kurtaramazsınız.",
+   "Şüphesiz ben, daha önce sizin, beni Allah'a ortak koşmanızı kabul etmemiştim.",
+   "Şüphesiz, zalimlere elem dolu bir azap vardır.\""
+  ],
+  "word_counts": [
+   10,
+   3,
+   6,
+   6,
+   5,
+   7,
+   7,
+   5
+  ]
+ },
+ {
+  "surah": 27,
+  "ayah": 60,
+  "tokens": [
+   "أَمَّنْ",
+   "خَلَقَ",
+   "ٱلسَّمَٰوَٰتِ",
+   "وَٱلْأَرْضَ",
+   "وَأَنزَلَ",
+   "لَكُم",
+   "مِّنَ",
+   "ٱلسَّمَآءِ",
+   "مَآءًۭ",
+   "فَأَنۢبَتْنَا",
+   "بِهِۦ",
+   "حَدَآئِقَ",
+   "ذَاتَ",
+   "بَهْجَةٍۢ",
+   "مَّا",
+   "كَانَ",
+   "لَكُمْ",
+   "أَن",
+   "تُنۢبِتُوا۟",
+   "شَجَرَهَآ",
+   "ۗ",
+   "أَءِلَٰهٌۭ",
+   "مَّعَ",
+   "ٱللَّهِ",
+   "ۚ",
+   "بَلْ",
+   "هُمْ",
+   "قَوْمٌۭ",
+   "يَعْدِلُونَ"
+  ],
+  "segments": [
+   "(Onlar mı hayırlı) yoksa, gökleri ve yeri yaratan, gökten size su indiren mi?",
+   "Çünkü biz onunla, bir ağacını bile bitirmeye gücünüzün yetmediği güzel güzel bahçeler bitirmişizdir.",
+   "Allah'la beraber başka bir ilâh mı var!",
+   "Doğrusu onlar sapıklıkta devameden bir güruhtur."
+  ],
+  "word_counts": [
+   9,
+   12,
+   4,
+   4
+  ]
+ },
+ {
+  "surah": 27,
+  "ayah": 88,
+  "tokens": [
+   "وَتَرَى",
+   "ٱلْجِبَالَ",
+   "تَحْسَبُهَا",
+   "جَامِدَةًۭ",
+   "وَهِىَ",
+   "تَمُرُّ",
+   "مَرَّ",
+   "ٱلسَّحَابِ",
+   "ۚ",
+   "صُنْعَ",
+   "ٱللَّهِ",
+   "ٱلَّذِىٓ",
+   "أَتْقَنَ",
+   "كُلَّ",
+   "شَىْءٍ",
+   "ۚ",
+   "إِنَّهُۥ",
+   "خَبِيرٌۢ",
+   "بِمَا",
+   "تَفْعَلُونَ"
+  ],
+  "segments": [
+   "Sen dağları görürsün de, yerinde durur sanırsın.",
+   "Oysa onlar bulutun yürümesi gibi yürümektedirler.",
+   "Bu, her şeyi sapasağlam yapan Allah'ın sanatıdır.",
+   "Şüphesiz ki O, yaptıklarınızdan tamamıyla haberdardır."
+  ],
+  "word_counts": [
+   4,
+   5,
+   7,
+   4
+  ]
+ },
+ {
+  "surah": 14,
+  "ayah": 36,
+  "tokens": [
+   "رَبِّ",
+   "إِنَّهُنَّ",
+   "أَضْلَلْنَ",
+   "كَثِيرًۭا",
+   "مِّنَ",
+   "ٱلنَّاسِ",
+   "ۖ",
+   "فَمَن",
+   "تَبِعَنِى",
+   "فَإِنَّهُۥ",
+   "مِنِّى",
+   "ۖ",
+   "وَمَنْ",
+   "عَصَانِى",
+   "فَإِنَّكَ",
+   "غَفُورٌۭ",
+   "رَّحِيمٌۭ"
+  ],
+  "segments": [
+   "\"Rabbim!",
+   "Çünkü onlar (putlar) insanlardan birçoğunun sapmasına sebep oldular.",
+   "Şimdi kim bana uyarsa, o bendendir; kim bana karşı gelirse, artık sen gerçekten çok bağışlayan ve çok merhamet edensin."
+  ],
+  "word_counts": [
+   1,
+   6,
+   10
+  ]
+ },
+ {
+  "surah": 17,
+  "ayah": 82,
+  "tokens": [
+   "وَنُنَزِّلُ",
+   "مِنَ",
+   "ٱلْقُرْءَانِ",
+   "مَا",
+   "هُوَ",
+   "شِفَآءٌۭ",
+   "وَرَحْمَةٌۭ",
+   "لِّلْمُؤْمِنِينَ",
+   "ۙ",
+   "وَلَا",
+   "يَزِيدُ",
+   "ٱلظَّٰلِمِينَ",
+   "إِلَّا",
+   "خَسَارًۭا"
+  ],
+  "segments": [
+   "Biz Kur'ân'dan, iman edenler için bir şifa ve rahmet kaynağı olan âyetler indiriyoruz.",
+   "Zalimlerin de ancak zararını artırır."
+  ],
+  "word_counts": [
+   9,
+   5
+  ]
+ },
+ {
+  "surah": 57,
+  "ayah": 12,
+  "tokens": [
+   "يَوْمَ",
+   "تَرَى",
+   "ٱلْمُؤْمِنِينَ",
+   "وَٱلْمُؤْمِنَٰتِ",
+   "يَسْعَىٰ",
+   "نُورُهُم",
+   "بَيْنَ",
+   "أَيْدِيهِمْ",
+   "وَبِأَيْمَٰنِهِم",
+   "بُشْرَىٰكُمُ",
+   "ٱلْيَوْمَ",
+   "جَنَّٰتٌۭ",
+   "تَجْرِى",
+   "مِن",
+   "تَحْتِهَا",
+   "ٱلْأَنْهَٰرُ",
+   "خَٰلِدِينَ",
+   "فِيهَا",
+   "ۚ",
+   "ذَٰلِكَ",
+   "هُوَ",
+   "ٱلْفَوْزُ",
+   "ٱلْعَظِيمُ"
+  ],
+  "segments": [
+   "O gün inanan erkekleri ve inanan kadınları görürsün ki nurları, önlerinde ve sağlarında koşuyor.",
+   "(Kendilerine): \"Bugün müjdeniz altlarından ırmaklar akan, içlerinde ebedi kalacağınız cennetlerdir.\"",
+   "(denilir) İşte büyük kurtuluş budur!"
+  ],
+  "word_counts": [
+   9,
+   10,
+   4
+  ]
+ },
+ {
+  "surah": 36,
+  "ayah": 54,
+  "tokens": [
+   "فَٱلْيَوْمَ",
+   "لَا",
+   "تُظْلَمُ",
+   "نَفْسٌۭ",
+   "شَيْـًۭٔا",
+   "وَلَا",
+   "تُجْزَوْنَ",
+   "إِلَّا",
+   "مَا",
+   "كُنتُمْ",
+   "تَعْمَلُونَ"
+  ],
+  "segments": [
+   "O gün kimseye, hiç mi hiç zulmedilmez.",
+   "Size ancak işlemekte olduğunuz şeylerin karşılığı verilir."
+  ],
+  "word_counts": [
+   5,
+   6
+  ]
+ },
+ {
+  "surah": 36,
+  "ayah": 51,
+  "tokens": [
+   "وَنُفِخَ",
+   "فِى",
+   "ٱلصُّورِ",
+   "فَإِذَا",
+   "هُم",
+   "مِّنَ",
+   "ٱلْأَجْدَاثِ",
+   "إِلَىٰ",
+   "رَبِّهِمْ",
+   "يَنسِلُونَ"
+  ],
+  "segments": [
+   "Sura üfürülür.",
+   "Bir de bakarsın, kabirlerden çıkmış, Rablerine doğru akın akın gitmektedirler."
+  ],
+  "word_counts": [
+   3,
+   7
+  ]
+ },
+ {
+  "surah": 36,
+  "ayah": 47,
+  "tokens": [
+   "وَإِذَا",
+   "قِيلَ",
+   "لَهُمْ",
+   "أَنفِقُوا۟",
+   "مِمَّا",
+   "رَزَقَكُمُ",
+   "ٱللَّهُ",
+   "قَالَ",
+   "ٱلَّذِينَ",
+   "كَفَرُوا۟",
+   "لِلَّذِينَ",
+   "ءَامَنُوٓا۟",
+   "أَنُطْعِمُ",
+   "مَن",
+   "لَّوْ",
+   "يَشَآءُ",
+   "ٱللَّهُ",
+   "أَطْعَمَهُۥٓ",
+   "إِنْ",
+   "أَنتُمْ",
+   "إِلَّا",
+   "فِى",
+   "ضَلَٰلٍۢ",
+   "مُّبِينٍۢ"
+  ],
+  "segments": [
+   "Onlara, \"Allah'ın sizi rızıklandırdığı şeylerden Allah yolunda harcayın\" denildiği zaman, inkar edenler iman edenlere, \"Allah'ın, dilemiş olsa kendilerini doyurabileceği kimselere mi yedireceğiz?",
+   "Siz ancak apaçık bir sapıklık içindesiniz\" derler."
+  ],
+  "word_counts": [
+   18,
+   6
+  ]
+ },
+ {
+  "surah": 36,
+  "ayah": 52,
+  "tokens": [
+   "قَالُوا۟",
+   "يَٰوَيْلَنَا",
+   "مَنۢ",
+   "بَعَثَنَا",
+   "مِن",
+   "مَّرْقَدِنَا",
+   "ۜ",
+   "ۗ",
+   "هَٰذَا",
+   "مَا",
+   "وَعَدَ",
+   "ٱلرَّحْمَٰنُ",
+   "وَصَدَقَ",
+   "ٱلْمُرْسَلُونَ"
+  ],
+  "segments": [
+   "Şöyle derler: \"Vay başımıza gelene!",
+   "Kim bizi diriltip mezarımızdan çıkardı?",
+   "Bu, Rahman'ın vaad ettiği şeydir.",
+   "Peygamberler doğru söylemişler.\""
+  ],
+  "word_counts": [
+   2,
+   6,
+   4,
+   2
+  ]
+ },
+ {
+  "surah": 36,
+  "ayah": 53,
+  "tokens": [
+   "إِن",
+   "كَانَتْ",
+   "إِلَّا",
+   "صَيْحَةًۭ",
+   "وَٰحِدَةًۭ",
+   "فَإِذَا",
+   "هُمْ",
+   "جَمِيعٌۭ",
+   "لَّدَيْنَا",
+   "مُحْضَرُونَ"
+  ],
+  "segments": [
+   "Sadece korkunç bir ses olur.",
+   "Bir de bakarsın, hepsi birden toplanıp huzurumuza çıkarılmışlardır."
+  ],
+  "word_counts": [
+   5,
+   5
+  ]
+ },
+ {
+  "surah": 17,
+  "ayah": 48,
+  "tokens": [
+   "ٱنظُرْ",
+   "كَيْفَ",
+   "ضَرَبُوا۟",
+   "لَكَ",
+   "ٱلْأَمْثَالَ",
+   "فَضَلُّوا۟",
+   "فَلَا",
+   "يَسْتَطِيعُونَ",
+   "سَبِيلًۭا"
+  ],
+  "segments": [
+   "Bak, senin için ne türlü benzetmeler yaptılar da saptılar.",
+   "Artık (doğru) yolu bulamazlar."
+  ],
+  "word_counts": [
+   6,
+   3
+  ]
+ },
+ {
+  "surah": 17,
+  "ayah": 46,
+  "tokens": [
+   "وَجَعَلْنَا",
+   "عَلَىٰ",
+   "قُلُوبِهِمْ",
+   "أَكِنَّةً",
+   "أَن",
+   "يَفْقَهُوهُ",
+   "وَفِىٓ",
+   "ءَاذَانِهِمْ",
+   "وَقْرًۭا",
+   "ۚ",
+   "وَإِذَا",
+   "ذَكَرْتَ",
+   "رَبَّكَ",
+   "فِى",
+   "ٱلْقُرْءَانِ",
+   "وَحْدَهُۥ",
+   "وَلَّوْا۟",
+   "عَلَىٰٓ",
+   "أَدْبَٰرِهِمْ",
+   "نُفُورًۭا"
+  ],
+  "segments": [
+   "Kur'an'ı anlamamaları için kalpleri üzerine perdeler, kulaklarına da ağırlık koyarız.",
+   "Kur'an'da (ibadete layık ilah olarak) sadece Rabbini andığın zaman arkalarına dönüp kaçarlar."
+  ],
+  "word_counts": [
+   10,
+   10
+  ]
+ },
+ {
+  "surah": 7,
+  "ayah": 180,
+  "tokens": [
+   "وَلِلَّهِ",
+   "ٱلْأَسْمَآءُ",
+   "ٱلْحُسْنَىٰ",
+   "فَٱدْعُوهُ",
+   "بِهَا",
+   "ۖ",
+   "وَذَرُوا۟",
+   "ٱلَّذِينَ",
+   "يُلْحِدُونَ",
+   "فِىٓ",
+   "أَسْمَٰٓئِهِۦ",
+   "ۚ",
+   "سَيُجْزَوْنَ",
+   "مَا",
+   "كَانُوا۟",
+   "يَعْمَلُونَ"
+  ],
+  "segments": [
+   "En güzel isimler Allah'ındır.",
+   "O'na o güzel isimleriyle dua edin ve O'nun isimleri hakkında gerçeği çarpıtanları bırakın.",
+   "Onlar yaptıklarının cezasına çarptırılacaklardır."
+  ],
+  "word_counts": [
+   6,
+   6,
+   4
+  ]
+ },
+ {
+  "surah": 7,
+  "ayah": 179,
+  "tokens": [
+   "وَلَقَدْ",
+   "ذَرَأْنَا",
+   "لِجَهَنَّمَ",
+   "كَثِيرًۭا",
+   "مِّنَ",
+   "ٱلْجِنِّ",
+   "وَٱلْإِنسِ",
+   "ۖ",
+   "لَهُمْ",
+   "قُلُوبٌۭ",
+   "لَّا",
+   "يَفْقَهُونَ",
+   "بِهَا",
+   "وَلَهُمْ",
+   "أَعْيُنٌۭ",
+   "لَّا",
+   "يُبْصِرُونَ",
+   "بِهَا",
+   "وَلَهُمْ",
+   "ءَاذَانٌۭ",
+   "لَّا",
+   "يَسْمَعُونَ",
+   "بِهَآ",
+   "ۚ",
+   "أُو۟لَٰٓئِكَ",
+   "كَٱلْأَنْعَٰمِ",
+   "بَلْ",
+   "هُمْ",
+   "أَضَلُّ",
+   "ۚ",
+   "أُو۟لَٰٓئِكَ",
+   "هُمُ",
+   "ٱلْغَٰفِلُونَ"
+  ],
+  "segments": [
+   "Andolsun biz, cinler ve insanlardan, kalpleri olup da bunlarla anlamayan, gözleri olup da bunlarla görmeyen, kulakları olup da bunlarla işitmeyen birçoklarını cehennem için var ettik.",
+   "İşte bunlar hayvanlar gibi, hatta daha da aşağıdadırlar.",
+   "İşte bunlar gafillerin ta kendileridir."
+  ],
+  "word_counts": [
+   24,
+   6,
+   3
+  ]
+ },
+ {
+  "surah": 7,
+  "ayah": 180,
+  "tokens": [
+   "وَلِلَّهِ",
+   "ٱلْأَسْمَآءُ",
+   "ٱلْحُسْنَىٰ",
+   "فَٱدْعُوهُ",
+   "بِهَا",
+   "ۖ",
+   "وَذَرُوا۟",
+   "ٱلَّذِينَ",
+   "يُلْحِدُونَ",
+   "فِىٓ",
+   "أَسْمَٰٓئِهِۦ",
+   "ۚ",
+   "سَيُجْزَوْنَ",
+   "مَا",
+   "كَانُوا۟",
+   "يَعْمَلُونَ"
+  ],
+  "segments": [
+   "Oysa en güzel isimler Allah'ındır.",
+   "Bundan dolayı Allah'a onlarla dua edin.",
+   "Onun isimlerinde sapıklık eden mülhidleri (inkârcıları) terkedin.",
+   "Onlar yakında yaptıklarının cezasını çekecekler."
+  ],
+  "word_counts": [
+   3,
+   3,
+   6,
+   4
+  ]
+ },
+ {
+  "surah": 7,
+  "ayah": 179,
+  "tokens": [
+   "وَلَقَدْ",
+   "ذَرَأْنَا",
+   "لِجَهَنَّمَ",
+   "كَثِيرًۭا",
+   "مِّنَ",
+   "ٱلْجِنِّ",
+   "وَٱلْإِنسِ",
+   "ۖ",
+   "لَهُمْ",
+   "قُلُوبٌۭ",
+   "لَّا",
+   "يَفْقَهُونَ",
+   "بِهَا",
+   "وَلَهُمْ",
+   "أَعْيُنٌۭ",
+   "لَّا",
+   "يُبْصِرُونَ",
+   "بِهَا",
+   "وَلَهُمْ",
+   "ءَاذَانٌۭ",
+   "لَّا",
+   "يَسْمَعُونَ",
+   "بِهَآ",
+   "ۚ",
+   "أُو۟لَٰٓئِكَ",
+   "كَٱلْأَنْعَٰمِ",
+   "بَلْ",
+   "هُمْ",
+   "أَضَلُّ",
+   "ۚ",
+   "أُو۟لَٰٓئِكَ",
+   "هُمُ",
+   "ٱلْغَٰفِلُونَ"
+  ],
+  "segments": [
+   "Andolsun ki, cinlerden ve insanlardan birçoğunu cehennem için yarattık.",
+   "Onların kalbleri vardır, fakat onunla gerçeği anlamazlar.",
+   "Gözleri vardır, fakat onlarla görmezler.",
+   "Kulakları vardır, fakat onlarla işitmezler.",
+   "İşte bunlar hayvanlar gibidirler.",
+   "Hatta daha da aşağıdırlar.",
+   "Bunlar da gafillerin ta kendileridir."
+  ],
+  "word_counts": [
+   8,
+   5,
+   5,
+   6,
+   2,
+   4,
+   3
+  ]
+ },
+ {
+  "surah": 8,
+  "ayah": 4,
+  "tokens": [
+   "أُو۟لَٰٓئِكَ",
+   "هُمُ",
+   "ٱلْمُؤْمِنُونَ",
+   "حَقًّۭا",
+   "ۚ",
+   "لَّهُمْ",
+   "دَرَجَٰتٌ",
+   "عِندَ",
+   "رَبِّهِمْ",
+   "وَمَغْفِرَةٌۭ",
+   "وَرِزْقٌۭ",
+   "كَرِيمٌۭ"
+  ],
+  "segments": [
+   "İşte onlar gerçekten mü'minlerdir.",
+   "Onlara, Rableri katında yüksek mertebeler, bağışlanma ve cömertçe verilmiş rızık vardır."
+  ],
+  "word_counts": [
+   5,
+   7
+  ]
+ },
+ {
+  "surah": 8,
+  "ayah": 2,
+  "tokens": [
+   "إِنَّمَا",
+   "ٱلْمُؤْمِنُونَ",
+   "ٱلَّذِينَ",
+   "إِذَا",
+   "ذُكِرَ",
+   "ٱللَّهُ",
+   "وَجِلَتْ",
+   "قُلُوبُهُمْ",
+   "وَإِذَا",
+   "تُلِيَتْ",
+   "عَلَيْهِمْ",
+   "ءَايَٰتُهُۥ",
+   "زَادَتْهُمْ",
+   "إِيمَٰنًۭا",
+   "وَعَلَىٰ",
+   "رَبِّهِمْ",
+   "يَتَوَكَّلُونَ"
+  ],
+  "segments": [
+   "Mü'minler ancak o kimselerdir ki; Allah anıldığı zaman kalpleri ürperir.",
+   "O'nun ayetleri kendilerine okunduğu zaman (bu) onların imanlarını artırır.",
+   "Onlar sadece Rablerine tevekkül ederler."
+  ],
+  "word_counts": [
+   8,
+   6,
+   3
+  ]
+ },
+ {
+  "surah": 9,
+  "ayah": 32,
+  "tokens": [
+   "يُرِيدُونَ",
+   "أَن",
+   "يُطْفِـُٔوا۟",
+   "نُورَ",
+   "ٱللَّهِ",
+   "بِأَفْوَٰهِهِمْ",
+   "وَيَأْبَى",
+   "ٱللَّهُ",
+   "إِلَّآ",
+   "أَن",
+   "يُتِمَّ",
+   "نُورَهُۥ",
+   "وَلَوْ",
+   "كَرِهَ",
+   "ٱلْكَٰفِرُونَ"
+  ],
+  "segments": [
+   "Allah'ın nurunu ağızlarıyla söndürmek istiyorlar, Allah da razı olmuyor.",
+   "Fakat kâfirler istemeseler de Allah nurunu tamamlamayı diliyor."
+  ],
+  "word_counts": [
+   8,
+   7
+  ]
+ },
+ {
+  "surah": 9,
+  "ayah": 33,
+  "tokens": [
+   "هُوَ",
+   "ٱلَّذِىٓ",
+   "أَرْسَلَ",
+   "رَسُولَهُۥ",
+   "بِٱلْهُدَىٰ",
+   "وَدِينِ",
+   "ٱلْحَقِّ",
+   "لِيُظْهِرَهُۥ",
+   "عَلَى",
+   "ٱلدِّينِ",
+   "كُلِّهِۦ",
+   "وَلَوْ",
+   "كَرِهَ",
+   "ٱلْمُشْرِكُونَ"
+  ],
+  "segments": [
+   "O öyle bir Allah'dır ki, Resulünü hidayetle ve hak dinle bütün dinlere üstün kılmak için göndermiştir.",
+   "Müşrikler hoşlanmasalar da."
+  ],
+  "word_counts": [
+   11,
+   3
+  ]
+ },
+ {
+  "surah": 2,
+  "ayah": 281,
+  "tokens": [
+   "وَٱتَّقُوا۟",
+   "يَوْمًۭا",
+   "تُرْجَعُونَ",
+   "فِيهِ",
+   "إِلَى",
+   "ٱللَّهِ",
+   "ۖ",
+   "ثُمَّ",
+   "تُوَفَّىٰ",
+   "كُلُّ",
+   "نَفْسٍۢ",
+   "مَّا",
+   "كَسَبَتْ",
+   "وَهُمْ",
+   "لَا",
+   "يُظْلَمُونَ"
+  ],
+  "segments": [
+   "Öyle bir günden sakının ki, o gün hepiniz Allah'a döndürülüp götürüleceksiniz.",
+   "Sonra herkese kazandığı amellerin karşılığı verilecek ve onlara asla haksızlık yapılmayacaktır."
+  ],
+  "word_counts": [
+   7,
+   9
+  ]
+ },
+ {
+  "surah": 2,
+  "ayah": 278,
+  "tokens": [
+   "يَٰٓأَيُّهَا",
+   "ٱلَّذِينَ",
+   "ءَامَنُوا۟",
+   "ٱتَّقُوا۟",
+   "ٱللَّهَ",
+   "وَذَرُوا۟",
+   "مَا",
+   "بَقِىَ",
+   "مِنَ",
+   "ٱلرِّبَوٰٓا۟",
+   "إِن",
+   "كُنتُم",
+   "مُّؤْمِنِينَ"
+  ],
+  "segments": [
+   "Ey iman edenler!",
+   "Allah'a karşı gelmekten sakının ve eğer gerçekten iman etmiş kimselerseniz, faizden geriye kalanı bırakın."
+  ],
+  "word_counts": [
+   3,
+   10
+  ]
+ },
+ {
+  "surah": 2,
+  "ayah": 280,
+  "tokens": [
+   "وَإِن",
+   "كَانَ",
+   "ذُو",
+   "عُسْرَةٍۢ",
+   "فَنَظِرَةٌ",
+   "إِلَىٰ",
+   "مَيْسَرَةٍۢ",
+   "ۚ",
+   "وَأَن",
+   "تَصَدَّقُوا۟",
+   "خَيْرٌۭ",
+   "لَّكُمْ",
+   "ۖ",
+   "إِن",
+   "كُنتُمْ",
+   "تَعْلَمُونَ"
+  ],
+  "segments": [
+   "Eğer borçlu darlık içindeyse, ona eli genişleyinceye kadar mühlet verin.",
+   "Eğer bilirseniz, (borcu) sadaka olarak bağışlamanız, sizin için daha hayırlıdır."
+  ],
+  "word_counts": [
+   8,
+   8
+  ]
+ },
+ {
+  "surah": 2,
+  "ayah": 279,
+  "tokens": [
+   "فَإِن",
+   "لَّمْ",
+   "تَفْعَلُوا۟",
+   "فَأْذَنُوا۟",
+   "بِحَرْبٍۢ",
+   "مِّنَ",
+   "ٱللَّهِ",
+   "وَرَسُولِهِۦ",
+   "ۖ",
+   "وَإِن",
+   "تُبْتُمْ",
+   "فَلَكُمْ",
+   "رُءُوسُ",
+   "أَمْوَٰلِكُمْ",
+   "لَا",
+   "تَظْلِمُونَ",
+   "وَلَا",
+   "تُظْلَمُونَ"
+  ],
+  "segments": [
+   "Eğer böyle yapmazsanız, Allah ve Resulüyle savaşa girdiğinizi bilin.",
+   "Eğer tövbe edecek olursanız, anaparalarınız sizindir.",
+   "Böylece siz ne başkalarına haksızlık etmiş olursunuz, ne de başkaları size haksızlık etmiş olur."
+  ],
+  "word_counts": [
+   9,
+   5,
+   4
+  ]
+ },
+ {
+  "surah": 9,
+  "ayah": 72,
+  "tokens": [
+   "وَعَدَ",
+   "ٱللَّهُ",
+   "ٱلْمُؤْمِنِينَ",
+   "وَٱلْمُؤْمِنَٰتِ",
+   "جَنَّٰتٍۢ",
+   "تَجْرِى",
+   "مِن",
+   "تَحْتِهَا",
+   "ٱلْأَنْهَٰرُ",
+   "خَٰلِدِينَ",
+   "فِيهَا",
+   "وَمَسَٰكِنَ",
+   "طَيِّبَةًۭ",
+   "فِى",
+   "جَنَّٰتِ",
+   "عَدْنٍۢ",
+   "ۚ",
+   "وَرِضْوَٰنٌۭ",
+   "مِّنَ",
+   "ٱللَّهِ",
+   "أَكْبَرُ",
+   "ۚ",
+   "ذَٰلِكَ",
+   "هُوَ",
+   "ٱلْفَوْزُ",
+   "ٱلْعَظِيمُ"
+  ],
+  "segments": [
+   "Allah, mü'min erkeklere ve mü'min kadınlara, ebedi olarak kalacakları, içinden ırmaklar akan cennetler ve Adn cennetlerinde çok güzel köşkler va'detti.",
+   "Allah'ın rızası ise, bunların hepsinden daha büyüktür.",
+   "İşte bu büyük başarıdır."
+  ],
+  "word_counts": [
+   17,
+   5,
+   4
+  ]
+ },
+ {
+  "surah": 9,
+  "ayah": 71,
+  "tokens": [
+   "وَٱلْمُؤْمِنُونَ",
+   "وَٱلْمُؤْمِنَٰتُ",
+   "بَعْضُهُمْ",
+   "أَوْلِيَآءُ",
+   "بَعْضٍۢ",
+   "ۚ",
+   "يَأْمُرُونَ",
+   "بِٱلْمَعْرُوفِ",
+   "وَيَنْهَوْنَ",
+   "عَنِ",
+   "ٱلْمُنكَرِ",
+   "وَيُقِيمُونَ",
+   "ٱلصَّلَوٰةَ",
+   "وَيُؤْتُونَ",
+   "ٱلزَّكَوٰةَ",
+   "وَيُطِيعُونَ",
+   "ٱللَّهَ",
+   "وَرَسُولَهُۥٓ",
+   "ۚ",
+   "أُو۟لَٰٓئِكَ",
+   "سَيَرْحَمُهُمُ",
+   "ٱللَّهُ",
+   "ۗ",
+   "إِنَّ",
+   "ٱللَّهَ",
+   "عَزِيزٌ",
+   "حَكِيمٌۭ"
+  ],
+  "segments": [
+   "Mü'min erkekler ve mü'min kadınlar birbirlerinin dostlarıdır.",
+   "İyiliği emreder, kötülükten alıkoyarlar.",
+   "Namazı dosdoğru kılar, zekatı verirler.",
+   "Allah'a ve Resulüne itaat ederler.",
+   "İşte bunlara Allah merhamet edecektir.",
+   "Şüphesiz Allah mutlak güç sahibidir, hüküm ve hikmet sahibidir."
+  ],
+  "word_counts": [
+   6,
+   5,
+   4,
+   4,
+   4,
+   4
+  ]
+ },
+ {
+  "surah": 21,
+  "ayah": 88,
+  "tokens": [
+   "فَٱسْتَجَبْنَا",
+   "لَهُۥ",
+   "وَنَجَّيْنَٰهُ",
+   "مِنَ",
+   "ٱلْغَمِّ",
+   "ۚ",
+   "وَكَذَٰلِكَ",
+   "نُۨجِى",
+   "ٱلْمُؤْمِنِينَ"
+  ],
+  "segments": [
+   "Biz de duasını kabul ettik ve kendisini kederden kurtardık.",
+   "İşte biz mü'minleri böyle kurtarırız."
+  ],
+  "word_counts": [
+   6,
+   3
+  ]
+ },
+ {
+  "surah": 57,
+  "ayah": 16,
+  "tokens": [
+   "۞",
+   "أَلَمْ",
+   "يَأْنِ",
+   "لِلَّذِينَ",
+   "ءَامَنُوٓا۟",
+   "أَن",
+   "تَخْشَعَ",
+   "قُلُوبُهُمْ",
+   "لِذِكْرِ",
+   "ٱللَّهِ",
+   "وَمَا",
+   "نَزَلَ",
+   "مِنَ",
+   "ٱلْحَقِّ",
+   "وَلَا",
+   "يَكُونُوا۟",
+   "كَٱلَّذِينَ",
+   "أُوتُوا۟",
+   "ٱلْكِتَٰبَ",
+   "مِن",
+   "قَبْلُ",
+   "فَطَالَ",
+   "عَلَيْهِمُ",
+   "ٱلْأَمَدُ",
+   "فَقَسَتْ",
+   "قُلُوبُهُمْ",
+   "ۖ",
+   "وَكَثِيرٌۭ",
+   "مِّنْهُمْ",
+   "فَٰسِقُونَ"
+  ],
+  "segments": [
+   "İman edenlerin Allah'ı zikretmekten ve inen haktan dolayı kalplerinin saygı ile ürpermesinin zamanı gelmedi mi?",
+   "Daha önce kendilerine kitap verilip de, üzerinden uzun zaman geçen, böylece kalpleri katılaşanlar gibi olmasınlar.",
+   "Onlardan birçoğu fasık kimselerdir."
+  ],
+  "word_counts": [
+   14,
+   13,
+   3
+  ]
+ },
+ {
+  "surah": 57,
+  "ayah": 17,
+  "tokens": [
+   "ٱعْلَمُوٓا۟",
+   "أَنَّ",
+   "ٱللَّهَ",
+   "يُحْىِ",
+   "ٱلْأَرْضَ",
+   "بَعْدَ",
+   "مَوْتِهَا",
+   "ۚ",
+   "قَدْ",
+   "بَيَّنَّا",
+   "لَكُمُ",
+   "ٱلْءَايَٰتِ",
+   "لَعَلَّكُمْ",
+   "تَعْقِلُونَ"
+  ],
+  "segments": [
+   "Bilin ki Allah, yeryüzünü ölümünden sonra diriltmektedir.",
+   "Düşünesiniz diye gerçekten, size ayetleri açıkladık."
+  ],
+  "word_counts": [
+   8,
+   6
+  ]
+ },
+ {
+  "surah": 57,
+  "ayah": 15,
+  "tokens": [
+   "فَٱلْيَوْمَ",
+   "لَا",
+   "يُؤْخَذُ",
+   "مِنكُمْ",
+   "فِدْيَةٌۭ",
+   "وَلَا",
+   "مِنَ",
+   "ٱلَّذِينَ",
+   "كَفَرُوا۟",
+   "ۚ",
+   "مَأْوَىٰكُمُ",
+   "ٱلنَّارُ",
+   "ۖ",
+   "هِىَ",
+   "مَوْلَىٰكُمْ",
+   "ۖ",
+   "وَبِئْسَ",
+   "ٱلْمَصِيرُ"
+  ],
+  "segments": [
+   "Bugün artık ne sizden, ne de inkar edenlerden bir fidye alınır.",
+   "Barınağınız ateştir.",
+   "Size yaraşan odur.",
+   "Orası gidilecek ne kötü yerdir!"
+  ],
+  "word_counts": [
+   10,
+   3,
+   3,
+   2
+  ]
+ },
+ {
+  "surah": 57,
+  "ayah": 15,
+  "tokens": [
+   "فَٱلْيَوْمَ",
+   "لَا",
+   "يُؤْخَذُ",
+   "مِنكُمْ",
+   "فِدْيَةٌۭ",
+   "وَلَا",
+   "مِنَ",
+   "ٱلَّذِينَ",
+   "كَفَرُوا۟",
+   "ۚ",
+   "مَأْوَىٰكُمُ",
+   "ٱلنَّارُ",
+   "ۖ",
+   "هِىَ",
+   "مَوْلَىٰكُمْ",
+   "ۖ",
+   "وَبِئْسَ",
+   "ٱلْمَصِيرُ"
+  ],
+  "segments": [
+   "Bugün artık ne sizden ne de inkar edenlerden fidye kabul edilir, varacağınız yer ateştir.",
+   "Size yaraşan odur.",
+   "Orası ne kötü bir dönüş yeridir!"
+  ],
+  "word_counts": [
+   13,
+   3,
+   2
+  ]
+ },
+ {
+  "surah": 57,
+  "ayah": 17,
+  "tokens": [
+   "ٱعْلَمُوٓا۟",
+   "أَنَّ",
+   "ٱللَّهَ",
+   "يُحْىِ",
+   "ٱلْأَرْضَ",
+   "بَعْدَ",
+   "مَوْتِهَا",
+   "ۚ",
+   "قَدْ",
+   "بَيَّنَّا",
+   "لَكُمُ",
+   "ٱلْءَايَٰتِ",
+   "لَعَلَّكُمْ",
+   "تَعْقِلُونَ"
+  ],
+  "segments": [
+   "Biliniz ki Allah yer yüzünü ölümünden sonra diriltir.",
+   "Belki aklınızı kullanırsınız diye size âyetleri açıkladık."
+  ],
+  "word_counts": [
+   8,
+   6
+  ]
+ },
+ {
+  "surah": 2,
+  "ayah": 286,
+  "tokens": [
+   "لَا",
+   "يُكَلِّفُ",
+   "ٱللَّهُ",
+   "نَفْسًا",
+   "إِلَّا",
+   "وُسْعَهَا",
+   "ۚ",
+   "لَهَا",
+   "مَا",
+   "كَسَبَتْ",
+   "وَعَلَيْهَا",
+   "مَا",
+   "ٱكْتَسَبَتْ",
+   "ۗ",
+   "رَبَّنَا",
+   "لَا",
+   "تُؤَاخِذْنَآ",
+   "إِن",
+   "نَّسِينَآ",
+   "أَوْ",
+   "أَخْطَأْنَا",
+   "ۚ",
+   "رَبَّنَا",
+   "وَلَا",
+   "تَحْمِلْ",
+   "عَلَيْنَآ",
+   "إِصْرًۭا",
+   "كَمَا",
+   "حَمَلْتَهُۥ",
+   "عَلَى",
+   "ٱلَّذِينَ",
+   "مِن",
+   "قَبْلِنَا",
+   "ۚ",
+   "رَبَّنَا",
+   "وَلَا",
+   "تُحَمِّلْنَا",
+   "مَا",
+   "لَا",
+   "طَاقَةَ",
+   "لَنَا",
+   "بِهِۦ",
+   "ۖ",
+   "وَٱعْفُ",
+   "عَنَّا",
+   "وَٱغْفِرْ",
+   "لَنَا",
+   "وَٱرْحَمْنَآ",
+   "ۚ",
+   "أَنتَ",
+   "مَوْلَىٰنَا",
+   "فَٱنصُرْنَا",
+   "عَلَى",
+   "ٱلْقَوْمِ",
+   "ٱلْكَٰفِرِينَ"
+  ],
+  "segments": [
+   "Allah does not charge a soul except [with that within] its capacity.",
+   "It will have [the consequence of] what [good] it has gained, and it will bear [the consequence of] what [evil] it has earned.",
+   "\"Our Lord, do not impose blame upon us if we have forgotten or erred.",
+   "Our Lord, and lay not upon us a burden like that which You laid upon those before us.",
+   "Our Lord, and burden us not with that which we have no ability to bear.",
+   "And pardon us; and forgive us; and have mercy upon us.",
+   "You are our protector, so give us victory over the disbelieving people.\""
+  ],
+  "word_counts": [
+   7,
+   7,
+   8,
+   12,
+   9,
+   6,
+   6
+  ]
+ },
+ {
+  "surah": 14,
+  "ayah": 40,
+  "tokens": [
+   "رَبِّ",
+   "ٱجْعَلْنِى",
+   "مُقِيمَ",
+   "ٱلصَّلَوٰةِ",
+   "وَمِن",
+   "ذُرِّيَّتِى",
+   "ۚ",
+   "رَبَّنَا",
+   "وَتَقَبَّلْ",
+   "دُعَآءِ"
+  ],
+  "segments": [
+   "\"Ey Rabbim!",
+   "Beni ve soyumdan gelecekleri namazını dosdoğru kılanlardan eyle!",
+   "Ey Rabbimiz!",
+   "duamı kabul et!"
+  ],
+  "word_counts": [
+   1,
+   6,
+   1,
+   2
+  ]
+ }
+]

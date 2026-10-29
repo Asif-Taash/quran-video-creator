@@ -1,26 +1,130 @@
 [
   {
-    "surah": 1,
-    "ayah": 2,
+    "surah": 22,
+    "ayah": 73,
     "mappings": [
       {
         "part": 1,
-        "translation_text": "Hamd o âlemlerin Rabbi,",
-        "word_count": 4,
-        "arabicWidthScale": 1.04
+        "word_count": 7,
+        "translation_text": "",
+        "start_ms": 9880,
+        "end_ms": 17040,
+        "arabic_text": "ﭑ ﭒ ﭓ ﭔ ﭕ ﭖ ﭗ",
+        "isFirstOfAyah": true
+      },
+      {
+        "part": 2,
+        "word_count": 6,
+        "translation_text": "",
+        "start_ms": 17040,
+        "end_ms": 21380,
+        "arabic_text": "ﭘ ﭙ ﭚ ﭛ ﭜ ﭝ",
+        "isFirstOfAyah": false
+      },
+      {
+        "part": 3,
+        "word_count": 7,
+        "translation_text": "",
+        "start_ms": 21380,
+        "end_ms": 26300,
+        "arabic_text": "ﭞ ﭟ ﭠ ﭡ ﭢ ﭣ ﭤ",
+        "isFirstOfAyah": false
+      },
+      {
+        "part": 4,
+        "word_count": 8,
+        "translation_text": "",
+        "start_ms": 26300,
+        "end_ms": 33000,
+        "arabic_text": "ﭥ ﭦ ﭧ ﭨ ﭩ ﭪ ﭫ ﭬ",
+        "isFirstOfAyah": false
+      },
+      {
+        "part": 5,
+        "word_count": 3,
+        "translation_text": "",
+        "start_ms": 33000,
+        "end_ms": 36430,
+        "arabic_text": "ﭭ ﭮ ﭯﭰ",
+        "isFirstOfAyah": false
       }
     ]
   },
   {
-    "surah": 1,
-    "ayah": 7,
+    "surah": 22,
+    "ayah": 74,
     "mappings": [
       {
         "part": 1,
-        "translation_text": "O kendilerine nimet verdiğin mutlu kimselerin yoluna; o gazaba uğramışların ve o sapmışların yoluna değil.",
-        "word_count": 9,
-        "arabicWidthScale": 1.04,
-        "translationWidthScale": 0.9436011904761905
+        "word_count": 6,
+        "translation_text": "",
+        "start_ms": 36430,
+        "end_ms": 40500,
+        "arabic_text": "ﭱ ﭲ ﭳ ﭴ ﭵ ﭶ",
+        "isFirstOfAyah": true,
+        "translationWidthScale": 0.4763005332341269
+      },
+      {
+        "part": 2,
+        "word_count": 4,
+        "translation_text": "",
+        "start_ms": 40500,
+        "end_ms": 44760,
+        "arabic_text": "ﭷ ﭸ ﭹ ﭺﭻ",
+        "isFirstOfAyah": false,
+        "translationWidthScale": 0.48371388268849214
+      }
+    ]
+  },
+  {
+    "surah": 22,
+    "ayah": 75,
+    "mappings": [
+      {
+        "part": 1,
+        "word_count": 8,
+        "translation_text": "",
+        "start_ms": 44760,
+        "end_ms": 52580,
+        "arabic_text": "ﭼ ﭽ ﭾ ﭿ ﮀ ﮁ ﮂ ﮃ",
+        "isFirstOfAyah": true,
+        "translationWidthScale": 1.04
+      },
+      {
+        "part": 2,
+        "word_count": 4,
+        "translation_text": "",
+        "start_ms": 52580,
+        "end_ms": 57030,
+        "arabic_text": "ﮄ ﮅ ﮆ ﮇﮈ",
+        "isFirstOfAyah": false,
+        "translationWidthScale": 0.5792550223214286
+      }
+    ]
+  },
+  {
+    "surah": 22,
+    "ayah": 76,
+    "mappings": [
+      {
+        "part": 1,
+        "word_count": 7,
+        "translation_text": "",
+        "start_ms": 57030,
+        "end_ms": 61140,
+        "arabic_text": "ﮉ ﮊ ﮋ ﮌ ﮍ ﮎ ﮏ",
+        "isFirstOfAyah": true,
+        "translationWidthScale": 0.9160055493551588
+      },
+      {
+        "part": 2,
+        "word_count": 4,
+        "translation_text": "",
+        "start_ms": 61140,
+        "end_ms": 64519,
+        "arabic_text": "ﮐ ﮑ ﮒ ﮓﮔ",
+        "isFirstOfAyah": false,
+        "translationWidthScale": 1.04
       }
     ]
   }

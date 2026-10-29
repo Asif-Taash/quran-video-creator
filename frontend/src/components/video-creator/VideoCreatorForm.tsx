@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowPathIcon, FilmIcon } from "@heroicons/react/24/outline";
-import { useLanguage } from "@/lib/LanguageContext";
+import { useLanguage, useT } from "@/lib/LanguageContext";
 import { fixMojibake } from "@/lib/textEncoding";
 import { RECITER_DISPLAY_NAMES, RECITER_ARABIC_NAMES } from "@/lib/reciterNames";
 import quranData from "@/data/quran.json";
@@ -11,11 +11,26 @@ import quranQcfV1Data from "@/data/quran-qcf-v1.json";
 import Spinner from "@/components/ui/Spinner";
 
 import { useTranslationContext } from "@/lib/TranslationContext";
-import SegmentTimingEditor, { type SegmentTimingInput, type SegmentTimingResult } from "./SegmentTimingEditor";
-import { TRANSLATION_FONT_OPTIONS, type ArabicFontKey, type AspectRatio, type QualityTier, type QuranVideoProps, type TranslationFontKey } from "@/remotion/types";
+import { surahEnglishName } from "@/lib/surahEnglishNames";
+import SegmentTimingEditor, { type AyahWordTiming, type SegmentTimingInput, type SegmentTimingResult } from "./SegmentTimingEditor";
+import {
+  DEFAULT_BACKGROUND_DIM,
+  DEFAULT_TRANSLATION_FONT,
+  DEFAULT_WORD_HIGHLIGHT_COLOR,
+  resolveTranslationFont,
+  translationFontStack,
+  translationFontSupports,
+  type ArabicFontKey,
+  type AspectRatio,
+  type QualityTier,
+  type QuranVideoProps,
+  type TranslationFontKey,
+} from "@/remotion/types";
+import { buildVerseTimeline, fitWordCounts, holdWordsThroughRepeats, moveBoundariesOffMarks, repeatWordWindows, shiftWordsToTrim, voicedSpan } from "@/remotion/timing";
+import { applyReadings } from "@/lib/readingPath";
 import { type WizardStepMeta } from "./wizard/WizardShell";
 import Step1SurahVerse from "./wizard/Step1SurahVerse";
-import Step2Background from "./wizard/Step2Background";
+import BackgroundPicker from "./BackgroundPicker";
 import Step3Audio from "./wizard/Step3Audio";
 import Step5Generate from "./wizard/Step5Generate";
 
@@ -38,6 +53,32 @@ const qcfV1TextBySurahAyah = new Map<string, { text: string; page: number }>(
   )
 );
 
+// Default audio trim window (seconds, relative to the prepared clip) for
+// freshly prepared audio. The backend's CTC engine reports the exact ayah
+// boundaries itself (ayahStartMs/ayahEndMs: snapped to where the reciter's
+// voice actually starts/stops); prepared data from before it (e.g. an older
+// draft) falls back to padding the first/last word timing, with a wider end
+// margin because Whisper used to under-shoot elongated (madd) endings.
+function defaultTrimFromTimings(json: any): { start: number; end: number } | null {
+  if (!json?.verses) return null;
+  if (typeof json.ayahStartMs === "number" && typeof json.ayahEndMs === "number" && json.ayahEndMs > json.ayahStartMs) {
+    return { start: json.ayahStartMs / 1000, end: json.ayahEndMs / 1000 };
+  }
+  const PAD_SECONDS = 10.0; // matches padSeconds sent when preparing audio
+  let minStart = Infinity;
+  let maxEnd = 0;
+  Object.values(json.verses).forEach((v: any) => {
+    v.words?.forEach((w: any) => {
+      if (w.start < minStart) minStart = w.start;
+      if (w.end > maxEnd) maxEnd = w.end;
+    });
+  });
+  if (minStart === Infinity) return null;
+  return {
+    start: Math.max(0, minStart / 1000 - 0.35),
+    end: maxEnd / 1000 + (json.lowConfidenceEnd ? PAD_SECONDS - 2.0 : 1.5),
+  };
+}
 
 
 
@@ -84,6 +125,87 @@ export interface ApiSurah {
 // which (with StepCard defined inline) remounted the whole Step1SurahVerse
 // subtree -- including QuranSearch's own `query` state -- on every
 // keystroke.
+// Rebuilds the segmentation of every ayah the timing editor returned from its
+// full segment set (`results`, in on-timeline order): the editor can split,
+// merge and retitle segments, so its parts may no longer line up one-to-one
+// with the old mappings. Used both for "حفظ التوقيت" and, unsaved, for the
+// live preview while the editor is open -- the two can't differ.
+// `offsetSec` shifts the editor's times back onto the untrimmed prepared
+// clip (see trimmedPreviewOffset).
+function applyTimingResults(prev: any[], results: SegmentTimingResult[], surahId: number, offsetSec: number): any[] {
+  // Group results by ayah, preserving their on-timeline order within each
+  // group (results already arrive in that order from SegmentTimingEditor).
+  const resultsByAyah: Record<number, SegmentTimingResult[]> = {};
+  for (const res of results) {
+    if (!resultsByAyah[res.ayah]) resultsByAyah[res.ayah] = [];
+    resultsByAyah[res.ayah].push(res);
+  }
+
+  // Part numbers are reassigned sequentially (1..N in timeline order), which
+  // also fixes the "gap" bug class from the old part-preserving merge logic
+  // (a merged-away part leaving e.g. parts 1 and 3 with no 2).
+  const next = prev.filter((s) => !(s.surah === surahId && s.ayah in resultsByAyah));
+  for (const [ayahIdStr, ayahResults] of Object.entries(resultsByAyah)) {
+    const ayahId = Number(ayahIdStr);
+    // Session-local SegmentTimingResult.id -> its new (1-based) part
+    // number, so a "repeat" segment's repeatOfId (also a session-local
+    // id) can be translated into a `repeat_of_part` reference that's
+    // still valid once ids are regenerated fresh on the next reopen --
+    // see buildTimingEditorSegments, which resolves it back into a fresh
+    // id of that same shape (`${ayahId}-${part}`).
+    const idToPart = new Map(ayahResults.map((r, idx) => [r.id, idx + 1]));
+    // Per-segment size/width overrides (see VerseMapping's own scale
+    // fields in types.ts, set via VideoPreviewPlayer's resize boxes) live
+    // on the OLD mapping objects this rebuild is about to replace
+    // wholesale -- carried over here position-for-position, or they'd
+    // silently reset to default on every single save, even when nothing
+    // about that ayah's actual split/timing changed. Only safe when the
+    // segment COUNT hasn't changed: a split/merge/reorder means part N no
+    // longer means the same thing it did before, so there's no reliable
+    // old segment to carry a resize over from -- those simply reset, same
+    // as a segment resized for the very first time always has.
+    const oldMappings = prev.find((s) => s.surah === surahId && s.ayah === ayahId)?.mappings;
+    const canPreserveScale = oldMappings && oldMappings.length === ayahResults.length;
+    next.push({
+      surah: surahId,
+      ayah: ayahId,
+      mappings: ayahResults.map((result, idx) => {
+        const oldMapping = canPreserveScale ? oldMappings![idx] : undefined;
+        return {
+          part: idx + 1,
+          // Real word count carried through as its own field (see
+          // SegmentTimingInput.wordCount) rather than re-derived from
+          // arabicText -- the raw QCF text's whitespace-token count can run
+          // one higher than the real word count for whichever segment ends
+          // an ayah, since the ayah-number marker glyph is its own trailing
+          // token there.
+          word_count: Math.max(1, result.wordCount),
+          translation_text: result.translation_text,
+          // Every boundary as the editor shows it, on the untrimmed
+          // prepared clip -- the space render/route.ts expects. The ones
+          // that only restate the word timing are told apart when the
+          // video is timed (see remotion/timing.ts), so an untouched
+          // boundary keeps following the words.
+          start_ms: Math.round((result.startSec + offsetSec) * 1000),
+          end_ms: Math.round((result.endSec + offsetSec) * 1000),
+          // The editor already resolved the exact Arabic text for this
+          // segment (including "repeat" segments, whose real-word range
+          // isn't the next sequential one -- see SegmentTimingEditor's
+          // resolveContent); kept for reference, see VerseMapping.
+          ...(result.arabicText ? { arabic_text: result.arabicText } : {}),
+          isFirstOfAyah: result.isFirstOfAyah,
+          ...(result.repeatOfId && idToPart.has(result.repeatOfId) ? { repeat_of_part: idToPart.get(result.repeatOfId) } : {}),
+          ...(oldMapping?.arabicTextScale !== undefined ? { arabicTextScale: oldMapping.arabicTextScale } : {}),
+          ...(oldMapping?.arabicWidthScale !== undefined ? { arabicWidthScale: oldMapping.arabicWidthScale } : {}),
+          ...(oldMapping?.translationTextScale !== undefined ? { translationTextScale: oldMapping.translationTextScale } : {}),
+          ...(oldMapping?.translationWidthScale !== undefined ? { translationWidthScale: oldMapping.translationWidthScale } : {}),
+        };
+      }),
+    });
+  }
+  return next;
+}
+
 function StepCard({ idx, label, children, className }: { idx: number; label: string; children: React.ReactNode; className?: string }) {
   return (
     <div className={`relative rounded-2xl p-6 md:p-8 space-y-6 shadow-lg ${className ?? ""}`}>
@@ -101,20 +223,32 @@ function StepCard({ idx, label, children, className }: { idx: number; label: str
 }
 
 export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }) {
+  const tx = useT();
   const { language } = useLanguage();
   const isArabic = language === "ar";
   const surahs = quranData as Surah[];
-  const { selectedTranslation, setSelectedTranslationId, getTranslation, fetchSurahTranslations } = useTranslationContext();
+  const { selectedTranslation, setSelectedTranslationId, translationLanguage, getTranslation, fetchSurahTranslations } = useTranslationContext();
 
   const [selectedSurah, setSelectedSurah] = useState<Surah | null>(null);
   const [selectedApiSurah, setSelectedApiSurah] = useState<ApiSurah | null>(null);
-  const [selectedReciter, setSelectedReciter] = useState<string>("mishary_alafasy");
+  // "" until the user picks one -- choosing the reciter is what starts the
+  // automatic audio preparation (see the auto-prepare effect), so a
+  // preselected default would start preparing the wrong voice.
+  const [selectedReciter, setSelectedReciter] = useState<string>("");
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("portrait");
   // Export resolution tier only -- never affects the live preview, which
   // always renders at the composition's own fixed canvas size (see
   // render/route.ts's `scale` option and QUALITY_SCALE in remotion/types.ts).
   const [quality, setQuality] = useState<QualityTier>("720p");
   const [translationFont, setTranslationFont] = useState<TranslationFontKey | "custom">("aileron");
+  // A translation language whose letters the current font can't render (a
+  // Latin font for an Arabic tafsir, or vice versa) switches the font to
+  // that language's default -- the picker only lists fonts that cover the
+  // selected language. A custom upload is left alone: the user chose it.
+  useEffect(() => {
+    if (translationFont === "custom" || translationFontSupports(translationFont, translationLanguage)) return;
+    setTranslationFont(DEFAULT_TRANSLATION_FONT[translationLanguage]);
+  }, [translationFont, translationLanguage]);
   const [arabicFont, setArabicFont] = useState<ArabicFontKey>("qcf2");
   // A user-uploaded translation font (translationFont === "custom"). The
   // File itself is only ever set within THIS session (picking a new file);
@@ -140,6 +274,15 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
   // which this component has no reason to duplicate client-side.
   const [bgVideo, setBgVideo] = useState<File | null>(null);
   const [bgVideoPreview, setBgVideoPreview] = useState<string | null>(null);
+  // How the background is shown (darken/blur/slow zoom) -- see
+  // QuranVideoProps.backgroundDim. Pure client-side rendering parameters,
+  // patched straight into previewProps like the text scales below.
+  const [backgroundDim, setBackgroundDim] = useState(DEFAULT_BACKGROUND_DIM);
+  const [backgroundBlur, setBackgroundBlur] = useState(0);
+  const [backgroundZoom, setBackgroundZoom] = useState(false);
+  // Colors the Arabic word being recited -- see QuranVideoProps.wordHighlight.
+  const [wordHighlight, setWordHighlight] = useState(false);
+  const [wordHighlightColor, setWordHighlightColor] = useState<string>(DEFAULT_WORD_HIGHLIGHT_COLOR);
   // Font size and text-box width (1 = default, narrower widths force more
   // line breaks) -- fully independent between the Arabic verse and the
   // translation, each user-adjustable directly on the live preview
@@ -160,6 +303,13 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
   // populated from the SAME /api/video/render endpoint's "preview" mode, so
   // it can never structurally drift from what the real render would produce.
   const [previewProps, setPreviewProps] = useState<QuranVideoProps | null>(null);
+  // Set when the server timed previewProps from our own preparedJsonData
+  // (`json`, the object sent) cut at trimStartMs -- then
+  // displayedPreviewProps re-times the preview client-side, with the same
+  // rule (remotion/timing.ts), the instant the segmentation changes. null:
+  // segmentation changes need a server reload to show.
+  const [previewTimingBasis, setPreviewTimingBasis] = useState<{ trimStartMs: number; json: any } | null>(null);
+  const previewReloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [previewError, setPreviewError] = useState("");
   // Bumped ONLY when globalAudioPath actually changes (see
@@ -195,9 +345,21 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
   // audio" button, or the panel's own toggle) also scrolls it into view,
   // since it can be well below the fold on a long page.
   const timingPanelRef = useRef<HTMLDivElement>(null);
-  const [isGeneratingBg, setIsGeneratingBg] = useState(false);
   const [customAudio, setCustomAudio] = useState<File | null>(null);
   const [audioSourceMode, setAudioSourceMode] = useState<"reciter" | "custom">("reciter");
+  // An Arabic video shows the reciter's name under the surah name (see
+  // QuranVideoProps.reciterName) -- on by default, and editable: null
+  // follows the picked reciter's Arabic name (nothing for an uploaded
+  // file), a string is the user's own text. Picking another reciter or
+  // switching the audio source drops the user's text (see
+  // onReciterChange/onAudioSourceModeChange).
+  const [showReciterName, setShowReciterName] = useState(true);
+  const [reciterNameEdit, setReciterNameEdit] = useState<string | null>(null);
+  const reciterNameText =
+    reciterNameEdit ?? (audioSourceMode === "reciter" ? RECITER_ARABIC_NAMES[selectedReciter] ?? "" : "");
+  const isArabicVideo = (selectedTranslation.language ?? translationLanguage) === "ar";
+  // What the video's second header line shows ("" = nothing).
+  const reciterLabel = isArabicVideo && showReciterName ? reciterNameText.trim() : "";
 
   const [segmentationProgress, setSegmentationProgress] = useState<string | null>(null);
   const [pendingSegmentationData, setPendingSegmentationData] = useState<any[]>([]);
@@ -217,8 +379,16 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
   // hold text the user manually distributed across them and re-deriving
   // that split from the new translation isn't something we can do safely.
   const [translationSyncNotice, setTranslationSyncNotice] = useState(false);
+  // Set once the user has dealt with (or dismissed) a prepared clip's
+  // needsReview warning -- see the banner above Step5Generate.
+  const [reviewNoticeDismissed, setReviewNoticeDismissed] = useState(false);
+  const openTimingEditorAfterPrepareRef = useRef(false);
   // Whether the unified audio-trim/timing panel is currently open.
   const [showTimingEditor, setShowTimingEditor] = useState<boolean>(false);
+  // The open timing editor's current, unsaved state (its onLiveChange) --
+  // shown in the preview right away; "حفظ التوقيت" commits it into
+  // pendingSegmentationData, closing the panel any other way drops it.
+  const [liveTimingResults, setLiveTimingResults] = useState<SegmentTimingResult[] | null>(null);
 
   const [preparedAudioUrl, setPreparedAudioUrl] = useState<string | null>(null);
   const [preparedAudioLocalPath, setPreparedAudioLocalPath] = useState<string | null>(null);
@@ -282,6 +452,10 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
   // reciter/custom-audio changes) doesn't immediately wipe the very state
   // hydration just restored.
   const isHydratingRef = useRef(false);
+  // Bumped once a draft restore finishes, so effects that skip while
+  // isHydratingRef is set (a ref, so it can't re-trigger them itself) get
+  // one more look at the restored state -- see the auto-prepare effect.
+  const [hydrationVersion, setHydrationVersion] = useState(0);
   // Bumped every time the invalidation effect below fires (surah/verse/
   // reciter/custom-audio/mode changed). handlePrepareAudio snapshots this at
   // request start and re-checks it before applying a successful response --
@@ -297,6 +471,61 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
   // itself hasn't actually changed.
   const lastSyncedTranslationIdRef = useRef(selectedTranslation.id);
 
+  // The audio preparation currently in flight. A selection change cancels
+  // it outright -- the browser request AND the backend job behind it (see
+  // backend/scripts/job_control.py) -- instead of the new selection waiting
+  // for it to finish: an abandoned pick (say a whole Al-Baqarah from a slow
+  // mirror) used to hold up the next one for many minutes.
+  const audioPrepRef = useRef<{ epoch: number; jobId: string; controller: AbortController } | null>(null);
+  const cancelAudioPrep = useCallback(() => {
+    const prep = audioPrepRef.current;
+    if (!prep || prep.controller.signal.aborted) return;
+    prep.controller.abort();
+    // keepalive: also sent when this runs on pagehide (see below).
+    fetch(`/api/video/prepare-audio/job?jobId=${prep.jobId}`, { method: "DELETE", keepalive: true }).catch(() => {});
+  }, []);
+  // Leaving or reloading the page abandons its request too -- otherwise the
+  // reloaded page's request for the same surah queued behind it.
+  useEffect(() => {
+    window.addEventListener("pagehide", cancelAudioPrep);
+    return () => {
+      window.removeEventListener("pagehide", cancelAudioPrep);
+      cancelAudioPrep();
+    };
+  }, [cancelAudioPrep]);
+
+  // The backend's real stage for the request in flight (job_control.report).
+  const audioStageLabel = (job: { stage?: string | null; percent?: number | null; source?: string | null }) => {
+    const pct = typeof job.percent === "number" ? ` ${job.percent}%` : "";
+    switch (job.stage) {
+      case "queued":
+        return tx("⏳ جاري التحضير...", "⏳ Hazırlanıyor...", "⏳ Getting ready...");
+      case "waiting":
+        return tx("⏳ بانتظار انتهاء تنزيل نفس السورة...", "⏳ Aynı surenin indirilmesi bekleniyor...", "⏳ Waiting for the same surah's download to finish...");
+      case "download":
+        return job.source === "backup"
+          ? tx(`⬇️ تنزيل السورة من المصدر الاحتياطي...${pct}`, `⬇️ Sure yedek kaynaktan indiriliyor...${pct}`, `⬇️ Downloading the surah from the backup source...${pct}`)
+          : tx(`⬇️ تنزيل السورة...${pct}`, `⬇️ Sure indiriliyor...${pct}`, `⬇️ Downloading the surah...${pct}`);
+      case "locate":
+        return tx(`🔍 تحديد موضع الآيات في التسجيل...${pct}`, `🔍 Ayetlerin kayıttaki yeri bulunuyor...${pct}`, `🔍 Finding the ayahs in the recording...${pct}`);
+      case "align":
+        return tx("🎯 مطابقة الآيات مع الصوت...", "🎯 Ayetler sesle eşleştiriliyor...", "🎯 Aligning the ayahs with the audio...");
+      case "verify":
+        return tx("✅ التحقق من القص...", "✅ Kesim doğrulanıyor...", "✅ Verifying the cut...");
+      default:
+        return null;
+    }
+  };
+
+  // The selected ayahs as applyReadings needs them: translation, and the
+  // prepared clip's tokens.
+  const readingAyahs = (json: any) =>
+    selectedVersesContent.map((verse) => ({
+      id: verse.id,
+      translation: verse.translation || "",
+      tokens: ((json?.verses?.[String(verse.id)]?.words ?? []) as { w?: string }[]).map((w) => w.w ?? ""),
+    }));
+
   const handlePrepareAudio = async () => {
     if (!selectedSurah || startVerse === null || endVerse === null) return;
 
@@ -308,13 +537,15 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
       return;
     }
 
-    // A request for this exact parameter set is already in flight -- the
+    // A request for this exact selection is already in flight -- the
     // debounced auto-prepare effect below and a manual button click can
     // both land here before either resolves (preparedAudioUrl is still
-    // null either way). Without this guard, two identical extraction
-    // requests race on the backend's shared temp-file name and one
-    // truncates the other mid-write, failing both with a 400/500.
-    if (isPreparingAudio) return;
+    // null either way) -- so don't start a second, identical one. One for
+    // an older selection is cancelled instead (normally the invalidation
+    // effect already did that).
+    const inFlight = audioPrepRef.current;
+    if (inFlight && inFlight.epoch === audioParamsEpochRef.current && !inFlight.controller.signal.aborted) return;
+    cancelAudioPrep();
 
     // Snapshotted now, re-checked once the request resolves below -- if the
     // user changes surah/verse/reciter/custom-audio while this fetch is
@@ -323,9 +554,29 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     // newer selection's state.
     const requestEpoch = audioParamsEpochRef.current;
     const isStale = () => audioParamsEpochRef.current !== requestEpoch;
+    const prep = {
+      epoch: requestEpoch,
+      // randomUUID only exists in secure contexts (not plain http on a LAN IP).
+      jobId:
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`,
+      controller: new AbortController(),
+    };
+    audioPrepRef.current = prep;
 
     setIsPreparingAudio(true);
-    setAudioProgressStage(isArabic ? "⬇️ تحميل الملف الصوتي..." : "⬇️ Ses dosyası indiriliyor...");
+    setAudioProgressStage(tx("⏳ جاري تجهيز الصوت...", "⏳ Ses hazırlanıyor...", "⏳ Preparing the audio..."));
+    // Shows what the backend is really doing until this request settles.
+    const pollTimer = setInterval(async () => {
+      try {
+        const job = await (await fetch(`/api/video/prepare-audio/job?jobId=${prep.jobId}`)).json();
+        const label = audioStageLabel(job);
+        if (label && audioPrepRef.current === prep) setAudioProgressStage(label);
+      } catch {
+        // A missed poll just keeps the previous stage on screen.
+      }
+    }, 1500);
     try {
       const formData = new FormData();
       formData.append("surahId", selectedSurah.id.toString());
@@ -339,12 +590,12 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
       // handles (its first/last segment boundaries) to expand the selection
       // if needed
       formData.append("padSeconds", "10.0");
-
-      setAudioProgressStage(isArabic ? "🔍 تحليل الموجات الصوتية..." : "🔍 Ses dalgaları analiz ediliyor...");
+      formData.append("jobId", prep.jobId);
 
       const res = await fetch("/api/video/prepare-audio", {
         method: "POST",
         body: formData,
+        signal: prep.controller.signal,
       });
 
       if (res.ok) {
@@ -357,44 +608,34 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
         // to an uploaded video). Discard it quietly instead.
         if (isStale()) return;
         if (data.success) {
-          setAudioProgressStage(isArabic ? "✂️ جاري تجهيز النتيجة..." : "✂️ Sonuç hazırlanıyor...");
+          setAudioProgressStage(tx("✂️ جاري تجهيز النتيجة...", "✂️ Sonuç hazırlanıyor...", "✂️ Preparing the result..."));
 
-          // Calculate default trim bounds so the preview already looks
-          // reasonable even before the user ever opens the timing panel.
-          // Kept in sync with the identical calculation in
-          // buildTimingEditorSegments (which seeds the same margin onto the
-          // first/last segment's own boundary the first time the panel
-          // opens) -- both copies must use the same lowConfidenceEnd-aware
-          // margin or one would silently override the other once the user
-          // actually saves.
-          let defaultRegionStart = 0;
-          let defaultRegionEnd = 0;
-          const PAD_SECONDS = 10.0; // matches padSeconds sent above
-          const lowConfidenceEnd = !!data.wordTimingsData?.lowConfidenceEnd;
-          if (data.wordTimingsData && data.wordTimingsData.verses) {
-            let minStart = Infinity;
-            let maxEnd = 0;
-            Object.values(data.wordTimingsData.verses).forEach((v: any) => {
-              v.words?.forEach((w: any) => {
-                if (w.start < minStart) minStart = w.start;
-                if (w.end > maxEnd) maxEnd = w.end;
-              });
-            });
-            if (minStart !== Infinity) {
-              // Whisper's forced alignment can under-shoot the true end of elongated
-              // (madd) word endings by upwards of 1.5s, so the end margin is kept
-              // wider than the start margin to avoid clipping the last word's tail.
-              defaultRegionStart = Math.max(0, (minStart / 1000) - 0.35);
-              defaultRegionEnd = (maxEnd / 1000) + (lowConfidenceEnd ? PAD_SECONDS - 2.0 : 1.5);
-            }
-          }
-
-          setAudioTrimStart(defaultRegionStart);
-          setAudioTrimEnd(defaultRegionEnd);
+          // Default trim bounds so the preview already looks right even
+          // before the user ever opens the timing panel (the same helper
+          // seeds the panel's first/last segment boundary in
+          // buildTimingEditorSegments, so the two can't disagree).
+          const defaultTrim = defaultTrimFromTimings(data.wordTimingsData);
+          setAudioTrimStart(defaultTrim?.start ?? 0);
+          setAudioTrimEnd(defaultTrim?.end ?? 0);
 
           setPreparedAudioUrl(data.audioUrl);
           setPreparedAudioLocalPath(data.localAudioPath);
           setPreparedJsonData(data.wordTimingsData);
+          // Where the reciter went back and read part of it again, those
+          // repeats show too, timed to the audio (see lib/readingPath.ts).
+          if (data.wordTimingsData?.readings) {
+            setPendingSegmentationData((prev) =>
+              applyReadings(prev, data.wordTimingsData.readings, readingAyahs(data.wordTimingsData), selectedSurah.id)
+            );
+          }
+          // The backend couldn't fully verify this cut (e.g. the recording
+          // seems to start after the ayah, or the independent check heard a
+          // different first word): open the timing panel right away and
+          // show why, instead of letting a possibly wrong cut go unnoticed.
+          setReviewNoticeDismissed(false);
+          if (data.wordTimingsData?.needsReview) {
+            openTimingEditorAfterPrepareRef.current = true;
+          }
           // Inline trim/timing panels below the video preview start
           // collapsed even after a fresh automatic prepare -- the user sees
           // the video immediately and opens either panel deliberately only
@@ -408,21 +649,29 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
           alert(data.error);
         }
       } else {
-        if (isStale()) return;
+        // 409: this job was cancelled (a newer selection replaced it).
+        if (isStale() || res.status === 409) return;
         const errData = await res.json().catch(() => null);
         if (errData && errData.error) {
           alert(errData.error);
         } else {
-          alert(isArabic ? "فشل تجهيز الصوت. حدث خطأ في الخادم." : "Ses hazırlanamadı. Sunucu hatası.");
+          alert(tx("فشل تجهيز الصوت. حدث خطأ في الخادم.", "Ses hazırlanamadı. Sunucu hatası.", "Couldn't prepare the audio. Server error."));
         }
       }
     } catch (e) {
-      if (isStale()) return;
+      if (isStale() || prep.controller.signal.aborted) return;
       console.error(e);
-      alert(isArabic ? "حدث خطأ أثناء الاتصال بالخادم" : "Sunucuya bağlanırken hata oluştu");
+      alert(tx("حدث خطأ أثناء الاتصال بالخادم", "Sunucuya bağlanırken hata oluştu", "Error connecting to the server"));
     } finally {
-      setIsPreparingAudio(false);
-      setAudioProgressStage(null);
+      clearInterval(pollTimer);
+      // Only the request that's still current owns the spinner: one
+      // replaced by a newer request settling late must not clear the newer
+      // one's progress.
+      if (audioPrepRef.current === prep) {
+        audioPrepRef.current = null;
+        setIsPreparingAudio(false);
+        setAudioProgressStage(null);
+      }
     }
   };
 
@@ -436,7 +685,7 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
   const applyPendingSegmentation = async (segmentationData: any[] | null) => {
     if (!segmentationData || segmentationData.length === 0) return;
     setSegmentationProgress(
-      isArabic ? "جاري تطبيق التقسيم..." : "Bölümleme uygulanıyor..."
+      tx("جاري تطبيق التقسيم...", "Bölümleme uygulanıyor...", "Applying segmentation...")
     );
     try {
       const applyRes = await fetch("/api/segmentation/apply", {
@@ -505,7 +754,11 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     }
     if (selectedTranslation) {
       formData.append("translationId", selectedTranslation.id);
+      // "No translation" has no language of its own, so the picker's
+      // language list decides it (Arabic there = Arabic-only surah title).
+      formData.append("videoLanguage", selectedTranslation.language ?? translationLanguage);
     }
+    formData.append("reciterName", reciterLabel);
 
     if (preparedAudioUrl) {
       formData.append("usePreparedAudio", "true");
@@ -519,6 +772,11 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
 
     formData.append("aspectRatio", aspectRatio);
     formData.append("quality", quality);
+    formData.append("backgroundDim", String(backgroundDim));
+    formData.append("backgroundBlur", String(backgroundBlur));
+    formData.append("backgroundZoom", String(backgroundZoom));
+    formData.append("wordHighlight", String(wordHighlight));
+    formData.append("wordHighlightColor", wordHighlightColor);
     formData.append("arabicTextScale", String(arabicTextScale));
     formData.append("arabicWidthScale", String(arabicWidthScale));
     formData.append("translationTextScale", String(translationTextScale));
@@ -541,6 +799,8 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
   const handleLoadPreview = async () => {
     setIsLoadingPreview(true);
     setPreviewError("");
+    // The object buildRenderFormData sends -- what the server times from.
+    const jsonSent = preparedAudioUrl ? preparedJsonData : null;
     try {
       await applyPendingSegmentation(pendingSegmentationData.length > 0 ? pendingSegmentationData : null);
       const formData = buildRenderFormData("preview");
@@ -559,6 +819,11 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
         durationInFrames: data.inputProps.backgroundVideoDurationInFrames ?? null,
       };
       setPreviewProps(data.inputProps);
+      setPreviewTimingBasis(
+        data.timing && jsonSent && typeof data.timing.trimStartMs === "number"
+          ? { trimStartMs: data.timing.trimStartMs, json: jsonSent }
+          : null
+      );
       // Only force VideoPreviewPlayer (keyed on this in Step5Generate) to
       // unmount and remount when the actual audio SOURCE changed --
       // swapping an already-mounted Remotion Audio element's src while the
@@ -618,15 +883,27 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
   // sends the latest values independently of this effect regardless. So
   // dropping them here costs nothing and removes the one thing left that
   // could reset playback mid-edit.
-  useEffect(() => {
-    if (!preparedAudioUrl) {
-      setPreviewProps(null);
-      return;
-    }
-    const timeoutId = setTimeout(() => {
+  //
+  // pendingSegmentationData isn't in this list either: a split/word
+  // move/boundary change only re-times text over the SAME audio, which
+  // displayedPreviewProps does client-side instantly (see
+  // previewTimingBasis); only a preview the server had to time on its own
+  // reloads for it (the effect after this one).
+  const schedulePreviewReload = () => {
+    if (previewReloadTimerRef.current) clearTimeout(previewReloadTimerRef.current);
+    previewReloadTimerRef.current = setTimeout(() => {
+      previewReloadTimerRef.current = null;
       handleLoadPreview();
     }, 400);
-    return () => clearTimeout(timeoutId);
+  };
+  useEffect(() => {
+    if (!preparedAudioUrl) {
+      if (previewReloadTimerRef.current) clearTimeout(previewReloadTimerRef.current);
+      setPreviewProps(null);
+      setPreviewTimingBasis(null);
+      return;
+    }
+    schedulePreviewReload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     preparedAudioUrl,
@@ -635,9 +912,22 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     bgImage,
     bgVideo,
     selectedTranslation,
-    pendingSegmentationData,
+    // Picks the surah title's language when no translation is selected
+    // (see buildRenderFormData's videoLanguage).
+    translationLanguage,
     aspectRatio,
+    // Turning it on fetches every verse's word-to-glyph map (see
+    // QuranVerse.highlightGlyphCounts); the color itself is client-side.
+    wordHighlight,
   ]);
+  useEffect(() => {
+    if (!preparedAudioUrl || previewTimingBasis) return;
+    schedulePreviewReload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingSegmentationData, previewTimingBasis]);
+  useEffect(() => () => {
+    if (previewReloadTimerRef.current) clearTimeout(previewReloadTimerRef.current);
+  }, []);
 
   // Optimistic background preview: the instant the user picks a new image,
   // show it immediately via its local blob: URL (bgPreview, already created
@@ -834,73 +1124,54 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
   const handleTranslationWidthScaleChange = (segmentKey: string | null, scale: number) =>
     applySegmentScaleChange(segmentKey, scale, "translationWidthScale", setTranslationWidthScale);
 
-  // Mirrors applySegmentScaleChange's own reasoning above: SegmentTimingEditor
-  // used to only reach previewProps/pendingSegmentationData through its
-  // "حفظ التوقيت" onConfirm, so a translation-text edit (e.g. placing a
-  // manual line break) never showed up in the live preview until that
-  // button was pressed. This patches both the SAME way, on every keystroke,
-  // matching the resize boxes' own instant feedback. `part` is 1-based and
-  // matches the mapping's own array index + 1 exactly, since
-  // handleSaveTimingEditor assigns part numbers as idx+1 in the same
-  // on-timeline order the mappings array is stored in -- but that only
-  // holds for mappings whose structure (count/order) hasn't changed since
-  // the last save, so an edit made after an UNCONFIRMED split/merge in this
-  // same editor session can target a stale index until "حفظ التوقيت" is
-  // pressed and rebuilds it properly; a live preview nicety, not the
-  // authoritative save.
-  const handleLiveTranslationEdit = (ayah: number, part: number, text: string) => {
-    const idx = part - 1;
+  // Sets ONE text size for every segment in the whole video at once (the
+  // "حجم نص الآية/الترجمة" sliders below the suggested-title box) -- unlike
+  // applySegmentScaleChange above, which only ever touches one segmentKey.
+  // Setting the shared fallback value alone (fallbackSetter) wouldn't be
+  // enough: any segment that already has its OWN per-segment override (set
+  // via a corner-drag in VideoPreviewPlayer) would keep ignoring it, since
+  // `mapping.arabicTextScale ?? arabicTextScale` always prefers the
+  // per-segment value when present (QuranVideo.tsx). Clearing the field on
+  // every mapping first (key OMITTED, not set to undefined -- matches this
+  // codebase's established convention, see e.g. the spread pattern around
+  // handleSaveTimingEditor) makes every segment fall through to the new
+  // shared value uniformly, which is the whole point of this control.
+  const applyBulkTextScale = (block: "arabic" | "translation", scale: number) => {
+    const field = block === "arabic" ? "arabicTextScale" : "translationTextScale";
+    (block === "arabic" ? setArabicTextScale : setTranslationTextScale)(scale);
 
-    // Same materialization as applySegmentScaleChange above -- a verse
-    // that's never been segmented or resized has no mapping slot of its own
-    // yet in either previewProps or pendingSegmentationData, so there'd be
-    // nowhere to patch this text into (the edit would just silently not
-    // show up live, though "حفظ التوقيت" would still save it correctly
-    // regardless, since it rebuilds mappings from scratch).
-    setPreviewProps((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        verses: prev.verses.map((v) => {
-          if (v.id !== ayah) return v;
-          if (v.mappings && v.mappings.length > 0) {
-            return { ...v, mappings: v.mappings.map((m, i) => (i === idx ? { ...m, translation_text: text } : m)) };
+    setPreviewProps((prev) =>
+      prev
+        ? {
+            ...prev,
+            verses: prev.verses.map((v) =>
+              v.mappings
+                ? {
+                    ...v,
+                    mappings: v.mappings.map((m) => {
+                      const { [field]: _drop, ...rest } = m;
+                      return rest;
+                    }),
+                  }
+                : v
+            ),
           }
-          return {
-            ...v,
-            mappings: [
-              {
-                part: 1,
-                translation_text: text,
-                word_count: v.wordTimings?.length ?? v.text.trim().split(/\s+/).length,
-              },
-            ],
-          };
-        }),
-      };
-    });
+        : prev
+    );
 
-    setPendingSegmentationData((prev) => {
-      const existingIdx = prev.findIndex((entry) => entry.surah === selectedSurah?.id && entry.ayah === ayah);
-      if (existingIdx !== -1) {
-        return prev.map((entry, i) =>
-          i === existingIdx
-            ? { ...entry, mappings: entry.mappings.map((m: any, mi: number) => (mi === idx ? { ...m, translation_text: text } : m)) }
-            : entry
-        );
-      }
-      const verse = selectedVersesContent.find((sv) => sv.id === ayah);
-      if (!verse || !selectedSurah) return prev;
-      return [
-        ...prev,
-        {
-          surah: selectedSurah.id,
-          ayah,
-          mappings: [{ part: 1, translation_text: text, word_count: verse.text.trim().split(/\s+/).length }],
-        },
-      ];
-    });
+    setPendingSegmentationData((prev) =>
+      prev.map((entry) => ({
+        ...entry,
+        mappings: entry.mappings.map((m: any) => {
+          const { [field]: _drop, ...rest } = m;
+          return rest;
+        }),
+      }))
+    );
   };
+
+  const handleBulkArabicTextScaleChange = (scale: number) => applyBulkTextScale("arabic", scale);
+  const handleBulkTranslationTextScaleChange = (scale: number) => applyBulkTextScale("translation", scale);
 
   // Runs `fn` only after any real render already queued/running for this
   // project has settled, and makes any FURTHER real render (manual or
@@ -949,9 +1220,14 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
       // trigger the actual browser download automatically the instant the
       // video is ready, instead of making the user click a second separate
       // download link/button after generation finishes.
+      // Saved under the suggested title (minus characters filenames can't
+      // hold -- its " | " reciter separator becomes " - ") instead of the
+      // server's internal render filename.
       const link = document.createElement("a");
       link.href = finalVideoUrl;
-      link.download = "";
+      link.download = suggestedTitle
+        ? `${suggestedTitle.replace(/\s*\|\s*/g, " - ").replace(/[\\/:*?"<>|]/g, "").trim()}.mp4`
+        : "";
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -999,6 +1275,17 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
         // iteration's renderMedia() call waits its turn rather than racing
         // it for the same output file.
         await runSerializedRender(async () => {
+          // render/route.ts reads the segmentation from the server-side
+          // file; preview reloads no longer refresh it on every timing edit
+          // (they re-time client-side), so this render brings it up to date
+          // itself, like executeVideoRender does.
+          if (pendingSegmentationData.length > 0) {
+            await fetch("/api/segmentation/apply", {
+              method: "POST",
+              body: JSON.stringify(pendingSegmentationData),
+              headers: { "Content-Type": "application/json" },
+            });
+          }
           const formData = buildRenderFormData(undefined, currentDraftId);
           const response = await fetch("/api/video/render", {
             method: "POST",
@@ -1055,10 +1342,15 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
   // SegmentTimingEditor's Arabic-script-aware text (see arabicFont passed
   // to it below) shows the translation in the SAME font the actual
   // video/live preview uses, instead of the browser's plain default.
-  const timingEditorTranslationFontFamily =
-    translationFont === "custom" && customTranslationFontUrl
-      ? "'CustomTranslationFont', Arial, sans-serif"
-      : `${TRANSLATION_FONT_OPTIONS[translationFont === "custom" ? "aileron" : translationFont].family}, Arial, sans-serif`;
+  // Same font resolution as the video itself (see resolveTranslationFont):
+  // the chosen font if it covers the translation's script, else the
+  // script's default. Every @font-face is declared by Step1SurahVerse.
+  const timingEditorTranslationScript = selectedTranslation.language === "ar" ? "ar" : "tr";
+  const timingEditorTranslationFontFamily = translationFontStack(
+    resolveTranslationFont(translationFont, timingEditorTranslationScript, Boolean(customTranslationFontUrl)),
+    timingEditorTranslationScript,
+    "CustomTranslationFont"
+  );
 
   // A ready-to-paste video title (e.g. for YouTube), shown under the
   // preview player -- follows the app's OWN current interface language
@@ -1084,8 +1376,20 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
           ? ` - الآية ${startVerse}`
           : ` - الآيات ${startVerse}-${endVerse}`;
       const reciterPart =
-        audioSourceMode === "reciter" ? ` | القارئ: ${RECITER_ARABIC_NAMES[selectedReciter] ?? selectedReciter}` : "";
+        audioSourceMode === "reciter" && selectedReciter ? ` | القارئ: ${RECITER_ARABIC_NAMES[selectedReciter] ?? selectedReciter}` : "";
       return `سورة ${surahName}${verseRange}${reciterPart}`;
+    }
+
+    if (language === "en") {
+      const surahName = surahEnglishName(selectedSurah.id) ?? fixMojibake(selectedSurah.transliteration);
+      const verseRange = isWholeSurah
+        ? ""
+        : startVerse === endVerse
+          ? ` - Ayah ${startVerse}`
+          : ` - Ayahs ${startVerse}-${endVerse}`;
+      const reciterPart =
+        audioSourceMode === "reciter" && selectedReciter ? ` | Reciter: ${RECITER_DISPLAY_NAMES[selectedReciter] ?? selectedReciter}` : "";
+      return `Surah ${surahName}${verseRange}${reciterPart}`;
     }
 
     const turkishName = surahTurkishNames.get(selectedSurah.id);
@@ -1096,9 +1400,99 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
         ? ` ${startVerse}. Ayet`
         : ` ${startVerse}-${endVerse}`;
     const reciterPart =
-      audioSourceMode === "reciter" ? ` | Okuyan: ${RECITER_DISPLAY_NAMES[selectedReciter] ?? selectedReciter}` : "";
+      audioSourceMode === "reciter" && selectedReciter ? ` | Okuyan: ${RECITER_DISPLAY_NAMES[selectedReciter] ?? selectedReciter}` : "";
     return `${surahName} Suresi${verseRange}${reciterPart}`;
   })();
+
+  // What the preview shows: the saved segmentation, with the open timing
+  // editor's unsaved state on top (built exactly as saving it would).
+  const effectiveSegmentation = useMemo(
+    () =>
+      liveTimingResults && selectedSurah
+        ? applyTimingResults(pendingSegmentationData, liveTimingResults, selectedSurah.id, trimmedPreviewAudioUrl ? trimmedPreviewOffset : 0)
+        : pendingSegmentationData,
+    [liveTimingResults, pendingSegmentationData, selectedSurah, trimmedPreviewAudioUrl, trimmedPreviewOffset]
+  );
+
+  useEffect(() => {
+    if (!showTimingEditor) setLiveTimingResults(null);
+  }, [showTimingEditor]);
+
+  // previewProps re-timed client-side for effectiveSegmentation, with the
+  // same function render/route.ts timed them with (remotion/timing.ts) and
+  // on the same audio (previewTimingBasis) -- so a split, word move,
+  // boundary drag or AI split shows in the preview the instant it happens,
+  // with no server round trip, and exactly as the export will show it.
+  // Word counts get the same correction segmentation/apply/route.ts makes
+  // for the export (fitWordCounts). Falls back to the server's own timing
+  // whenever that can't be reproduced here.
+  const retimedPreviewProps = useMemo((): QuranVideoProps | null => {
+    if (!previewProps || !previewTimingBasis || !selectedSurah) return previewProps;
+    const { json, trimStartMs } = previewTimingBasis;
+    // The server's props may already hold an ayah more than once (one entry
+    // per appearance, see remotion/timing.ts); the timeline is rebuilt from
+    // each ayah once.
+    const baseVerses = previewProps.verses.filter((v, i, all) => all.findIndex((x) => x.id === v.id) === i);
+    const held = holdWordsThroughRepeats(
+      baseVerses.map((v) => ({ id: v.id, words: (json?.verses?.[String(v.id)]?.words ?? []) as any[] })),
+      json?.readings
+    );
+    const repeats = repeatWordWindows(baseVerses.map((v) => v.id), json?.readings);
+    const timeline = buildVerseTimeline(
+      baseVerses.map((v) => {
+        const words: any[] = held.get(v.id) ?? [];
+        const wordRepeats = repeats.get(v.id);
+        const mappings: any[] | undefined = effectiveSegmentation.find(
+          (s) => s.surah === selectedSurah.id && s.ayah === v.id
+        )?.mappings;
+        const realWordCount = puaTokenCountsByAyah[v.id]?.length ?? (json?.engine ? words.length : undefined);
+        return {
+          id: v.id,
+          words: shiftWordsToTrim(words, trimStartMs),
+          mappings: mappings && realWordCount ? fitWordCounts(mappings, realWordCount) : mappings,
+          repeats: wordRepeats && shiftWordsToTrim(wordRepeats, trimStartMs),
+        };
+      }),
+      { trimStartMs, fps: 30, totalFrames: previewProps.totalDurationInFrames }
+    );
+    if (!timeline) return previewProps;
+    return {
+      ...previewProps,
+      verses: timeline.map((t) => {
+        const v = baseVerses[t.verseIndex];
+        const { mappings: _serverMappings, wordRepeats: _serverRepeats, ...verse } = v;
+        return {
+          ...verse,
+          durationInFrames: t.durationInFrames,
+          wordTimings: t.wordTimings,
+          ...(t.wordRepeats ? { wordRepeats: t.wordRepeats } : {}),
+          ...(t.mappings ? { mappings: t.mappings } : {}),
+          ...(puaTokenCountsByAyah[v.id] ? { puaTokenCounts: puaTokenCountsByAyah[v.id] } : {}),
+        };
+      }),
+    };
+  }, [previewProps, previewTimingBasis, selectedSurah, effectiveSegmentation, puaTokenCountsByAyah]);
+
+  // The background look and word highlighting always come from the current
+  // state rather than whatever the last server preview echoed back --
+  // QuranVideo.tsx applies them itself, so a slider drag shows instantly and
+  // a slower in-flight preview reload can never put an older value back on
+  // screen.
+  const displayedPreviewProps = useMemo((): QuranVideoProps | null => {
+    // reciterName applied here too, so typing it updates the preview on
+    // every keystroke without a server round trip.
+    return retimedPreviewProps
+      ? {
+          ...retimedPreviewProps,
+          backgroundDim,
+          backgroundBlur,
+          backgroundZoom,
+          wordHighlight,
+          wordHighlightColor,
+          reciterName: reciterLabel || undefined,
+        }
+      : null;
+  }, [retimedPreviewProps, backgroundDim, backgroundBlur, backgroundZoom, wordHighlight, wordHighlightColor, reciterLabel]);
 
   const canGenerate = Boolean(
     renderState !== "rendering" &&
@@ -1118,6 +1512,12 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
   useEffect(() => {
     if (isHydratingRef.current) return;
     audioParamsEpochRef.current += 1;
+    // The old selection's preparation is abandoned: cancel it (browser
+    // request + backend job) so the new selection's starts right away.
+    cancelAudioPrep();
+    audioPrepRef.current = null;
+    setIsPreparingAudio(false);
+    setAudioProgressStage(null);
     setPreparedAudioUrl(null);
     setPreparedAudioLocalPath(null);
     setPreparedJsonData(null);
@@ -1128,17 +1528,38 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     setVideoUrl(null);
     setRenderState("idle");
     setPendingSegmentationData([]);
+    setLiveTimingResults(null);
     setPuaTokenCountsByAyah({});
     setLowConfidenceAyahs(new Set());
     fetch("/api/segmentation/clear", { method: "POST" }).catch(() => {});
-  }, [selectedSurah, startVerse, endVerse, selectedReciter, customAudio, audioSourceMode]);
+  }, [selectedSurah, startVerse, endVerse, selectedReciter, customAudio, audioSourceMode, cancelAudioPrep]);
 
-  // Audio preparation is intentionally NOT automatic: it only runs when the
-  // user explicitly presses the "تجهيز الصوت" button in Step3Audio (see
-  // handlePrepareAudio). Selecting a reciter, uploading a custom audio file,
-  // or extracting audio from an uploaded video only stages that source --
-  // it does not itself trigger extraction/Whisper alignment, which is slow
-  // and shouldn't run behind the user's back on every field change.
+  // The video is created automatically: once the surah, the ayah range and
+  // the audio source (a picked reciter, or an uploaded file) are all set,
+  // audio preparation starts on its own after a short pause, and the
+  // preview follows from it. At most one automatic attempt per selection
+  // (audioParamsEpochRef, bumped by the invalidation effect right above,
+  // which must stay declared before this one): a failure shows its error
+  // once instead of retrying in a loop, and Step3Audio keeps a manual
+  // button for retrying. A request still in flight for an older selection
+  // doesn't hold this up: the invalidation effect cancels it and clears
+  // isPreparingAudio (a dependency here), so this one starts right away.
+  const lastAutoPrepareEpochRef = useRef(-1);
+  const hasAudioSource = audioSourceMode === "reciter" ? Boolean(selectedReciter) : Boolean(customAudio);
+  useEffect(() => {
+    if (isHydratingRef.current) return;
+    if (!selectedSurah || startVerse === null || endVerse === null || !hasAudioSource) return;
+    if (preparedAudioUrl || isPreparingAudio) return;
+    const epoch = audioParamsEpochRef.current;
+    if (lastAutoPrepareEpochRef.current === epoch) return;
+    const timer = setTimeout(() => {
+      if (audioParamsEpochRef.current !== epoch) return;
+      lastAutoPrepareEpochRef.current = epoch;
+      handlePrepareAudio();
+    }, 700);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSurah, startVerse, endVerse, hasAudioSource, selectedReciter, customAudio, audioSourceMode, preparedAudioUrl, isPreparingAudio, hydrationVersion]);
 
   // Persists the current builder state server-side (JSON + any uploaded
   // files) under a generated id, keyed on THIS browser via localStorage --
@@ -1165,6 +1586,13 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
       formData.append("translationWidthScale", String(translationWidthScale));
       formData.append("translationFont", translationFont);
       formData.append("arabicFont", arabicFont);
+      formData.append("backgroundDim", String(backgroundDim));
+      formData.append("backgroundBlur", String(backgroundBlur));
+      formData.append("backgroundZoom", String(backgroundZoom));
+      formData.append("wordHighlight", String(wordHighlight));
+      formData.append("wordHighlightColor", wordHighlightColor);
+      formData.append("showReciterName", String(showReciterName));
+      if (reciterNameEdit !== null) formData.append("reciterNameEdit", reciterNameEdit);
       if (customTranslationFontFile) {
         formData.append("customTranslationFont", customTranslationFontFile);
       } else if (customTranslationFontUrl && !customTranslationFontUrl.startsWith("blob:")) {
@@ -1254,6 +1682,13 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     arabicFont,
     customTranslationFontFile,
     customTranslationFontUrl,
+    backgroundDim,
+    backgroundBlur,
+    backgroundZoom,
+    wordHighlight,
+    wordHighlightColor,
+    showReciterName,
+    reciterNameEdit,
   ]);
 
   // The ONLY trigger for the real background gallery save (see
@@ -1292,6 +1727,7 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     selectedReciter,
     audioSourceMode,
     selectedTranslation.id,
+    translationLanguage,
     bgImage,
     bgVideo,
     customAudio,
@@ -1307,6 +1743,12 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     arabicFont,
     customTranslationFontFile,
     customTranslationFontUrl,
+    backgroundDim,
+    backgroundBlur,
+    backgroundZoom,
+    wordHighlight,
+    wordHighlightColor,
+    reciterLabel,
     aspectRatio,
     quality,
   ]);
@@ -1323,7 +1765,15 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
   // then the prepared-audio/segmentation fields are restored directly from
   // the draft afterward -- reversing that order would have the invalidation
   // effect immediately wipe what hydration just restored.
+  const resumeStartedRef = useRef(false);
   useEffect(() => {
+    // Once per mount: development Strict Mode runs mount effects twice, and
+    // two parallel resumes share isHydratingRef -- the first to finish
+    // re-enabled the invalidation effect while the second was still
+    // restoring, which then wiped the prepared audio and segmentation it
+    // had just restored.
+    if (resumeStartedRef.current) return;
+    resumeStartedRef.current = true;
     const draftIdToResume =
       new URLSearchParams(window.location.search).get("draft") || localStorage.getItem(DRAFT_STORAGE_KEY);
     if (!draftIdToResume) return;
@@ -1401,6 +1851,13 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
         if (data.translationWidthScale) setTranslationWidthScale(data.translationWidthScale);
         if (data.translationFont) setTranslationFont(data.translationFont);
         if (data.arabicFont) setArabicFont(data.arabicFont);
+        if (typeof data.backgroundDim === "number") setBackgroundDim(data.backgroundDim);
+        if (typeof data.backgroundBlur === "number") setBackgroundBlur(data.backgroundBlur);
+        if (typeof data.backgroundZoom === "boolean") setBackgroundZoom(data.backgroundZoom);
+        if (typeof data.wordHighlight === "boolean") setWordHighlight(data.wordHighlight);
+        if (typeof data.wordHighlightColor === "string") setWordHighlightColor(data.wordHighlightColor);
+        if (typeof data.showReciterName === "boolean") setShowReciterName(data.showReciterName);
+        setReciterNameEdit(typeof data.reciterNameEdit === "string" ? data.reciterNameEdit : null);
         // No File object to restore (never was one, just its already-
         // uploaded URL) -- that's fine, getAssetUrl in QuranVideo.tsx
         // resolves this real server URL directly, no re-upload needed
@@ -1413,6 +1870,7 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
         console.error("[Draft] Resume failed:", err);
       } finally {
         isHydratingRef.current = false;
+        setHydrationVersion((v) => v + 1);
       }
     })();
     // Intentionally run once on mount only.
@@ -1437,7 +1895,7 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     isHydratingRef.current = true;
     setSelectedSurah(null);
     setSelectedApiSurah(null);
-    setSelectedReciter("mishary_alafasy");
+    setSelectedReciter("");
     setStartVerse(null);
     setEndVerse(null);
     if (bgPreview) URL.revokeObjectURL(bgPreview);
@@ -1446,6 +1904,11 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     if (bgVideoPreview) URL.revokeObjectURL(bgVideoPreview);
     setBgVideo(null);
     setBgVideoPreview(null);
+    setBackgroundDim(DEFAULT_BACKGROUND_DIM);
+    setBackgroundBlur(0);
+    setBackgroundZoom(false);
+    setWordHighlight(false);
+    setWordHighlightColor(DEFAULT_WORD_HIGHLIGHT_COLOR);
     setRenderState("idle");
     setRenderError("");
     setVideoUrl(null);
@@ -1464,6 +1927,7 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     setAudioSourceMode("reciter");
     setSegmentationProgress(null);
     setPendingSegmentationData([]);
+    setLiveTimingResults(null);
     setPuaTokenCountsByAyah({});
     setLowConfidenceAyahs(new Set());
     setShowTimingEditor(false);
@@ -1545,11 +2009,14 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
 
       setPendingSegmentationData((prev) => {
         let touchedMultiPart = false;
+        let changed = false;
         const next = prev.map((entry) => {
           if (entry.surah !== surahId) return entry;
           const apiAyah = selectedApiSurah?.ayahs.find((a) => a.ayah_number === entry.ayah);
           const fallback = fixMojibake(apiAyah?.text_turkish || "");
           const liveTranslation = getTranslation(surahId, entry.ayah, fallback);
+          if (entry.mappings[0]?.translation_text === liveTranslation) return entry;
+          changed = true;
           if (entry.mappings.length <= 1) {
             return {
               ...entry,
@@ -1567,7 +2034,9 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
           };
         });
         if (touchedMultiPart) setTranslationSyncNotice(true);
-        return next;
+        // The same array when nothing changed -- a new one (even an empty
+        // `[]`) would re-run everything keyed on it.
+        return changed ? next : prev;
       });
     });
   }, [selectedSurah?.id, selectedTranslation.id, fetchSurahTranslations, selectedApiSurah, getTranslation]);
@@ -1603,27 +2072,32 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     setRenderState("idle");
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (bgPreview) {
-      URL.revokeObjectURL(bgPreview);
+  // Shared by BackgroundPicker's upload buttons and stock library. A video
+  // and an image background are mutually exclusive -- picking one clears
+  // the other rather than leaving a stale, invisible selection behind
+  // (QuranVideo.tsx would ignore it anyway, since video takes priority, but
+  // keeping both "selected" is confusing in the wizard UI).
+  const applyBackgroundFile = (file: File, kind: "image" | "video") => {
+    if (bgPreview) URL.revokeObjectURL(bgPreview);
+    if (bgVideoPreview) URL.revokeObjectURL(bgVideoPreview);
+    if (kind === "image") {
+      setBgVideo(null);
+      setBgVideoPreview(null);
+      setBgImage(file);
+      setBgPreview(URL.createObjectURL(file));
+    } else {
+      setBgImage(null);
+      setBgPreview(null);
+      setBgVideo(file);
+      setBgVideoPreview(URL.createObjectURL(file));
     }
-    // A video and an image background are mutually exclusive -- picking one
-    // clears the other rather than leaving a stale, invisible selection
-    // behind (QuranVideo.tsx would ignore it anyway, since video takes
-    // priority, but keeping both "selected" is confusing in the wizard UI).
-    if (bgVideoPreview) {
-      URL.revokeObjectURL(bgVideoPreview);
-    }
-    setBgVideo(null);
-    setBgVideoPreview(null);
-
-    setBgImage(file);
-    setBgPreview(URL.createObjectURL(file));
     setVideoUrl(null);
     setRenderState("idle");
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) applyBackgroundFile(file, "image");
   };
 
   const removeImage = () => {
@@ -1638,21 +2112,7 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
 
   const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (bgVideoPreview) {
-      URL.revokeObjectURL(bgVideoPreview);
-    }
-    if (bgPreview) {
-      URL.revokeObjectURL(bgPreview);
-    }
-    setBgImage(null);
-    setBgPreview(null);
-
-    setBgVideo(file);
-    setBgVideoPreview(URL.createObjectURL(file));
-    setVideoUrl(null);
-    setRenderState("idle");
+    if (file) applyBackgroundFile(file, "video");
   };
 
   const removeVideo = () => {
@@ -1667,11 +2127,25 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
 
   const LONG_VERSE_THRESHOLD = 7; // Only segment verses with more than 7 Arabic words
 
+  // A part never opens on a waqf sign nor ends on a Hizb sign ۞ (see
+  // moveBoundariesOffMarks) -- the server's aligner places them already;
+  // this is a second check of every answer. The CTC engine's words are
+  // exactly the real Uthmani tokens (`w`), so they can check it here.
+  const placeMarksInParts = (ayah: number, mappings: any[]): any[] => {
+    const words: { w?: string }[] | undefined = preparedJsonData?.engine ? preparedJsonData.verses?.[String(ayah)]?.words : undefined;
+    if (!words || words.some((w) => typeof w.w !== "string")) return mappings;
+    const counts = moveBoundariesOffMarks(
+      mappings.map((m) => m.word_count),
+      words.map((w) => w.w as string)
+    );
+    return mappings.map((m, i) => (counts[i] === m.word_count ? m : { ...m, word_count: counts[i] }));
+  };
+
   const handleSegmentLongVerses = async () => {
     if (!selectedSurah || selectedVersesContent.length === 0) return;
 
     const lowConfidenceIds = new Set<number>();
-    setSegmentationProgress(isArabic ? "جاري تقسيم الآيات..." : "Ayetler bölümleniyor...");
+    setSegmentationProgress(tx("جاري تقسيم الآيات...", "Ayetler bölümleniyor...", "Splitting ayahs..."));
 
     // Each verse's segmentation is fully independent of every other verse's,
     // so they're all fired concurrently instead of one `await` at a time --
@@ -1696,6 +2170,7 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
                 ayah: verse.id,
                 translation,
                 arabicWordCount,
+                language: selectedTranslation.language ?? "tr",
               }),
             });
 
@@ -1708,7 +2183,7 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
                 return {
                   surah: selectedSurah.id,
                   ayah: verse.id,
-                  mappings: segData.mappings,
+                  mappings: placeMarksInParts(verse.id, segData.mappings),
                 };
               }
             }
@@ -1741,7 +2216,10 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     );
 
     if (segmentationResults.length > 0) {
-      setPendingSegmentationData(segmentationResults);
+      // The new parts keep the reciter's repeats (see lib/readingPath.ts).
+      setPendingSegmentationData(
+        applyReadings(segmentationResults, preparedJsonData?.readings, readingAyahs(preparedJsonData), selectedSurah.id)
+      );
       setLowConfidenceAyahs(lowConfidenceIds);
       try {
         const wordMapRes = await fetch("/api/segmentation/word-map", {
@@ -1764,13 +2242,17 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
         console.warn("[UI] Failed to fetch word map for segmentation preview:", err);
       }
     } else {
-      alert(isArabic ? "لم يتم العثور على ترجمات للآيات المحددة." : "Seçili ayetler için çeviri bulunamadı.");
+      alert(tx("لم يتم العثور على ترجمات للآيات المحددة.", "Seçili ayetler için çeviri bulunamadı.", "No translation found for the selected ayahs."));
     }
     setSegmentationProgress(null);
   };
 
   const handleClearSegmentation = async () => {
-    setPendingSegmentationData([]);
+    // Only the split goes: where the reciter went back, the repeats stay
+    // (see lib/readingPath.ts) -- an ayah he returned to must still show again.
+    setPendingSegmentationData(
+      selectedSurah ? applyReadings([], preparedJsonData?.readings, readingAyahs(preparedJsonData), selectedSurah.id) : []
+    );
     setPuaTokenCountsByAyah({});
     setLowConfidenceAyahs(new Set());
     await fetch("/api/segmentation/clear", { method: "POST" }).catch(() => { });
@@ -1845,6 +2327,11 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
 
     const allSegments: SegmentTimingInput[] = [];
     const puaMap = wordMapOverride ?? puaTokenCountsByAyah;
+    // Same word timing the video uses, a repeat inside a part included.
+    const heldWords = holdWordsThroughRepeats(
+      selectedVersesContent.map((verse) => ({ id: verse.id, words: preparedJsonData.verses[String(verse.id)]?.words ?? [] })),
+      preparedJsonData.readings
+    );
     // Same isQcf1 resolution as sliceArabicForWordRange above -- every
     // `page:` below needs the matching v1/v2 page number too, or the
     // Arabic text and the @font-face family SegmentTimingEditor picks for
@@ -1858,18 +2345,22 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     // an already-trimmed editor never silently resets the user's choice.
     let firstSegHasManualTiming = false;
     let lastSegHasManualTiming = false;
+    const manualIds = new Set<string>();
 
     for (const verse of selectedVersesContent) {
       const ayahId = verse.id;
       const segmentation = pendingSegmentationData.find(
         (s) => s.surah === selectedSurah.id && s.ayah === ayahId
       );
-      const words: { start: number; end: number }[] = preparedJsonData.verses[String(ayahId)]?.words;
+      const words: { start: number; end: number }[] = heldWords.get(ayahId)!;
       if (!words || words.length === 0) continue;
 
       if (!segmentation || segmentation.mappings.length === 0) {
-        const startSec = words[0].start / 1000;
-        const endSec = words[words.length - 1].end / 1000;
+        // Same rule as the video (remotion/timing.ts): from the first voiced
+        // word to the last one -- a leading ۞ has no sound of its own.
+        const span = voicedSpan(words, 0, words.length - 1);
+        const startSec = (span?.start ?? words[0].start) / 1000;
+        const endSec = (span?.end ?? words[words.length - 1].end) / 1000;
         // The REAL Uthmani word count (same basis apply/route.ts validates
         // against and getAyahRealWords/auto-segmentation use) -- NOT
         // Whisper's `words.length`, and NOT the raw QCF glyph-token count of
@@ -1900,6 +2391,7 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
           translation_text: verse.translation || "",
           arabicText,
           wordCount: realWordCount,
+          wordStart: 0,
           page: isQcf1 ? verse.pageV1 ?? verse.page : verse.page,
           startSec: Math.max(0, startSec),
           endSec: Math.max(0, endSec),
@@ -1915,34 +2407,66 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
       // words than it does) and the running cursor below (otherwise its
       // word range, and every later segment's, drifts past the ayah's
       // actual last word and slices out empty Arabic text).
-      const totalWordCount = segmentation.mappings.reduce(
+      // A placeholder entry (e.g. created by resizing an unsplit ayah's box)
+      // can carry a glyph-token count; segmentation/apply/route.ts corrects
+      // it for the video with this same function, so the editor uses the
+      // corrected counts too.
+      const realWordCountForAyah = puaMap[ayahId]?.length ?? (preparedJsonData.engine ? words.length : undefined);
+      const mappings: any[] = realWordCountForAyah
+        ? fitWordCounts(segmentation.mappings, realWordCountForAyah)
+        : segmentation.mappings;
+      const totalWordCount = mappings.reduce(
         (sum: number, m: any) => sum + (typeof m.repeat_of_part === "number" ? 0 : m.word_count),
         0
       );
       let wordCursor = 0;
-      segmentation.mappings.forEach((mapping: any) => {
+      // Tracks each NON-repeat mapping's own resolved [start, count] word
+      // range as we go, purely so a LATER repeat can borrow its SOURCE
+      // part's range for text derivation below -- unrelated to wordCursor
+      // itself, which stays exactly as before (timing still only ever
+      // advances past real, newly-consumed words).
+      const partWordRange = new Map<number, { start: number; count: number }>();
+      mappings.forEach((mapping: any) => {
         const isRepeatMapping = typeof mapping.repeat_of_part === "number";
         const startWordIdx = wordCursor;
         const endWordIdx = Math.min(wordCursor + mapping.word_count - 1, words.length - 1);
-        // Trust the saved arabic_text verbatim ONLY for a repeat mapping --
-        // same reasoning and same rule as QuranVideo.tsx's own chunkText
-        // (see VerseMapping's comment in types.ts): re-deriving live via
-        // sliceArabicForWordRange is correct for every OTHER segment and,
-        // unlike the frozen saved text, always matches the CURRENTLY
-        // selected arabicFont instead of whichever one was picked when this
-        // was last saved.
-        const arabicText =
-          isRepeatMapping && typeof mapping.arabic_text === "string" && mapping.arabic_text.length > 0
-            ? mapping.arabic_text
-            : sliceArabicForWordRange(verse, startWordIdx, mapping.word_count, totalWordCount, puaMap);
+        // Re-derive live from the SOURCE part's own word range for a repeat
+        // -- same fix and reasoning as QuranVideo.tsx's own chunkText (see
+        // VerseMapping's comment in types.ts): the saved arabic_text
+        // snapshot is frozen in whichever QCF encoding was selected when
+        // this repeat was last saved, so trusting it verbatim rendered
+        // garbled glyphs the instant arabicFont was switched afterward,
+        // even inside this very editor. sliceArabicForWordRange always
+        // matches the CURRENTLY selected font instead. Falls back to the
+        // saved arabic_text, then to this repeat's own (not the source's)
+        // range, only if the source part no longer exists -- e.g. the
+        // segmentation was re-split/merged since this repeat was created.
+        let arabicText: string;
+        if (isRepeatMapping) {
+          const sourceRange = partWordRange.get(mapping.repeat_of_part);
+          if (sourceRange) {
+            arabicText = sliceArabicForWordRange(verse, sourceRange.start, sourceRange.count, totalWordCount, puaMap);
+          } else if (typeof mapping.arabic_text === "string" && mapping.arabic_text.length > 0) {
+            arabicText = mapping.arabic_text;
+          } else {
+            arabicText = sliceArabicForWordRange(verse, startWordIdx, mapping.word_count, totalWordCount, puaMap);
+          }
+        } else {
+          arabicText = sliceArabicForWordRange(verse, startWordIdx, mapping.word_count, totalWordCount, puaMap);
+          partWordRange.set(mapping.part, { start: startWordIdx, count: mapping.word_count });
+        }
         if (!isRepeatMapping) wordCursor += mapping.word_count;
 
         const hasManual = typeof mapping.start_ms === "number" && typeof mapping.end_ms === "number";
-        const startSec = hasManual ? mapping.start_ms / 1000 : (words[startWordIdx]?.start ?? 0) / 1000;
-        const endSec = hasManual ? mapping.end_ms / 1000 : (words[endWordIdx]?.end ?? words[words.length - 1].end) / 1000;
+        // Unsaved timing: the same voiced-word rule as the video, so the
+        // editor's boundaries sit exactly where the text will switch.
+        const span = isRepeatMapping ? null : voicedSpan(words, startWordIdx, endWordIdx);
+        const startSec = hasManual ? mapping.start_ms / 1000 : (span?.start ?? words[startWordIdx]?.start ?? 0) / 1000;
+        const endSec = hasManual ? mapping.end_ms / 1000 : (span?.end ?? words[endWordIdx]?.end ?? words[words.length - 1].end) / 1000;
 
         if (allSegments.length === 0) firstSegHasManualTiming = hasManual;
         lastSegHasManualTiming = hasManual;
+        if (hasManual) manualIds.add(`${ayahId}-${mapping.part}`);
         allSegments.push({
           id: `${ayahId}-${mapping.part}`,
           ayah: ayahId,
@@ -1957,36 +2481,34 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
           // keeps it, even though it isn't at part 1) -- only fall back to
           // the positional guess for older saved data without this field.
           isFirstOfAyah: typeof mapping.isFirstOfAyah === "boolean" ? mapping.isFirstOfAyah : mapping.part === 1,
-          ...(isRepeatMapping ? { repeatOfId: `${ayahId}-${mapping.repeat_of_part}` } : {}),
+          ...(isRepeatMapping ? { repeatOfId: `${ayahId}-${mapping.repeat_of_part}` } : { wordStart: startWordIdx }),
         });
       });
     }
 
-    // Seed the first/last segment's own boundary with the same smart trim
-    // margin the old standalone AudioTrimmer defaulted to -- a bit before
-    // the first detected word and a bit after the last, so the merged
-    // editor doesn't start out clipped flush against Whisper's own word
-    // boundaries (which can under/overshoot the true recitation edges).
+    // In the order they're heard: a repeat the reciter went back for after
+    // the next ayah began sits after that ayah's segments (stable otherwise).
+    const heard = allSegments.map((seg, k) => ({ seg, k })).sort((x, y) => x.seg.startSec - y.seg.startSec || x.k - y.k);
+    if (heard.some(({ k }, n) => k !== n)) {
+      allSegments.splice(0, allSegments.length, ...heard.map(({ seg }) => seg));
+      firstSegHasManualTiming = manualIds.has(allSegments[0].id);
+      lastSegHasManualTiming = manualIds.has(allSegments[allSegments.length - 1].id);
+    }
+
+    // Seed the first/last segment's own boundary with the default trim
+    // window (see defaultTrimFromTimings) -- the same one handlePrepareAudio
+    // applied to the preview, so opening the panel doesn't move it.
     // Only when neither already carries a manually-saved boundary (see
     // firstSegHasManualTiming/lastSegHasManualTiming above) -- otherwise
     // this would silently discard a trim the user already chose and saved.
-    if (allSegments.length > 0 && preparedJsonData?.verses) {
-      const PAD_SECONDS = 10.0; // matches padSeconds sent when preparing audio
-      const lowConfidenceEnd = !!preparedJsonData.lowConfidenceEnd;
-      let minStart = Infinity;
-      let maxEnd = 0;
-      Object.values(preparedJsonData.verses).forEach((v: any) => {
-        v.words?.forEach((w: any) => {
-          if (w.start < minStart) minStart = w.start;
-          if (w.end > maxEnd) maxEnd = w.end;
-        });
-      });
-      if (!firstSegHasManualTiming && minStart !== Infinity) {
-        allSegments[0].startSec = Math.max(0, minStart / 1000 - 0.35);
+    const defaultTrim = defaultTrimFromTimings(preparedJsonData);
+    if (allSegments.length > 0 && defaultTrim) {
+      if (!firstSegHasManualTiming) {
+        allSegments[0].startSec = defaultTrim.start;
       }
-      if (!lastSegHasManualTiming && maxEnd > 0) {
+      if (!lastSegHasManualTiming) {
         const last = allSegments[allSegments.length - 1];
-        last.endSec = Math.max(last.startSec, maxEnd / 1000 + (lowConfidenceEnd ? PAD_SECONDS - 2.0 : 1.5));
+        last.endSec = Math.max(last.startSec, defaultTrim.end);
       }
     }
 
@@ -2006,6 +2528,30 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     }
 
     return allSegments.length > 0 ? allSegments : null;
+  };
+
+  // Real-word timing per selected ayah for SegmentTimingEditor's ayahWords
+  // prop (split/word-shift snap their new boundary to the real word onset),
+  // on the same timeline as buildTimingEditorSegments' startSec/endSec.
+  // Only offered for timing from the CTC engine (preparedJsonData.engine),
+  // which has exactly one entry per real Uthmani word -- the older Whisper
+  // pipeline dropped/shifted entries around waqf marks, so "word k" there
+  // could be a different word. glyphCounts only applies to the QCF v2 text
+  // (the same condition sliceArabicForWordRange uses).
+  const buildTimingEditorWordData = (): Record<number, AyahWordTiming> | undefined => {
+    if (!preparedJsonData?.verses || !preparedJsonData.engine) return undefined;
+    const offset = trimmedPreviewAudioUrl ? trimmedPreviewOffset : 0;
+    const data: Record<number, AyahWordTiming> = {};
+    for (const verse of selectedVersesContent) {
+      const words: { start: number; end: number }[] | undefined = preparedJsonData.verses[String(verse.id)]?.words;
+      const glyphCounts = arabicFont === "qcf1" ? undefined : puaTokenCountsByAyah[verse.id];
+      if (!words?.length || (glyphCounts && glyphCounts.length !== words.length)) continue;
+      data[verse.id] = {
+        times: words.map((w) => ({ start: w.start / 1000 - offset, end: w.end / 1000 - offset })),
+        glyphCounts,
+      };
+    }
+    return data;
   };
 
   // Fetches (and caches into puaTokenCountsByAyah) the real-word/PUA-glyph
@@ -2045,9 +2591,7 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
   const handleOpenTimingEditor = async () => {
     if (!preparedAudioUrl || !preparedJsonData) {
       alert(
-        isArabic
-          ? "يجب تجهيز الصوت أولاً (زر «تجهيز الصوت») قبل ضبط التوقيت يدويًا."
-          : "Zamanlamayı elle ayarlamadan önce sesi hazırlamanız gerekir (\"Sesi Hazırla\" düğmesi)."
+        tx("يجب تجهيز الصوت أولاً (زر «تجهيز الصوت») قبل ضبط التوقيت يدويًا.", "Zamanlamayı elle ayarlamadan önce sesi hazırlamanız gerekir (\"Sesi Hazırla\" düğmesi).", "You need to prepare the audio (\"Prepare Audio\" button) before adjusting the timing manually.")
       );
       return;
     }
@@ -2055,15 +2599,21 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     const segments = buildTimingEditorSegments(wordMap);
     if (!segments || segments.length === 0) {
       alert(
-        isArabic
-          ? "لا يمكن تحديد التوقيت — تأكد من أن الصوت المُجهَّز يغطي الآيات المحددة."
-          : "Zamanlaması belirlenemiyor — hazırlanan sesin bu ayetleri kapsadığından emin olun."
+        tx("لا يمكن تحديد التوقيت — تأكد من أن الصوت المُجهَّز يغطي الآيات المحددة.", "Zamanlaması belirlenemiyor — hazırlanan sesin bu ayetleri kapsadığından emin olun.", "Timing can't be determined — make sure the prepared audio covers these ayahs.")
       );
       return;
     }
     setShowTimingEditor(true);
     requestAnimationFrame(() => timingPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
+
+  // handlePrepareAudio flags a needsReview result; the panel can only open
+  // once its setState calls have landed, i.e. on the next render.
+  useEffect(() => {
+    if (!openTimingEditorAfterPrepareRef.current || !preparedAudioUrl || !preparedJsonData) return;
+    openTimingEditorAfterPrepareRef.current = false;
+    handleOpenTimingEditor();
+  }, [preparedAudioUrl, preparedJsonData]);
 
   // Applies JUST the trim (the panel's dedicated "قص الصوت الآن" button) --
   // deliberately does NOT touch pendingSegmentationData/translation/timing
@@ -2077,12 +2627,14 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     // space (see buildTimingEditorSegments) before storing, since that's
     // what the render pipeline crops against.
     const offset = trimmedPreviewAudioUrl ? trimmedPreviewOffset : 0;
+    setReviewNoticeDismissed(true);
     setAudioTrimStart(Math.max(0, trimStart + offset));
     setAudioTrimEnd(Math.max(0, trimEnd + offset));
   };
 
   const handleSaveTimingEditor = (results: SegmentTimingResult[]) => {
     if (!selectedSurah || !showTimingEditor) return;
+    setReviewNoticeDismissed(true);
 
     // Every result.startSec/endSec is relative to whatever
     // getTimingEditorAudioUrl() handed the editor for THIS session -- shift
@@ -2101,95 +2653,9 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
       setAudioTrimEnd(Math.max(0, results[results.length - 1].endSec + previewOffsetSec));
     }
 
-    // Group results by ayah, preserving their on-timeline order within each
-    // group (results already arrive in that order from SegmentTimingEditor).
-    const resultsByAyah: Record<number, SegmentTimingResult[]> = {};
-    for (const res of results) {
-       if (!resultsByAyah[res.ayah]) resultsByAyah[res.ayah] = [];
-       resultsByAyah[res.ayah].push(res);
-    }
-
-    // Rebuild each ayah's mappings array from scratch based on the FULL
-    // returned segment set, rather than patching existing mappings by
-    // `part` number. The timing editor can now split/merge/retitle segments
-    // inline, so the set of parts handed back may no longer line up
-    // one-to-one with what was passed in -- part numbers are reassigned
-    // sequentially here (1..N in timeline order), which also fixes the
-    // "gap" bug class from the old part-preserving merge logic (a merged-
-    // away part leaving e.g. parts 1 and 3 with no 2).
-    setPendingSegmentationData((prev) => {
-      const next = prev.filter(
-        (s) => !(s.surah === selectedSurah.id && s.ayah in resultsByAyah)
-      );
-      for (const [ayahIdStr, ayahResults] of Object.entries(resultsByAyah)) {
-        const ayahId = Number(ayahIdStr);
-        // Session-local SegmentTimingResult.id -> its new (1-based) part
-        // number, so a "repeat" segment's repeatOfId (also a session-local
-        // id) can be translated into a `repeat_of_part` reference that's
-        // still valid once ids are regenerated fresh on the next reopen --
-        // see buildTimingEditorSegments below, which resolves it back into
-        // a fresh id of that same shape (`${ayahId}-${part}`).
-        const idToPart = new Map(ayahResults.map((r, idx) => [r.id, idx + 1]));
-        // Per-segment size/width overrides (see VerseMapping's own scale
-        // fields in types.ts, set via VideoPreviewPlayer's resize boxes)
-        // live on the OLD mapping objects this rebuild is about to replace
-        // wholesale -- carried over here position-for-position, or they'd
-        // silently reset to default on every single "حفظ التوقيت", even
-        // when nothing about that ayah's actual split/timing changed.
-        // Only safe when the segment COUNT hasn't changed: a split/merge/
-        // reorder means part N no longer means the same thing it did
-        // before, so there's no reliable old segment to carry a resize over
-        // from -- those simply reset, same as a segment resized for the
-        // very first time always has.
-        const oldMappings = prev.find((s) => s.surah === selectedSurah.id && s.ayah === ayahId)?.mappings;
-        const canPreserveScale = oldMappings && oldMappings.length === ayahResults.length;
-        next.push({
-          surah: selectedSurah.id,
-          ayah: ayahId,
-          mappings: ayahResults.map((result, idx) => {
-            const oldMapping = canPreserveScale ? oldMappings![idx] : undefined;
-            return {
-              part: idx + 1,
-              // Real word count carried through as its own field (see
-              // SegmentTimingInput.wordCount) rather than re-derived from
-              // arabicText -- the raw QCF text's whitespace-token count can
-              // run one higher than the real word count for whichever segment
-              // ends an ayah, since the ayah-number marker glyph is its own
-              // trailing token there.
-              word_count: Math.max(1, result.wordCount),
-              translation_text: result.translation_text,
-              // Shifted back to the TRUE raw prepared clip's coordinate space
-              // (see previewOffsetSec above) -- the exact space render/route.ts
-              // expects for start_ms/end_ms, regardless of which file this
-              // session's editor was actually showing.
-              start_ms: Math.round((result.startSec + previewOffsetSec) * 1000),
-              end_ms: Math.round((result.endSec + previewOffsetSec) * 1000),
-              // The editor already resolved the exact Arabic text for this
-              // segment (including "repeat" segments, whose real-word range
-              // isn't the next sequential one -- see SegmentTimingEditor's
-              // resolveContent). Passing it through verbatim instead of
-              // letting QuranVideo.tsx re-derive it from cumulative
-              // word_count is what makes repeats (and any future segment
-              // whose word range isn't sequential) render the correct text.
-              ...(result.arabicText ? { arabic_text: result.arabicText } : {}),
-              isFirstOfAyah: result.isFirstOfAyah,
-              ...(result.repeatOfId && idToPart.has(result.repeatOfId)
-                ? { repeat_of_part: idToPart.get(result.repeatOfId) }
-                : {}),
-              ...(oldMapping?.arabicTextScale !== undefined ? { arabicTextScale: oldMapping.arabicTextScale } : {}),
-              ...(oldMapping?.arabicWidthScale !== undefined ? { arabicWidthScale: oldMapping.arabicWidthScale } : {}),
-              ...(oldMapping?.translationTextScale !== undefined
-                ? { translationTextScale: oldMapping.translationTextScale }
-                : {}),
-              ...(oldMapping?.translationWidthScale !== undefined
-                ? { translationWidthScale: oldMapping.translationWidthScale }
-                : {}),
-            };
-          }),
-        });
-      }
-      return next;
-    });
+    const surahId = selectedSurah.id;
+    setPendingSegmentationData((prev) => applyTimingResults(prev, results, surahId, previewOffsetSec));
+    setLiveTimingResults(null);
 
     setShowTimingEditor(false);
   };
@@ -2243,75 +2709,6 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     }
   };
 
-  const handleGenerateBg = async () => {
-    setIsGeneratingBg(true);
-    setRenderError("");
-    try {
-      // Each prompt describes a unique scene, spanning several deliberately
-      // DIFFERENT color families (navy-night, sunset-orange, desert-gold,
-      // dusk-teal/green) instead of just one -- but every option still stays
-      // dark/muted (dusk, twilight or night, never bright midday color), and
-      // keeps the landscape as a silhouette confined to the bottom third
-      // with a huge, mostly-empty sky above it. That darkness/emptiness is
-      // load-bearing, not just stylistic: QuranVideo.tsx overlays white
-      // Arabic/translation text directly on top of this image with no extra
-      // dark scrim behind it (only opacity 0.8 + a text-shadow) -- a bright
-      // or busy sky would make that text hard to read. Real photography
-      // feel, not fantasy or over-processed.
-      const sceneryOptions = [
-        "dark silhouetted mountain ridge at the bottom of frame against a vast deep navy blue night sky with subtle scattered stars, minimalist landscape photography, very dark and moody",
-        "dark silhouetted coastal cliffs and ocean shoreline at bottom of frame, vast deep dark blue night sky above with faint stars, misty atmosphere, real photograph, serene and minimal",
-        "single dark tree silhouette in bottom corner of frame, vast completely dark night sky filling most of the image, very faint scattered stars, extremely minimal and moody, real photograph",
-        "dark rolling hills silhouetted at the bottom of frame, vast deep navy night sky with a small thin crescent moon, no clouds, very dark and minimal, real night photograph",
-        "dark forest treeline silhouette at the very bottom of frame, enormous deep dark indigo night sky, very few faint stars scattered, extremely dark and serene, real night photograph",
-        "dark pine forest silhouette at bottom corner, vast deep navy-black night sky, one or two bright stars visible, extremely dark and peaceful, minimalist real photograph",
-        "dark mountain silhouette at the bottom of frame against a vast muted burnt-orange and deep red sunset sky, sun long set, no clouds, minimalist real photograph, moody and warm",
-        "single dark tree silhouette in bottom corner, enormous deep amber-orange dusk sky fading to near-black at the top of frame, extremely minimal, real photograph",
-        "dark rocky coastline silhouette at bottom, vast muted coral-orange and dark maroon sunset sky reflecting faintly on calm water, real photograph, serene and warm",
-        "dark sand dunes silhouetted at bottom of frame, enormous deep golden-brown desert dusk sky, warm and muted, very minimal, real desert photograph",
-        "layered dark dune ridges silhouetted at bottom creating depth, vast deep amber-brown desert sky at dusk, subtle haze between layers, real photograph",
-        "dark volcanic mountain silhouette at bottom, vast deep brown-orange sky fading to black at top, subtle warm glow at far horizon, real photograph",
-        "dark forest treeline silhouette at bottom of frame, vast deep teal-green twilight sky with a faint aurora-like glow, very muted and dark, real photograph",
-        "jagged dark mountain peaks at bottom of frame, vast deep emerald-teal dusk sky, barely visible stars, subtle horizon glow, real landscape night photograph",
-        "dark cliff edge with single small tree silhouette at bottom of frame, vast deep muted purple-indigo dusk sky, thin crescent moon small in upper area, extremely minimal real photograph",
-        "dark meadow with distant treeline silhouette at bottom, enormous deep indigo-black night sky, very faint milky stars, peaceful and serene, real night landscape photograph"
-      ];
-      const randomScenery = sceneryOptions[Math.floor(Math.random() * sceneryOptions.length)];
-      const prompt = `${randomScenery}, vertical portrait 9:16 aspect ratio, ultra dark and muted tones for readable white text overlay, no text no watermark, 4K high resolution, shot on Sony A7III, long exposure photography, f/2.8, clean sharp image, variation ${Date.now()}`;
-      const response = await fetch("/api/ai/generate-background", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to generate background");
-      }
-
-      // Fetch the image from the URL and create a File object so it works with the existing flow
-      const imgRes = await fetch(data.imageUrl);
-      const blob = await imgRes.blob();
-      const file = new File([blob], `ai-bg-${Date.now()}.jpg`, { type: blob.type });
-
-      if (bgPreview) {
-        URL.revokeObjectURL(bgPreview);
-      }
-      if (bgVideoPreview) {
-        URL.revokeObjectURL(bgVideoPreview);
-      }
-      setBgVideo(null);
-      setBgVideoPreview(null);
-      setBgImage(file);
-      setBgPreview(URL.createObjectURL(file));
-      setVideoUrl(null);
-      setRenderState("idle");
-    } catch (err) {
-      setRenderError(err instanceof Error ? err.message : "تعذر توليد الخلفية");
-    } finally {
-      setIsGeneratingBg(false);
-    }
-  };
-
   const handleCustomAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2346,25 +2743,34 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
   // timing/splitting, and generation all happen automatically/inline in the
   // unified video+editing section right below them (see the render below),
   // not as separate numbered wizard steps.
+  // The background isn't a step before the video anymore -- it's an
+  // optional section under the video (BackgroundPicker, passed into
+  // Step5Generate), once the video already exists.
   const WIZARD_STEPS: WizardStepMeta[] = [
-    { label: isArabic ? "اختيار السورة والآيات" : "Sure ve Ayet Seçimi" },
-    { label: isArabic ? "الخلفية الاختيارية" : "İsteğe Bağlı Arka Plan", optional: true },
-    { label: isArabic ? "الصوت" : "Ses" },
+    { label: tx("اختيار السورة والآيات", "Sure ve Ayet Seçimi", "Surah and Ayah Selection") },
+    { label: tx("اختيار القارئ", "Kari Seçimi", "Choose the Reciter") },
   ];
 
-  const onReciterChange = (val: string) => setSelectedReciter(val);
+  // A new reciter (or audio source) brings its own name back into the
+  // reciter-name field -- text typed for the previous one no longer fits.
+  const onReciterChange = (val: string) => {
+    setSelectedReciter(val);
+    setReciterNameEdit(null);
+  };
+  const onAudioSourceModeChange = (mode: "reciter" | "custom") => {
+    setAudioSourceMode(mode);
+    setReciterNameEdit(null);
+  };
 
   return (
     <>
       <div className="mx-auto max-w-5xl space-y-8" dir={isArabic ? "rtl" : "ltr"}>
         <div className="text-center space-y-3">
           <h1 className="text-3xl font-bold text-gradient-gold">
-            {isArabic ? "صانع الفيديو القرآني" : "Kuran Videosu Oluşturucu"}
+            {tx("صانع الفيديو القرآني", "Kuran Videosu Oluşturucu", "Quran Video Creator")}
           </h1>
           <p className="text-muted-foreground">
-            {isArabic
-              ? "اختر السورة والآيات والخلفية والقارئ، ثم أنشئ فيديو جاهزًا للتحميل."
-              : "Sureyi, ayetleri, arka planı ve kariyi seçip indirilebilir video oluşturun."}
+            {tx("اختر السورة والآيات والخلفية والقارئ، ثم أنشئ فيديو جاهزًا للتحميل.", "Sureyi, ayetleri, arka planı ve kariyi seçip indirilebilir video oluşturun.", "Choose the surah, ayahs, background and reciter to create a downloadable video.")}
           </p>
 
           {/* A matched pair, directly under the header -- not a lone corner
@@ -2380,19 +2786,19 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
               className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-primary/40 px-4 py-2.5 text-sm font-medium text-primary transition-colors hover:border-primary hover:bg-primary/10"
             >
               <ArrowPathIcon className="h-4 w-4" />
-              {isArabic ? "مشروع جديد" : "Yeni Proje"}
+              {tx("مشروع جديد", "Yeni Proje", "New Project")}
             </button>
             <Link
               href="/?tab=gallery"
               className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:border-primary/30 hover:bg-surface"
             >
               <FilmIcon className="h-4 w-4" />
-              {isArabic ? "فيديوهاتي المحفوظة" : "Videolarım"}
+              {tx("فيديوهاتي المحفوظة", "Videolarım", "My Videos")}
             </Link>
           </div>
           {autosaveStatus === "error" && (
             <p className="animate-fade-in text-xs text-accent-red">
-              {isArabic ? "تعذر الحفظ التلقائي" : "Otomatik kaydetme başarısız"}
+              {tx("تعذر الحفظ التلقائي", "Otomatik kaydetme başarısız", "Autosave failed")}
             </p>
           )}
         </div>
@@ -2440,26 +2846,17 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
                 )}
 
                 {idx === 1 && (
-                  <Step2Background
-                    isArabic={isArabic}
-                    bgPreview={bgPreview}
-                    handleImageUpload={handleImageUpload}
-                    removeImage={removeImage}
-                    handleGenerateBg={handleGenerateBg}
-                    isGeneratingBg={isGeneratingBg}
-                    bgVideoPreview={bgVideoPreview}
-                    handleVideoUpload={handleVideoUpload}
-                    removeVideo={removeVideo}
-                  />
-                )}
-
-                {idx === 2 && (
                   <Step3Audio
                     isArabic={isArabic}
                     audioSourceMode={audioSourceMode}
-                    setAudioSourceMode={setAudioSourceMode}
+                    setAudioSourceMode={onAudioSourceModeChange}
                     selectedReciter={selectedReciter}
                     onReciterChange={onReciterChange}
+                    showReciterNameOption={isArabicVideo}
+                    showReciterName={showReciterName}
+                    onShowReciterNameChange={setShowReciterName}
+                    reciterNameText={reciterNameText}
+                    onReciterNameTextChange={setReciterNameEdit}
                     customAudio={customAudio}
                     handleCustomAudioUpload={handleCustomAudioUpload}
                     handleVideoUploadForAudio={handleVideoUploadForAudio}
@@ -2490,7 +2887,7 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
                 <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary-light/30 via-primary/20 to-primary-dark/20 text-sm text-primary ring-1 ring-primary/20">
                   🎬
                 </span>
-                {isArabic ? "الفيديو والتعديل" : "Video ve Düzenleme"}
+                {tx("الفيديو والتعديل", "Video ve Düzenleme", "Video and Editing")}
               </h2>
 
               {translationSyncNotice && (
@@ -2499,13 +2896,49 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
                   dir={isArabic ? "rtl" : "ltr"}
                 >
                   <p className="text-xs text-accent-amber">
-                    {isArabic
-                      ? "تم تغيير الترجمة: تحدّث القسم الأول تلقائيًا لكل آية مقسَّمة إلى عدة أجزاء، لكن باقي الأجزاء لا تزال تحمل نص الترجمة القديم -- افتح لوحة التوقيت وأعد توزيع النص عليها يدويًا."
-                      : "Çeviri değişti: birden çok bölüme ayrılmış her ayetin yalnızca ilk bölümü otomatik güncellendi, diğer bölümler hâlâ eski çeviri metnini taşıyor -- Zamanlama panelini açıp metni elle yeniden dağıtın."}
+                    {tx("تم تغيير الترجمة: تحدّث القسم الأول تلقائيًا لكل آية مقسَّمة إلى عدة أجزاء، لكن باقي الأجزاء لا تزال تحمل نص الترجمة القديم -- افتح لوحة التوقيت وأعد توزيع النص عليها يدويًا.", "Çeviri değişti: birden çok bölüme ayrılmış her ayetin yalnızca ilk bölümü otomatik güncellendi, diğer bölümler hâlâ eski çeviri metnini taşıyor -- Zamanlama panelini açıp metni elle yeniden dağıtın.", "The translation changed: only the first segment of each ayah split into several segments was updated automatically; the other segments still carry the old translation text -- open the Timing panel and redistribute the text manually.")}
                   </p>
                   <button
                     type="button"
                     onClick={() => setTranslationSyncNotice(false)}
+                    className="flex-shrink-0 text-accent-amber/70 hover:text-accent-amber transition-colors text-xs font-bold"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {preparedJsonData?.needsReview && !reviewNoticeDismissed && (
+                <div
+                  className="animate-fade-in flex items-start justify-between gap-3 rounded-xl border border-accent-amber/30 bg-accent-amber-bg/20 px-3 py-2.5"
+                  dir={isArabic ? "rtl" : "ltr"}
+                >
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold text-accent-amber">
+                      {tx("⚠️ لم يتمكن النظام من التحقق من هذا المقطع الصوتي بالكامل -- استمع إليه واضبط البداية/النهاية من لوحة التوقيت إن لزم:", "⚠️ Bu ses klibi tam olarak doğrulanamadı -- dinleyin ve gerekirse başlangıcı/bitişi Zamanlama panelinden ayarlayın:", "⚠️ This audio clip couldn't be fully verified -- listen to it and adjust the start/end in the Timing panel if needed:")}
+                    </p>
+                    <ul className="list-disc ps-5 text-xs text-accent-amber">
+                      {(preparedJsonData.reviewReasons || []).map((r: any, i: number) => {
+                        // Where in the video (the played audio starts audioTrimStart into the clip).
+                        const atSec = typeof r.atMs === "number" ? Math.max(0, r.atMs / 1000 - audioTrimStart) : null;
+                        const at =
+                          atSec === null ? "" : ` (${Math.floor(atSec / 60)}:${String(Math.floor(atSec % 60)).padStart(2, "0")})`;
+                        return <li key={`${r.code}-${i}`}>{tx(r.ar, r.tr, r.en ?? r.tr)}{at}</li>;
+                      })}
+                    </ul>
+                    {!showTimingEditor && (
+                      <button
+                        type="button"
+                        onClick={handleOpenTimingEditor}
+                        className="text-xs font-semibold text-accent-amber underline underline-offset-2 hover:opacity-80 transition-opacity"
+                      >
+                        {tx("افتح لوحة التوقيت", "Zamanlama panelini aç", "Open the Timing panel")}
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setReviewNoticeDismissed(true)}
                     className="flex-shrink-0 text-accent-amber/70 hover:text-accent-amber transition-colors text-xs font-bold"
                   >
                     ✕
@@ -2521,7 +2954,7 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
                 preparedAudioUrl={preparedAudioUrl}
                 renderError={renderError}
                 videoUrl={videoUrl}
-                previewProps={previewProps}
+                previewProps={displayedPreviewProps}
                 previewVersion={previewVersion}
                 isLoadingPreview={isLoadingPreview}
                 previewError={previewError}
@@ -2538,6 +2971,37 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
                 onArabicWidthScaleChange={handleArabicWidthScaleChange}
                 onTranslationTextScaleChange={handleTranslationTextScaleChange}
                 onTranslationWidthScaleChange={handleTranslationWidthScaleChange}
+                arabicTextScale={arabicTextScale}
+                translationTextScale={translationTextScale}
+                onBulkArabicTextScaleChange={handleBulkArabicTextScaleChange}
+                onBulkTranslationTextScaleChange={handleBulkTranslationTextScaleChange}
+                wordHighlight={wordHighlight}
+                onWordHighlightChange={setWordHighlight}
+                wordHighlightColor={wordHighlightColor}
+                onWordHighlightColorChange={setWordHighlightColor}
+                isPreparingAudio={isPreparingAudio}
+                audioProgressStage={audioProgressStage}
+                hasSelection={Boolean(selectedSurah && startVerse !== null && endVerse !== null && hasAudioSource)}
+                backgroundPanel={
+                  <BackgroundPicker
+                    isArabic={isArabic}
+                    aspectRatio={aspectRatio}
+                    videoDurationSec={displayedPreviewProps ? displayedPreviewProps.totalDurationInFrames / 30 : null}
+                    bgPreview={bgPreview}
+                    bgVideoPreview={bgVideoPreview}
+                    handleImageUpload={handleImageUpload}
+                    handleVideoUpload={handleVideoUpload}
+                    removeImage={removeImage}
+                    removeVideo={removeVideo}
+                    onBackgroundFile={applyBackgroundFile}
+                    backgroundDim={backgroundDim}
+                    onBackgroundDimChange={setBackgroundDim}
+                    backgroundBlur={backgroundBlur}
+                    onBackgroundBlurChange={setBackgroundBlur}
+                    backgroundZoom={backgroundZoom}
+                    onBackgroundZoomChange={setBackgroundZoom}
+                  />
+                }
               />
 
               {/* Inline unified audio-trim/timing panel -- CapCut-style:
@@ -2577,7 +3041,7 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
                   <div ref={timingPanelRef} className="scroll-mt-24 -mx-6 sm:mx-0">
                     <SegmentTimingEditor
                       audioUrl={getTimingEditorAudioUrl()!}
-                      ayahLabel={isArabic ? `جميع الآيات` : `Tüm Ayetler`}
+                      ayahLabel={tx(`جميع الآيات`, `Tüm Ayetler`, `All Ayahs`)}
                       segments={segments}
                       isArabic={isArabic}
                       onCancel={() => setShowTimingEditor(false)}
@@ -2587,9 +3051,10 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
                       onToggleSegmentation={isSegmented ? handleClearSegmentation : handleSegmentLongVerses}
                       onTrimOnly={handleTrimOnly}
                       onPersistTrimmedAudio={handlePersistTrimmedAudio}
-                      onLiveTranslationEdit={handleLiveTranslationEdit}
+                      onLiveChange={setLiveTimingResults}
                       arabicFont={arabicFont}
                       translationFontFamily={timingEditorTranslationFontFamily}
+                      ayahWords={buildTimingEditorWordData()}
                     />
                   </div>
                 );
@@ -2603,25 +3068,23 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
         <div className="animate-fadeIn fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-md p-4 sm:p-6" dir={isArabic ? "rtl" : "ltr"}>
           <div className="animate-slide-up bg-surface w-full max-w-md border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col p-6 sm:p-8 text-center">
             <h2 className="text-xl sm:text-2xl font-bold text-foreground mb-3">
-              {isArabic ? "تأكيد مسح البيانات" : "Emin misiniz?"}
+              {tx("تأكيد مسح البيانات", "Emin misiniz?", "Are you sure?")}
             </h2>
             <p className="text-sm sm:text-base text-muted-foreground mb-8">
-              {isArabic
-                ? "هل أنت متأكد أنك تريد بدء إنشاء فيديو جديد من الصفر؟ سيتم مسح كافة البيانات الحالية ولن تتمكن من استعادتها."
-                : "Sıfırdan yeni bir video oluşturmak istiyor musunuz? Mevcut tüm veriler silinecek ve geri alınamayacak."}
+              {tx("هل أنت متأكد أنك تريد بدء إنشاء فيديو جديد من الصفر؟ سيتم مسح كافة البيانات الحالية ولن تتمكن من استعادتها.", "Sıfırdan yeni bir video oluşturmak istiyor musunuz? Mevcut tüm veriler silinecek ve geri alınamayacak.", "Do you want to create a new video from scratch? All current data will be deleted and can't be undone.")}
             </p>
             <div className="flex gap-3 justify-center w-full">
               <button
                 onClick={() => setShowStartOverConfirm(false)}
                 className="flex-1 rounded-xl bg-background border border-border px-4 py-2.5 text-sm sm:text-base font-medium text-foreground hover:bg-surface transition-colors"
               >
-                {isArabic ? "إلغاء" : "İptal"}
+                {tx("إلغاء", "İptal", "Cancel")}
               </button>
               <button
                 onClick={handleStartOver}
                 className="flex-1 rounded-xl bg-accent-red border border-accent-red px-4 py-2.5 text-sm sm:text-base font-medium text-white hover:opacity-90 transition-opacity shadow-[0_0_15px_rgba(239,68,68,0.2)]"
               >
-                {isArabic ? "مسح" : "Yeniden Başla"}
+                {tx("مسح", "Yeniden Başla", "Start Over")}
               </button>
             </div>
           </div>

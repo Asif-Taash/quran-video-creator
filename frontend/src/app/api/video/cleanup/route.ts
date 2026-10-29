@@ -30,7 +30,7 @@ export async function DELETE() {
     const pathsToClear = [
       path.join(process.cwd(), "public", "renders", "temp_audio"),
       path.join(process.cwd(), "public", "renders", "output"),
-      path.join(process.cwd(), "public", "render-assets", "generated-bg"),
+      path.join(process.cwd(), "public", "render-assets", "stock-bg"),
       // Saved drafts have no automatic expiry (see /api/drafts) -- this is
       // their only cleanup path, manual just like the rest of this route.
       path.join(process.cwd(), "src", "data", "drafts"),

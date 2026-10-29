@@ -133,7 +133,11 @@ async function fetchReconciledWordData(surah: number, ayah: number): Promise<Rec
         const glosses: string[] = [];
 
         for (const w of words) {
-          const puaLen = w.code_v2 ? w.code_v2.length : 1;
+          // A fused entry's code_v2 separates its glyphs with a space (e.g.
+          // "۞ وَجَـٰوَزْنَا" -> "ﱍ ﱎ"), while each glyph is its own
+          // whitespace token in the local QCF text -- count glyphs, not
+          // characters, or every such ayah comes out one token too long.
+          const puaLen = w.code_v2 ? Array.from(w.code_v2.replace(/\s/g, "")).length : 1;
           const gloss: string = (w.translation?.text || "").trim();
 
           if (w.char_type_name === "end") {
@@ -155,14 +159,16 @@ async function fetchReconciledWordData(surah: number, ayah: number): Promise<Rec
             puaTokenCounts.push(puaLen);
             glosses.push(gloss);
           } else if (puaLen >= subCount) {
-            // A fused waqf/sajda mark has no meaning of its own — the whole
-            // entry's gloss belongs to the real word (first sub-part), the
-            // mark's own slot(s) get an empty gloss.
+            // A fused waqf/sajda/hizb mark has no meaning of its own — the
+            // whole entry's gloss belongs to its real word (the sub-part with
+            // letters: waqf/sajda marks follow their word, a ۞ hizb mark
+            // precedes it), the mark's own slot(s) get an empty gloss.
+            const wordPart = Math.max(0, subParts.findIndex((p) => /[ء-يٱ]/.test(p)));
             const base = Math.floor(puaLen / subCount);
             const remainder = puaLen - base * subCount;
             for (let i = 0; i < subCount; i++) {
               puaTokenCounts.push(base + (i < remainder ? 1 : 0));
-              glosses.push(i === 0 ? gloss : "");
+              glosses.push(i === wordPart ? gloss : "");
             }
           } else {
             puaTokenCounts.push(puaLen);

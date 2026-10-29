@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
 import axios from "axios";
+import { DEFAULT_RECITER_ID, getReciter } from "@/lib/reciterNames";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,23 +54,19 @@ export async function POST(req: Request) {
     const surahId = Number(formData.get("surahId"));
     const startVerse = Number(formData.get("startVerse"));
     const endVerse = Number(formData.get("endVerse"));
-    const reciterId = formData.get("reciterId") as string || "mishary_alafasy";
+    const reciterId = formData.get("reciterId") as string || DEFAULT_RECITER_ID;
     const customAudio = formData.get("customAudio") as File | null;
     const padSeconds = Number(formData.get("padSeconds")) || 2.0;
+    // Passed through so the client can poll/cancel this extraction (see
+    // ./job/route.ts and backend/scripts/job_control.py).
+    const rawJobId = formData.get("jobId");
+    const jobId = typeof rawJobId === "string" && /^[A-Za-z0-9-]{8,64}$/.test(rawJobId) ? rawJobId : undefined;
 
     if (!Number.isInteger(surahId) || !Number.isInteger(startVerse) || !Number.isInteger(endVerse)) {
       return NextResponse.json({ error: "Invalid video options" }, { status: 400 });
     }
 
-    const RECITER_KEYS: Record<string, string> = {
-      mishary_alafasy: "mishary",
-      maher_muaiqly: "maher",
-      ahmed_ajmi: "ajmi",
-      yasser_dosari: "yasser",
-      abdullah_mousa: "mousa",
-      raad_alkurdi: "raad_alkurdi"
-    };
-    const shortReciterKey = RECITER_KEYS[reciterId] || "mishary";
+    const shortReciterKey = getReciter(reciterId)?.backendKey || "mishary";
 
     const baseUrl = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://backend:8000";
     let wordTimingsData: any = null;
@@ -83,6 +80,7 @@ export async function POST(req: Request) {
       backendFormData.append("end", endVerse.toString());
       backendFormData.append("pad_seconds", padSeconds.toString());
       backendFormData.append("audio_file", customAudio);
+      if (jobId) backendFormData.append("job_id", jobId);
 
       const extractRes = await axios.post(`${baseUrl}/api/extraction/custom`, backendFormData, {
         timeout: 1800000, // 30 minutes timeout for heavy Whisper processing
@@ -104,6 +102,8 @@ export async function POST(req: Request) {
             wordTimingsData = jsonRes.data;
           }
         }
+      } else if (extractRes.status === 409) {
+        return NextResponse.json({ cancelled: true }, { status: 409 });
       } else {
         console.error("Backend custom-audio extraction failed:", extractRes.status, extractRes.data);
         const detail = extractRes.data?.detail;
@@ -116,7 +116,8 @@ export async function POST(req: Request) {
         start: startVerse,
         end: endVerse,
         reciter: shortReciterKey,
-        pad_seconds: padSeconds
+        pad_seconds: padSeconds,
+        job_id: jobId,
       }, {
         timeout: 1800000, // 30 minutes — large/whole-surah requests can legitimately take several minutes
         validateStatus: () => true
@@ -136,6 +137,8 @@ export async function POST(req: Request) {
             wordTimingsData = jsonRes.data;
           }
         }
+      } else if (extractRes.status === 409) {
+        return NextResponse.json({ cancelled: true }, { status: 409 });
       } else {
         console.error("Backend extraction failed:", extractRes.status, extractRes.data);
         const detail = extractRes.data?.detail;

@@ -5,13 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/layout/Navbar";
 import Spinner from "@/components/ui/Spinner";
-import { useLanguage } from "@/lib/LanguageContext";
+import { useLanguage, useT } from "@/lib/LanguageContext";
 import { EyeIcon, EyeSlashIcon, EnvelopeIcon, LockClosedIcon, ArrowRightOnRectangleIcon } from "@heroicons/react/24/outline";
 
 const INPUT_CLASSES =
   "w-full h-[52px] outline-none transition-all duration-300 rounded-xl border border-border bg-background shadow-sm hover:border-primary/40 hover:shadow-md text-sm font-medium focus:border-primary focus:ring-2 focus:ring-primary/20";
 
 export default function LoginPage() {
+  const tx = useT();
   const { language } = useLanguage();
   const isAr = language === "ar";
   const router = useRouter();
@@ -24,9 +25,9 @@ export default function LoginPage() {
 
   const errorMessage = (code: string) => {
     if (code === "invalid_credentials") {
-      return isAr ? "البريد الإلكتروني أو كلمة المرور غير صحيحة" : "E-posta veya şifre hatalı";
+      return tx("البريد الإلكتروني أو كلمة المرور غير صحيحة", "E-posta veya şifre hatalı", "Incorrect email or password");
     }
-    return isAr ? "حدث خطأ، حاول مرة أخرى" : "Bir hata oluştu, tekrar deneyin";
+    return tx("حدث خطأ، حاول مرة أخرى", "Bir hata oluştu, tekrar deneyin", "Something went wrong, please try again");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -70,10 +71,10 @@ export default function LoginPage() {
             </div>
 
             <h1 className="text-2xl font-bold text-foreground mb-1.5 text-center">
-              {isAr ? "أهلاً بعودتك" : "Tekrar Hoş Geldiniz"}
+              {tx("أهلاً بعودتك", "Tekrar Hoş Geldiniz", "Welcome Back")}
             </h1>
             <p className="text-sm text-muted text-center mb-7">
-              {isAr ? "سجّل الدخول لمتابعة مشاريعك" : "Devam etmek için giriş yapın"}
+              {tx("سجّل الدخول لمتابعة مشاريعك", "Devam etmek için giriş yapın", "Sign in to continue")}
             </p>
 
             {error && (
@@ -85,7 +86,7 @@ export default function LoginPage() {
             <form onSubmit={handleSubmit} className="space-y-4" dir={isAr ? "rtl" : "ltr"}>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">
-                  {isAr ? "البريد الإلكتروني" : "E-posta"}
+                  {tx("البريد الإلكتروني", "E-posta", "Email")}
                 </label>
                 <div className="relative">
                   <EnvelopeIcon className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted" />
@@ -103,7 +104,7 @@ export default function LoginPage() {
 
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">
-                  {isAr ? "كلمة المرور" : "Şifre"}
+                  {tx("كلمة المرور", "Şifre", "Password")}
                 </label>
                 <div className="relative">
                   <LockClosedIcon className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted" />
@@ -119,8 +120,8 @@ export default function LoginPage() {
                     type="button"
                     aria-label={
                       showPassword
-                        ? isAr ? "إخفاء كلمة المرور" : "Şifreyi gizle"
-                        : isAr ? "إظهار كلمة المرور" : "Şifreyi göster"
+                        ? tx("إخفاء كلمة المرور", "Şifreyi gizle", "Hide password")
+                        : tx("إظهار كلمة المرور", "Şifreyi göster", "Show password")
                     }
                     onClick={() => setShowPassword((prev) => !prev)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer p-1 text-muted transition-colors hover:text-foreground"
@@ -130,7 +131,7 @@ export default function LoginPage() {
                 </div>
                 <div className="text-end">
                   <Link href="/forgot-password" className="text-xs font-medium text-primary hover:underline">
-                    {isAr ? "نسيت كلمة المرور؟" : "Şifreni mi unuttun?"}
+                    {tx("نسيت كلمة المرور؟", "Şifreni mi unuttun?", "Forgot your password?")}
                   </Link>
                 </div>
               </div>
@@ -141,15 +142,15 @@ export default function LoginPage() {
                 className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary to-primary-dark px-5 py-3 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading && <Spinner size="sm" className="border-white/40 border-t-white" />}
-                {isAr ? "تسجيل الدخول" : "Giriş Yap"}
+                {tx("تسجيل الدخول", "Giriş Yap", "Sign In")}
               </button>
             </form>
           </div>
 
           <p className="mt-6 text-center text-sm text-muted">
-            {isAr ? "ليس لديك حساب؟" : "Hesabın yok mu?"}{" "}
+            {tx("ليس لديك حساب؟", "Hesabın yok mu?", "Don't have an account?")}{" "}
             <Link href="/signup" className="text-primary font-semibold hover:underline">
-              {isAr ? "إنشاء حساب" : "Kayıt Ol"}
+              {tx("إنشاء حساب", "Kayıt Ol", "Sign Up")}
             </Link>
           </p>
         </div>

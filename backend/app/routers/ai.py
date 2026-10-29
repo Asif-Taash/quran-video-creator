@@ -50,8 +50,7 @@ async def _call_pollinations(system_prompt: str, user_message: str) -> str:
 
     # One retry only (not the frontend's 3-attempt consensus logic) -- this
     # layer just needs to smooth over a single transient Cloudflare/5xx
-    # hiccup, the same class of error generate-background/route.ts already
-    # retries on for the image endpoint on this same provider.
+    # hiccup from this provider.
     for attempt in range(2):
         try:
             async with httpx.AsyncClient(timeout=POLLINATIONS_TIMEOUT_SECONDS) as client:

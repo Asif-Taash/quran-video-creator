@@ -8,11 +8,12 @@ import { LanguageToggle } from "@/components/LanguageToggle";
 import AccountMenu from "@/components/layout/AccountMenu";
 import { useState, useEffect, useCallback } from "react";
 import { Bars3Icon, XMarkIcon, PlusCircleIcon } from "@heroicons/react/24/outline";
-import { useLanguage } from "@/lib/LanguageContext";
+import { useLanguage, useT } from "@/lib/LanguageContext";
 
 
 
 export default function Navbar() {
+  const tx = useT();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   // "الفيديوهات المحفوظة"/gallery now lives on "/" itself as a tab (see
@@ -80,7 +81,7 @@ export default function Navbar() {
                 }`}
               >
                 <PlusCircleIcon className="h-5 w-5" />
-                <span className="hidden sm:inline">{language === "ar" ? "إنشاء الفيديو" : "Video Oluştur"}</span>
+                <span className="hidden sm:inline">{tx("إنشاء الفيديو", "Video Oluştur", "Create Video")}</span>
               </Link>
               <LanguageToggle />
               <ThemeToggle />

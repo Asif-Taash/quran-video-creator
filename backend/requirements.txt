@@ -1,15 +1,20 @@
---extra-index-url https://download.pytorch.org/whl/cpu
 fastapi==0.111.0
 uvicorn==0.29.0
 sqlalchemy==2.0.30
 psycopg2-binary==2.9.9
 pydantic==2.7.1
 python-multipart==0.0.9
-torch
-torchaudio
+# Installed from the CUDA index by the Dockerfile; pinned here so nothing
+# below can pull in a different (CPU-only) build.
+torch==2.11.0
+torchaudio==2.11.0
 stable-ts
 faster-whisper
 g4f==7.7.1
 httpx==0.28.1
 nvidia-cublas-cu12
 nvidia-cudnn-cu12
+# CLIP image check for the background library (app/routers/vision.py).
+transformers==5.20.2
+pillow==12.3.0
+safetensors==0.8.0

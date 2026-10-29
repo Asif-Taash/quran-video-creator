@@ -11,6 +11,14 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # Without a restart policy the db stayed down after a reboot/Docker
+    # restart while backend/frontend came back, leaving every DB call broken.
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d kurannuru"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   backend:
     build:
@@ -21,7 +29,8 @@ services:
       - DATABASE_URL=postgresql://user:password@db:5432/kurannuru
       - CORS_ORIGINS=*
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     volumes:
       - ./backend:/app
     # Wipes disposable extraction/render scratch space on every container
@@ -79,11 +88,11 @@ services:
         target: /app/public/renders
         tmpfs:
           size: 512M
-    # Wipes disposable trimmed-audio/generated-bg scratch space on every
+    # Wipes disposable trimmed-audio/stock-bg scratch space on every
     # container start so it can never accumulate across restarts -- saved
     # drafts (render-assets/drafts, src/data/drafts) are untouched since
     # those are real in-progress projects, not disposable output.
-    command: sh -c "rm -rf public/render-assets/trimmed-audio/* public/render-assets/generated-bg/* 2>/dev/null; npm run dev"
+    command: sh -c "rm -rf public/render-assets/trimmed-audio/* public/render-assets/stock-bg/* 2>/dev/null; npm run dev"
     restart: on-failure
 
 volumes:

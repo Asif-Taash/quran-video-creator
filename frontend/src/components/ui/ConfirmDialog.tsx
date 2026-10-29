@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useLanguage } from "@/lib/LanguageContext";
+import { useLanguage, useT } from "@/lib/LanguageContext";
 import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 
 type Props = {
@@ -33,7 +33,7 @@ export default function ConfirmDialog({
 }: Props) {
   const { language } = useLanguage();
   const isAr = language === "ar";
-  const t = (ar: string, tr: string) => (isAr ? ar : tr);
+  const t = useT();
 
   React.useEffect(() => {
     if (!open) return;
@@ -79,7 +79,7 @@ export default function ConfirmDialog({
             onClick={onClose}
             className="rounded-lg border border-border px-5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-surface-2"
           >
-            {cancelLabel ?? t("إلغاء", "İptal")}
+            {cancelLabel ?? t("إلغاء", "İptal", "Cancel")}
           </button>
           <button
             type="button"
@@ -94,7 +94,7 @@ export default function ConfirmDialog({
                 : "rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-dark"
             }
           >
-            {confirmLabel ?? t("تأكيد", "Onayla")}
+            {confirmLabel ?? t("تأكيد", "Onayla", "Confirm")}
           </button>
         </div>
       </div>

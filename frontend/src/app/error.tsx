@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import Navbar from "@/components/layout/Navbar";
-import { useLanguage } from "@/lib/LanguageContext";
+import { useLanguage, useT } from "@/lib/LanguageContext";
 import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 
 export default function ErrorPage({
@@ -12,6 +12,7 @@ export default function ErrorPage({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const tx = useT();
   const { language } = useLanguage();
   const isArabic = language === "ar";
 
@@ -29,19 +30,17 @@ export default function ErrorPage({
             <ExclamationTriangleIcon className="h-7 w-7" />
           </div>
           <h1 className="text-lg font-semibold text-foreground mb-2">
-            {isArabic ? "حدث خطأ غير متوقع" : "Beklenmeyen bir hata oluştu"}
+            {tx("حدث خطأ غير متوقع", "Beklenmeyen bir hata oluştu", "An unexpected error occurred")}
           </h1>
           <p className="text-sm text-muted-foreground mb-6">
-            {isArabic
-              ? "نعتذر عن الإزعاج. يمكنك المحاولة مرة أخرى."
-              : "Rahatsızlık için özür dileriz. Tekrar deneyebilirsiniz."}
+            {tx("نعتذر عن الإزعاج. يمكنك المحاولة مرة أخرى.", "Rahatsızlık için özür dileriz. Tekrar deneyebilirsiniz.", "Sorry for the inconvenience. You can try again.")}
           </p>
           <button
             type="button"
             onClick={reset}
             className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-primary to-primary-dark px-6 py-2.5 text-sm font-semibold text-white shadow-lg transition-all hover:shadow-primary/25"
           >
-            {isArabic ? "إعادة المحاولة" : "Tekrar dene"}
+            {tx("إعادة المحاولة", "Tekrar dene", "Try again")}
           </button>
         </div>
       </main>

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import Navbar from "@/components/layout/Navbar";
 import Spinner from "@/components/ui/Spinner";
-import { useLanguage } from "@/lib/LanguageContext";
+import { useLanguage, useT } from "@/lib/LanguageContext";
 import { EyeIcon, EyeSlashIcon, LockClosedIcon } from "@heroicons/react/24/outline";
 
 const INPUT_CLASSES =
@@ -15,7 +15,7 @@ const MIN_PASSWORD_LENGTH = 8;
 function ResetPasswordForm() {
   const { language } = useLanguage();
   const isAr = language === "ar";
-  const t = (ar: string, tr: string) => (isAr ? ar : tr);
+  const t = useT();
   const router = useRouter();
   const token = useSearchParams().get("token") ?? "";
 
@@ -28,19 +28,19 @@ function ResetPasswordForm() {
 
   const errorMessage = (code: string) => {
     if (code === "invalid_or_expired_token") {
-      return t("الرابط غير صالح أو منتهي الصلاحية، اطلب رابطاً جديداً", "Link geçersiz veya süresi dolmuş, yeni bir link isteyin");
+      return t("الرابط غير صالح أو منتهي الصلاحية، اطلب رابطاً جديداً", "Link geçersiz veya süresi dolmuş, yeni bir link isteyin", "The link is invalid or has expired, request a new one");
     }
     if (code === "weak_password") {
-      return t(`كلمة المرور يجب أن تكون ${MIN_PASSWORD_LENGTH} أحرف على الأقل`, `Şifre en az ${MIN_PASSWORD_LENGTH} karakter olmalı`);
+      return t(`كلمة المرور يجب أن تكون ${MIN_PASSWORD_LENGTH} أحرف على الأقل`, `Şifre en az ${MIN_PASSWORD_LENGTH} karakter olmalı`, `Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
     }
-    return t("حدث خطأ، حاول مرة أخرى", "Bir hata oluştu, tekrar deneyin");
+    return t("حدث خطأ، حاول مرة أخرى", "Bir hata oluştu, tekrar deneyin", "Something went wrong, please try again");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     if (password !== confirmPassword) {
-      setError(t("كلمتا المرور غير متطابقتين", "Şifreler eşleşmiyor"));
+      setError(t("كلمتا المرور غير متطابقتين", "Şifreler eşleşmiyor", "Passwords don't match"));
       return;
     }
     setLoading(true);
@@ -71,15 +71,15 @@ function ResetPasswordForm() {
       </div>
 
       <h1 className="text-2xl font-bold text-foreground mb-1.5 text-center">
-        {t("تعيين كلمة مرور جديدة", "Yeni Şifre Belirle")}
+        {t("تعيين كلمة مرور جديدة", "Yeni Şifre Belirle", "Set a New Password")}
       </h1>
       <p className="text-sm text-muted text-center mb-7">
-        {t("اختر كلمة مرور جديدة لحسابك", "Hesabın için yeni bir şifre seç")}
+        {t("اختر كلمة مرور جديدة لحسابك", "Hesabın için yeni bir şifre seç", "Choose a new password for your account")}
       </p>
 
       {!token && (
         <div className="mb-4 rounded-xl border border-accent-red/30 bg-accent-red-bg/60 p-3 text-sm text-accent-red">
-          {t("الرابط غير صالح -- تأكد من فتحه كاملاً من رسالتك", "Link geçersiz -- linki tam olarak açtığınızdan emin olun")}
+          {t("الرابط غير صالح -- تأكد من فتحه كاملاً من رسالتك", "Link geçersiz -- linki tam olarak açtığınızdan emin olun", "Invalid link -- make sure you opened the full link")}
         </div>
       )}
 
@@ -91,7 +91,7 @@ function ResetPasswordForm() {
 
       {done ? (
         <div className="rounded-xl border border-accent-green/30 bg-accent-green-bg/40 p-4 text-sm text-foreground leading-relaxed animate-fade-in">
-          {t("تم تغيير كلمة المرور بنجاح. جاري تحويلك لتسجيل الدخول...", "Şifre başarıyla değiştirildi. Girişe yönlendiriliyorsunuz...")}
+          {t("تم تغيير كلمة المرور بنجاح. جاري تحويلك لتسجيل الدخول...", "Şifre başarıyla değiştirildi. Girişe yönlendiriliyorsunuz...", "Password changed successfully. Redirecting you to sign in...")}
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4" dir={isAr ? "rtl" : "ltr"}>
@@ -102,7 +102,7 @@ function ResetPasswordForm() {
               minLength={MIN_PASSWORD_LENGTH}
               disabled={!token}
               dir="ltr"
-              placeholder={t("كلمة المرور الجديدة", "Yeni şifre")}
+              placeholder={t("كلمة المرور الجديدة", "Yeni şifre", "New password")}
               className={`${INPUT_CLASSES} pl-4 pr-12`}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -120,7 +120,7 @@ function ResetPasswordForm() {
             required
             disabled={!token}
             dir="ltr"
-            placeholder={t("تأكيد كلمة المرور", "Şifreyi onayla")}
+            placeholder={t("تأكيد كلمة المرور", "Şifreyi onayla", "Confirm password")}
             className={INPUT_CLASSES}
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
@@ -132,7 +132,7 @@ function ResetPasswordForm() {
             className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary to-primary-dark px-5 py-3 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading && <Spinner size="sm" className="border-white/40 border-t-white" />}
-            {t("تعيين كلمة المرور", "Şifreyi Belirle")}
+            {t("تعيين كلمة المرور", "Şifreyi Belirle", "Set Password")}
           </button>
         </form>
       )}
@@ -141,6 +141,7 @@ function ResetPasswordForm() {
 }
 
 export default function ResetPasswordPage() {
+  const tx = useT();
   const { language } = useLanguage();
   const isAr = language === "ar";
 
@@ -158,7 +159,7 @@ export default function ResetPasswordPage() {
           </Suspense>
           <p className="mt-6 text-center text-sm text-muted">
             <Link href="/login" className="text-primary font-semibold hover:underline">
-              {isAr ? "العودة لتسجيل الدخول" : "Girişe geri dön"}
+              {tx("العودة لتسجيل الدخول", "Girişe geri dön", "Back to sign in")}
             </Link>
           </p>
         </div>

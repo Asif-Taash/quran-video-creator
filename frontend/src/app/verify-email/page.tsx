@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import Navbar from "@/components/layout/Navbar";
 import Spinner from "@/components/ui/Spinner";
-import { useLanguage } from "@/lib/LanguageContext";
+import { useLanguage, useT } from "@/lib/LanguageContext";
 import { CheckBadgeIcon, XCircleIcon } from "@heroicons/react/24/outline";
 
 type Status = "verifying" | "success" | "error";
@@ -13,7 +13,7 @@ type Status = "verifying" | "success" | "error";
 function VerifyEmailContent() {
   const { language } = useLanguage();
   const isAr = language === "ar";
-  const t = (ar: string, tr: string) => (isAr ? ar : tr);
+  const t = useT();
   const token = useSearchParams().get("token") ?? "";
 
   const [status, setStatus] = useState<Status>(token ? "verifying" : "error");
@@ -51,20 +51,20 @@ function VerifyEmailContent() {
 
       {status === "verifying" && (
         <>
-          <h1 className="text-xl font-bold text-foreground mb-1.5">{t("جاري التأكيد...", "Doğrulanıyor...")}</h1>
+          <h1 className="text-xl font-bold text-foreground mb-1.5">{t("جاري التأكيد...", "Doğrulanıyor...", "Verifying...")}</h1>
         </>
       )}
       {status === "success" && (
         <>
-          <h1 className="text-xl font-bold text-foreground mb-1.5">{t("تم تأكيد بريدك الإلكتروني", "E-postanız doğrulandı")}</h1>
-          <p className="text-sm text-muted">{t("شكراً لتأكيد حسابك.", "Hesabınızı doğruladığınız için teşekkürler.")}</p>
+          <h1 className="text-xl font-bold text-foreground mb-1.5">{t("تم تأكيد بريدك الإلكتروني", "E-postanız doğrulandı", "Your email has been verified")}</h1>
+          <p className="text-sm text-muted">{t("شكراً لتأكيد حسابك.", "Hesabınızı doğruladığınız için teşekkürler.", "Thanks for verifying your account.")}</p>
         </>
       )}
       {status === "error" && (
         <>
-          <h1 className="text-xl font-bold text-foreground mb-1.5">{t("تعذر تأكيد البريد", "E-posta doğrulanamadı")}</h1>
+          <h1 className="text-xl font-bold text-foreground mb-1.5">{t("تعذر تأكيد البريد", "E-posta doğrulanamadı", "Couldn't verify your email")}</h1>
           <p className="text-sm text-muted">
-            {t("الرابط غير صالح أو منتهي الصلاحية -- اطلب رابطاً جديداً من صفحة الحساب.", "Link geçersiz veya süresi dolmuş -- hesap sayfasından yeni bir link isteyin.")}
+            {t("الرابط غير صالح أو منتهي الصلاحية -- اطلب رابطاً جديداً من صفحة الحساب.", "Link geçersiz veya süresi dolmuş -- hesap sayfasından yeni bir link isteyin.", "The link is invalid or has expired -- request a new one from the account page.")}
           </p>
         </>
       )}
@@ -73,7 +73,7 @@ function VerifyEmailContent() {
         href="/account"
         className="mt-6 inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-primary to-primary-dark px-5 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg hover:brightness-105"
       >
-        {t("الذهاب إلى الحساب", "Hesaba git")}
+        {t("الذهاب إلى الحساب", "Hesaba git", "Go to account")}
       </Link>
     </div>
   );

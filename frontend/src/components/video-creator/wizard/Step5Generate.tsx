@@ -4,9 +4,10 @@ import { useState } from "react";
 import { ArrowDownTrayIcon, AdjustmentsHorizontalIcon, ClipboardDocumentIcon, CheckIcon, SignalIcon } from "@heroicons/react/24/outline";
 import Spinner from "@/components/ui/Spinner";
 import type { RenderState } from "../VideoCreatorForm";
-import { QUALITY_TIER_OPTIONS, type AspectRatio, type QualityTier, type QuranVideoProps } from "@/remotion/types";
+import { QUALITY_TIER_OPTIONS, WORD_HIGHLIGHT_COLORS, type AspectRatio, type QualityTier, type QuranVideoProps } from "@/remotion/types";
 import VideoPreviewPlayer from "../VideoPreviewPlayer";
 
+import { useT } from "@/lib/LanguageContext";
 interface Step5Props {
   isArabic: boolean;
   handleGenerateVideo: () => void;
@@ -59,12 +60,37 @@ interface Step5Props {
   onArabicWidthScaleChange: (segmentKey: string | null, scale: number) => void;
   onTranslationTextScaleChange: (segmentKey: string | null, scale: number) => void;
   onTranslationWidthScaleChange: (segmentKey: string | null, scale: number) => void;
+  // The shared, video-wide text-size sliders below the suggested-title box
+  // -- unlike the per-segment controls above, these set ONE size for EVERY
+  // segment at once (see VideoCreatorForm's applyBulkTextScale, which also
+  // clears any existing per-segment override so nothing is left behind
+  // ignoring the new shared value). arabicTextScale/translationTextScale
+  // here are that same shared fallback value, just for display as each
+  // slider's own position.
+  arabicTextScale: number;
+  translationTextScale: number;
+  onBulkArabicTextScaleChange: (scale: number) => void;
+  onBulkTranslationTextScaleChange: (scale: number) => void;
+  // Colors the Arabic word being recited -- see QuranVideoProps.wordHighlight.
+  wordHighlight: boolean;
+  onWordHighlightChange: (on: boolean) => void;
+  wordHighlightColor: string;
+  onWordHighlightColorChange: (color: string) => void;
+  // The video is created automatically once the surah, ayahs and reciter
+  // are chosen (see VideoCreatorForm's auto-prepare effect) -- these drive
+  // the placeholder shown until its preview exists.
+  isPreparingAudio: boolean;
+  audioProgressStage: string | null;
+  hasSelection: boolean;
+  // The optional background section (BackgroundPicker), shown right under
+  // the video once it exists.
+  backgroundPanel?: React.ReactNode;
 }
 
-const ASPECT_RATIO_OPTIONS: { value: AspectRatio; shape: string; labelAr: string; labelTr: string }[] = [
-  { value: "portrait", shape: "9 / 16", labelAr: "عمودي", labelTr: "Dikey" },
-  { value: "landscape", shape: "16 / 9", labelAr: "أفقي", labelTr: "Yatay" },
-  { value: "square", shape: "1 / 1", labelAr: "مربع", labelTr: "Kare" },
+const ASPECT_RATIO_OPTIONS: { value: AspectRatio; shape: string; labelAr: string; labelTr: string; labelEn: string }[] = [
+  { value: "portrait", shape: "9 / 16", labelAr: "عمودي", labelTr: "Dikey", labelEn: "Portrait" },
+  { value: "landscape", shape: "16 / 9", labelAr: "أفقي", labelTr: "Yatay", labelEn: "Landscape" },
+  { value: "square", shape: "1 / 1", labelAr: "مربع", labelTr: "Kare", labelEn: "Square" },
 ];
 
 function AspectRatioPicker({
@@ -76,6 +102,7 @@ function AspectRatioPicker({
   aspectRatio: AspectRatio;
   onAspectRatioChange: (ratio: AspectRatio) => void;
 }) {
+  const tx = useT();
   return (
     <div className="flex items-center gap-2">
       {ASPECT_RATIO_OPTIONS.map((option) => {
@@ -95,7 +122,7 @@ function AspectRatioPicker({
               className={`rounded-[3px] border-2 ${active ? "border-primary" : "border-muted-foreground/60"}`}
               style={{ aspectRatio: option.shape, height: 18 }}
             />
-            <span className="text-xs font-medium">{isArabic ? option.labelAr : option.labelTr}</span>
+            <span className="text-xs font-medium">{tx(option.labelAr, option.labelTr, option.labelEn)}</span>
           </button>
         );
       })}
@@ -116,6 +143,7 @@ function QualityPicker({
   quality: QualityTier;
   onQualityChange: (quality: QualityTier) => void;
 }) {
+  const tx = useT();
   const index = Math.max(
     0,
     QUALITY_TIER_OPTIONS.findIndex((option) => option.value === quality)
@@ -127,7 +155,7 @@ function QualityPicker({
     <div>
       <div className="mb-3 flex items-center justify-between">
         <span className="text-xs font-medium text-muted-foreground">
-          {isArabic ? "جودة الفيديو" : "Video Kalitesi"}
+          {tx("جودة الفيديو", "Video Kalitesi", "Video Quality")}
         </span>
         <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
           {activeOption.label}
@@ -158,6 +186,48 @@ function QualityPicker({
   );
 }
 
+// Same range VideoPreviewPlayer's own per-segment corner-drag handle
+// already covers (its MIN_TEXT_SCALE/MAX_TEXT_SCALE) -- keeps this bulk
+// slider's feel/travel consistent with the per-segment control it sits
+// alongside conceptually.
+const BULK_TEXT_SCALE_MIN = 0.7;
+const BULK_TEXT_SCALE_MAX = 1.4;
+
+// One shared, video-wide size slider (Arabic verse OR translation, see the
+// two call sites below) -- deliberately no numeric label anywhere, per the
+// user's own request: a small "أ" at one end and a larger "أ" at the other
+// are the only size cue, same spirit as QualityPicker above but without its
+// percent badge/min-max captions.
+function TextSizeSlider({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  const percent = ((value - BULK_TEXT_SCALE_MIN) / (BULK_TEXT_SCALE_MAX - BULK_TEXT_SCALE_MIN)) * 100;
+  return (
+    <div>
+      <span className="mb-2 block text-xs font-medium text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">أ</span>
+        <input
+          type="range"
+          dir="ltr"
+          min={BULK_TEXT_SCALE_MIN}
+          max={BULK_TEXT_SCALE_MAX}
+          step={0.01}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          style={{ background: `linear-gradient(to right, var(--primary) ${percent}%, var(--border) ${percent}%)` }}
+          className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full outline-none
+            [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none
+            [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary
+            [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:transition-transform
+            [&::-webkit-slider-thumb]:hover:scale-110
+            [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full
+            [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:shadow-md"
+        />
+        <span className="text-lg text-muted-foreground">أ</span>
+      </div>
+    </div>
+  );
+}
+
 export default function Step5Generate({
   isArabic,
   handleGenerateVideo,
@@ -183,7 +253,20 @@ export default function Step5Generate({
   onArabicWidthScaleChange,
   onTranslationTextScaleChange,
   onTranslationWidthScaleChange,
+  arabicTextScale,
+  translationTextScale,
+  onBulkArabicTextScaleChange,
+  onBulkTranslationTextScaleChange,
+  wordHighlight,
+  onWordHighlightChange,
+  wordHighlightColor,
+  onWordHighlightColorChange,
+  isPreparingAudio,
+  audioProgressStage,
+  hasSelection,
+  backgroundPanel,
 }: Step5Props) {
+  const tx = useT();
   // Brief "copied" checkmark swap on the title's copy button -- reverts on
   // its own after a couple seconds, no need to track anything past that.
   const [titleCopied, setTitleCopied] = useState(false);
@@ -248,18 +331,39 @@ export default function Step5Generate({
           {isLoadingPreview && (
             <div className="absolute top-2 right-2 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[11px] text-white/90 backdrop-blur-sm pointer-events-none">
               <Spinner size="sm" />
-              {isArabic ? "جاري التحديث..." : "Güncelleniyor..."}
+              {tx("جاري التحديث...", "Güncelleniyor...", "Updating...")}
             </div>
           )}
         </div>
+      ) : isPreparingAudio || isLoadingPreview ? (
+        <div
+          className="flex min-h-[200px] flex-col items-center justify-center gap-3 rounded-2xl border border-border bg-surface p-6 text-center"
+          dir={isArabic ? "rtl" : "ltr"}
+        >
+          <Spinner size="md" />
+          <p className="text-sm font-medium text-foreground">
+            {tx("جاري إنشاء الفيديو...", "Video oluşturuluyor...", "Creating the video...")}
+          </p>
+          {isPreparingAudio && audioProgressStage && (
+            <p className="text-xs text-muted-foreground">{audioProgressStage}</p>
+          )}
+        </div>
       ) : (
-        isLoadingPreview && (
-          <div className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-surface p-6 text-sm text-muted-foreground">
-            <Spinner size="sm" />
-            {isArabic ? "جاري تحميل المعاينة..." : "Önizleme yükleniyor..."}
-          </div>
+        !hasSelection && (
+          <p
+            className="rounded-2xl border border-dashed border-border bg-surface/60 p-6 text-center text-sm text-muted-foreground"
+            dir={isArabic ? "rtl" : "ltr"}
+          >
+            {tx(
+              "اختر السورة والآيات والقارئ، وسيظهر الفيديو هنا تلقائياً.",
+              "Sureyi, ayetleri ve kariyi seçin; video burada otomatik olarak görünecek.",
+              "Choose the surah, ayahs and reciter, and the video appears here automatically."
+            )}
+          </p>
         )
       )}
+
+      {previewProps && backgroundPanel}
 
       {/* A ready-to-paste video title (e.g. for YouTube) -- see
           VideoCreatorForm's suggestedTitle for the exact format, which now
@@ -275,7 +379,7 @@ export default function Step5Generate({
           dir={isArabic ? "rtl" : "ltr"}
         >
           <span className="flex-shrink-0 text-xs font-medium text-muted-foreground">
-            {isArabic ? "عنوان مقترح:" : "Önerilen Başlık:"}
+            {tx("عنوان مقترح:", "Önerilen Başlık:", "Suggested Title:")}
           </span>
           <div className="flex items-center gap-2">
             <span className="flex-1 min-w-0 truncate text-sm font-medium text-foreground" title={suggestedTitle}>
@@ -284,7 +388,7 @@ export default function Step5Generate({
             <button
               type="button"
               onClick={handleCopyTitle}
-              title={isArabic ? "نسخ العنوان" : "Başlığı kopyala"}
+              title={tx("نسخ العنوان", "Başlığı kopyala", "Copy title")}
               className={`flex flex-shrink-0 items-center justify-center h-8 w-8 rounded-lg border transition-colors ${
                 titleCopied
                   ? "border-primary bg-primary/10 text-primary"
@@ -293,6 +397,63 @@ export default function Step5Generate({
             >
               {titleCopied ? <CheckIcon className="h-4 w-4" /> : <ClipboardDocumentIcon className="h-4 w-4" />}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Sets ONE text size for every ayah/translation segment in the whole
+          video at once (see VideoCreatorForm's applyBulkTextScale) -- the
+          per-segment size control (a corner-drag handle right on the
+          preview, see VideoPreviewPlayer) still works independently on top
+          of this for a one-off exception. */}
+      {previewProps && (
+        <div
+          className="flex flex-col gap-4 rounded-xl border border-border bg-surface px-4 py-3"
+          dir={isArabic ? "rtl" : "ltr"}
+        >
+          <TextSizeSlider
+            label={tx("حجم نص الآية", "Ayet Yazı Boyutu", "Ayah Text Size")}
+            value={arabicTextScale}
+            onChange={onBulkArabicTextScaleChange}
+          />
+          <TextSizeSlider
+            label={tx("حجم نص الترجمة", "Çeviri Yazı Boyutu", "Translation Text Size")}
+            value={translationTextScale}
+            onChange={onBulkTranslationTextScaleChange}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-3">
+            <label className="flex cursor-pointer items-center gap-3">
+              <input
+                type="checkbox"
+                checked={wordHighlight}
+                onChange={(e) => onWordHighlightChange(e.target.checked)}
+                className="peer sr-only"
+              />
+              <span
+                aria-hidden
+                className="relative h-5 w-9 flex-shrink-0 rounded-full bg-border transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:left-[18px] peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40"
+              />
+              <span className="text-xs font-medium text-muted-foreground">
+                {tx("تلوين الكلمة أثناء التلاوة", "Okunan kelimeyi renklendir", "Highlight the word being recited")}
+              </span>
+            </label>
+            {wordHighlight && (
+              <div className="flex items-center gap-2">
+                {WORD_HIGHLIGHT_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    onClick={() => onWordHighlightColorChange(color)}
+                    aria-label={color}
+                    aria-pressed={wordHighlightColor === color}
+                    className={`h-6 w-6 rounded-full ring-offset-2 ring-offset-surface transition-transform hover:scale-110 ${
+                      wordHighlightColor === color ? "ring-2 ring-foreground/70" : ""
+                    }`}
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -317,17 +478,17 @@ export default function Step5Generate({
           {backgroundSaveStatus === "saving" && (
             <>
               <Spinner size="sm" />
-              {isArabic ? "جارٍ حفظ التعديلات في المعرض..." : "Değişiklikler galeriye kaydediliyor..."}
+              {tx("جارٍ حفظ التعديلات في المعرض...", "Değişiklikler galeriye kaydediliyor...", "Saving changes to the gallery...")}
             </>
           )}
           {backgroundSaveStatus === "saved" && (
             <span className="text-primary">
-              {isArabic ? "✓ تم حفظ التعديلات في المعرض" : "✓ Değişiklikler galeriye kaydedildi"}
+              {tx("✓ تم حفظ التعديلات في المعرض", "✓ Değişiklikler galeriye kaydedildi", "✓ Changes saved to the gallery")}
             </span>
           )}
           {backgroundSaveStatus === "error" && (
             <span className="text-accent-red">
-              {isArabic ? "تعذر حفظ التعديلات في المعرض" : "Değişiklikler galeriye kaydedilemedi"}
+              {tx("تعذر حفظ التعديلات في المعرض", "Değişiklikler galeriye kaydedilemedi", "Couldn't save changes to the gallery")}
             </span>
           )}
         </div>
@@ -352,22 +513,16 @@ export default function Step5Generate({
         >
           {renderState === "rendering" ? <Spinner size="md" className="border-white/30 border-t-white" /> : <ArrowDownTrayIcon className="h-6 w-6" />}
           {renderState === "rendering"
-            ? isArabic
-              ? "جاري الإنشاء والتنزيل..."
-              : "İndiriliyor..."
+            ? tx("جاري الإنشاء والتنزيل...", "İndiriliyor...", "Downloading...")
             : !preparedAudioUrl
-              ? isArabic
-                ? "يجب تجهيز الصوت أولاً"
-                : "Önce Sesi Hazırlayın"
-              : isArabic
-                ? "تنزيل الفيديو"
-                : "Videoyu İndir"}
+              ? tx("يجب تجهيز الصوت أولاً", "Önce Sesi Hazırlayın", "Prepare the Audio First")
+              : tx("تنزيل الفيديو", "Videoyu İndir", "Download Video")}
         </button>
         {preparedAudioUrl && (
           <button
             type="button"
             onClick={onToggleTimingEditor}
-            title={isArabic ? "تعديل الصوت والتوقيت والتقسيم" : "Ses, zamanlama ve bölümlemeyi düzenle"}
+            title={tx("تعديل الصوت والتوقيت والتقسيم", "Ses, zamanlama ve bölümlemeyi düzenle", "Edit audio, timing and segmentation")}
             className={`flex flex-shrink-0 items-center justify-center gap-2 h-[52px] px-4 sm:w-[52px] sm:px-0 rounded-lg border transition-colors ${
               showTimingEditor
                 ? "border-primary bg-primary text-white shadow-lg shadow-primary/25"
@@ -376,7 +531,7 @@ export default function Step5Generate({
           >
             <AdjustmentsHorizontalIcon className="h-6 w-6 flex-shrink-0" />
             <span className="text-sm font-semibold sm:hidden">
-              {isArabic ? "تعديل الصوت والتوقيت والتقسيم" : "Ses, Zamanlama ve Bölümleme"}
+              {tx("تعديل الصوت والتوقيت والتقسيم", "Ses, Zamanlama ve Bölümleme", "Audio, Timing and Segmentation")}
             </span>
           </button>
         )}
@@ -390,7 +545,7 @@ export default function Step5Generate({
             <button
               type="button"
               onClick={() => setShowQualityPanel((v) => !v)}
-              title={isArabic ? "جودة الفيديو" : "Video kalitesi"}
+              title={tx("جودة الفيديو", "Video kalitesi", "Video quality")}
               className={`flex flex-shrink-0 items-center justify-center gap-2 h-[52px] px-4 sm:w-[52px] sm:px-0 rounded-lg border transition-colors ${
                 showQualityPanel
                   ? "border-primary bg-primary text-white shadow-lg shadow-primary/25"
@@ -399,7 +554,7 @@ export default function Step5Generate({
             >
               <SignalIcon className="h-6 w-6 flex-shrink-0" />
               <span className="text-sm font-semibold sm:hidden">
-                {isArabic ? "جودة الفيديو" : "Video Kalitesi"}
+                {tx("جودة الفيديو", "Video Kalitesi", "Video Quality")}
               </span>
             </button>
             {showQualityPanel && (
@@ -419,7 +574,7 @@ export default function Step5Generate({
 
       {renderState === "error" && (
         <p className="animate-fade-in rounded-xl border border-accent-red/30 bg-accent-red-bg/60 p-3 text-sm text-accent-red">
-          {isArabic ? "حدث خطأ أثناء إنشاء الفيديو: " : "Video oluşturulurken hata oluştu: "}
+          {tx("حدث خطأ أثناء إنشاء الفيديو: ", "Video oluşturulurken hata oluştu: ", "Error while creating the video: ")}
           {renderError}
         </p>
       )}

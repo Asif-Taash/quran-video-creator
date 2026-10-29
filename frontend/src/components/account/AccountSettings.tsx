@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useLanguage } from "@/lib/LanguageContext";
+import { useLanguage, useT } from "@/lib/LanguageContext";
 import DeleteAccountDialog from "@/components/account/DeleteAccountDialog";
 import Spinner from "@/components/ui/Spinner";
 import {
@@ -41,7 +41,7 @@ function broadcastProfileUpdated() {
 export default function AccountSettings({ email, initialName, initialAvatarUrl, initialEmailVerified }: Props) {
   const { language } = useLanguage();
   const isAr = language === "ar";
-  const t = (ar: string, tr: string) => (isAr ? ar : tr);
+  const t = useT();
   const [dialogOpen, setDialogOpen] = React.useState(false);
 
   const [name, setName] = React.useState(initialName ?? "");
@@ -77,14 +77,14 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
       formData.append("name", name.trim());
       const res = await fetch("/api/auth/profile", { method: "POST", body: formData });
       if (!res.ok) {
-        setNameError(t("حدث خطأ، حاول مرة أخرى", "Bir hata oluştu, tekrar deneyin"));
+        setNameError(t("حدث خطأ، حاول مرة أخرى", "Bir hata oluştu, tekrar deneyin", "Something went wrong, please try again"));
         return;
       }
       setNameSaved(true);
       broadcastProfileUpdated();
       setTimeout(() => setNameSaved(false), 2500);
     } catch {
-      setNameError(t("خطأ في الاتصال", "Bağlantı hatası"));
+      setNameError(t("خطأ في الاتصال", "Bağlantı hatası", "Connection error"));
     } finally {
       setNameSaving(false);
     }
@@ -93,7 +93,7 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
   const uploadAvatar = async (file: File) => {
     setAvatarError(null);
     if (file.size > MAX_AVATAR_BYTES) {
-      setAvatarError(t("حجم الصورة كبير جداً (الحد الأقصى 5 ميجابايت)", "Görsel çok büyük (en fazla 5MB)"));
+      setAvatarError(t("حجم الصورة كبير جداً (الحد الأقصى 5 ميجابايت)", "Görsel çok büyük (en fazla 5MB)", "Image is too large (5MB max)"));
       return;
     }
     setAvatarBusy(true);
@@ -108,14 +108,14 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
       const res = await fetch("/api/auth/profile", { method: "POST", body: formData });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        setAvatarError(t("تعذر رفع الصورة", "Görsel yüklenemedi"));
+        setAvatarError(t("تعذر رفع الصورة", "Görsel yüklenemedi", "Couldn't upload the image"));
         setAvatarUrl(initialAvatarUrl);
         return;
       }
       setAvatarUrl(data.avatarUrl ?? null);
       broadcastProfileUpdated();
     } catch {
-      setAvatarError(t("خطأ في الاتصال", "Bağlantı hatası"));
+      setAvatarError(t("خطأ في الاتصال", "Bağlantı hatası", "Connection error"));
       setAvatarUrl(initialAvatarUrl);
     } finally {
       setAvatarBusy(false);
@@ -132,13 +132,13 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
       formData.append("removeAvatar", "true");
       const res = await fetch("/api/auth/profile", { method: "POST", body: formData });
       if (!res.ok) {
-        setAvatarError(t("تعذر حذف الصورة", "Görsel kaldırılamadı"));
+        setAvatarError(t("تعذر حذف الصورة", "Görsel kaldırılamadı", "Couldn't remove the image"));
         setAvatarUrl(previous);
         return;
       }
       broadcastProfileUpdated();
     } catch {
-      setAvatarError(t("خطأ في الاتصال", "Bağlantı hatası"));
+      setAvatarError(t("خطأ في الاتصال", "Bağlantı hatası", "Connection error"));
       setAvatarUrl(previous);
     } finally {
       setAvatarBusy(false);
@@ -153,7 +153,7 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
       const res = await fetch("/api/auth/verify-email/request", { method: "POST" });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        setVerifyError(t("حدث خطأ، حاول مرة أخرى", "Bir hata oluştu, tekrar deneyin"));
+        setVerifyError(t("حدث خطأ، حاول مرة أخرى", "Bir hata oluştu, tekrar deneyin", "Something went wrong, please try again"));
         return;
       }
       if (data?.alreadyVerified) {
@@ -162,7 +162,7 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
       }
       setDevVerifyUrl(data?.devVerifyUrl ?? null);
     } catch {
-      setVerifyError(t("خطأ في الاتصال", "Bağlantı hatası"));
+      setVerifyError(t("خطأ في الاتصال", "Bağlantı hatası", "Connection error"));
     } finally {
       setVerifySending(false);
     }
@@ -188,13 +188,13 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
     try {
       const res = await fetch("/api/video/cleanup", { method: "DELETE" });
       if (!res.ok) {
-        setCleanupError(t("حدث خطأ، حاول مرة أخرى", "Bir hata oluştu, tekrar deneyin"));
+        setCleanupError(t("حدث خطأ، حاول مرة أخرى", "Bir hata oluştu, tekrar deneyin", "Something went wrong, please try again"));
         return;
       }
       setCleanupDone(true);
       setTimeout(() => setCleanupDone(false), 3000);
     } catch {
-      setCleanupError(t("خطأ في الاتصال", "Bağlantı hatası"));
+      setCleanupError(t("خطأ في الاتصال", "Bağlantı hatası", "Connection error"));
     } finally {
       setCleanupRunning(false);
       setCleanupArmed(false);
@@ -217,11 +217,11 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (data.error === "invalid_password") {
-          setPasswordError(t("كلمة المرور الحالية غير صحيحة", "Mevcut şifre hatalı"));
+          setPasswordError(t("كلمة المرور الحالية غير صحيحة", "Mevcut şifre hatalı", "Current password is incorrect"));
         } else if (data.error === "weak_password") {
-          setPasswordError(t(`كلمة المرور الجديدة يجب أن تكون ${MIN_PASSWORD_LENGTH} أحرف على الأقل`, `Yeni şifre en az ${MIN_PASSWORD_LENGTH} karakter olmalı`));
+          setPasswordError(t(`كلمة المرور الجديدة يجب أن تكون ${MIN_PASSWORD_LENGTH} أحرف على الأقل`, `Yeni şifre en az ${MIN_PASSWORD_LENGTH} karakter olmalı`, `New password must be at least ${MIN_PASSWORD_LENGTH} characters`));
         } else {
-          setPasswordError(t("حدث خطأ، حاول مرة أخرى", "Bir hata oluştu, tekrar deneyin"));
+          setPasswordError(t("حدث خطأ، حاول مرة أخرى", "Bir hata oluştu, tekrar deneyin", "Something went wrong, please try again"));
         }
         return;
       }
@@ -231,7 +231,7 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
       setPasswordSaved(true);
       setTimeout(() => setPasswordSaved(false), 2500);
     } catch {
-      setPasswordError(t("خطأ في الاتصال", "Bağlantı hatası"));
+      setPasswordError(t("خطأ في الاتصال", "Bağlantı hatası", "Connection error"));
     } finally {
       setPasswordSaving(false);
     }
@@ -243,7 +243,7 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
         <div className="absolute -top-16 left-1/2 -translate-x-1/2 h-40 w-40 rounded-full bg-primary/20 blur-3xl -z-10" />
         <div className="rounded-2xl border border-border bg-surface shadow-soft p-8">
           <h1 className="text-xl font-bold text-foreground mb-8 text-center">
-            {t("الحساب", "Hesap")}
+            {t("الحساب", "Hesap", "Account")}
           </h1>
 
           {/* Avatar */}
@@ -266,7 +266,7 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={avatarBusy}
-                aria-label={t("تغيير الصورة", "Fotoğrafı değiştir")}
+                aria-label={t("تغيير الصورة", "Fotoğrafı değiştir", "Change photo")}
                 className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full bg-primary text-white shadow-md ring-2 ring-surface transition-transform hover:scale-110 disabled:opacity-50"
               >
                 <CameraIcon className="h-4 w-4" />
@@ -289,7 +289,7 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
                 onClick={removeAvatar}
                 className="text-xs text-muted hover:text-accent-red transition-colors"
               >
-                {t("إزالة الصورة", "Fotoğrafı kaldır")}
+                {t("إزالة الصورة", "Fotoğrafı kaldır", "Remove photo")}
               </button>
             )}
             {avatarError && <p className="text-xs text-accent-red">{avatarError}</p>}
@@ -298,14 +298,14 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
           {/* Name */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground">
-              {t("الاسم", "Ad")}
+              {t("الاسم", "Ad", "Name")}
             </label>
             <div className="flex gap-2">
               <input
                 type="text"
                 maxLength={60}
                 dir={isAr ? "rtl" : "ltr"}
-                placeholder={t("أضف اسمك", "Adınızı ekleyin")}
+                placeholder={t("أضف اسمك", "Adınızı ekleyin", "Add your name")}
                 className={INPUT_CLASSES}
                 value={name}
                 onChange={(e) => {
@@ -327,7 +327,7 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
                 ) : nameSaved ? (
                   <CheckIcon className="h-4 w-4" />
                 ) : (
-                  t("حفظ", "Kaydet")
+                  t("حفظ", "Kaydet", "Save")
                 )}
               </button>
             </div>
@@ -337,7 +337,7 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
           {/* Email */}
           <div className="space-y-2 mt-6">
             <label className="text-sm font-medium text-foreground">
-              {t("البريد الإلكتروني", "E-posta")}
+              {t("البريد الإلكتروني", "E-posta", "Email")}
             </label>
             <div className="w-full h-[50px] flex items-center rounded-xl border border-border bg-background px-4 text-sm text-muted" dir="ltr">
               {email}
@@ -351,7 +351,7 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
                 <ExclamationTriangleIcon className="h-5 w-5 flex-shrink-0 text-accent-amber mt-0.5" />
                 <div className="flex-1">
                   <p className="text-sm text-foreground leading-relaxed">
-                    {t("بريدك الإلكتروني غير مؤكد بعد.", "E-posta adresiniz henüz doğrulanmadı.")}
+                    {t("بريدك الإلكتروني غير مؤكد بعد.", "E-posta adresiniz henüz doğrulanmadı.", "Your email address hasn't been verified yet.")}
                   </p>
                   {devVerifyUrl ? (
                     <a
@@ -359,7 +359,7 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
                       className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-accent-amber/15 px-3 py-1.5 text-xs font-semibold text-accent-amber hover:bg-accent-amber/25 transition-colors"
                       dir="ltr"
                     >
-                      {t("فتح رابط التأكيد (وضع تطوير -- لا يوجد بريد فعلي)", "Doğrulama linki (dev mod -- gerçek e-posta yok)")}
+                      {t("فتح رابط التأكيد (وضع تطوير -- لا يوجد بريد فعلي)", "Doğrulama linki (dev mod -- gerçek e-posta yok)", "Verification link (dev mode -- no real email)")}
                     </a>
                   ) : (
                     <button
@@ -369,7 +369,7 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
                       className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-accent-amber hover:underline disabled:opacity-50"
                     >
                       {verifySending && <Spinner size="sm" className="border-accent-amber/30 border-t-accent-amber" />}
-                      {t("إرسال رابط التأكيد", "Doğrulama linki gönder")}
+                      {t("إرسال رابط التأكيد", "Doğrulama linki gönder", "Send verification link")}
                     </button>
                   )}
                   {verifyError && <p className="mt-1.5 text-xs text-accent-red">{verifyError}</p>}
@@ -381,12 +381,12 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
           {/* Change password */}
           <div className="mt-6 rounded-xl border border-border bg-background/50 p-5">
             <h2 className="text-sm font-bold text-foreground mb-4">
-              {t("تغيير كلمة المرور", "Şifreyi Değiştir")}
+              {t("تغيير كلمة المرور", "Şifreyi Değiştir", "Change Password")}
             </h2>
             <div className="space-y-3" dir="ltr">
               <input
                 type={showPasswords ? "text" : "password"}
-                placeholder={t("كلمة المرور الحالية", "Mevcut şifre")}
+                placeholder={t("كلمة المرور الحالية", "Mevcut şifre", "Current password")}
                 className={INPUT_CLASSES}
                 value={currentPassword}
                 onChange={(e) => {
@@ -397,7 +397,7 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
               <div className="relative">
                 <input
                   type={showPasswords ? "text" : "password"}
-                  placeholder={t("كلمة المرور الجديدة", "Yeni şifre")}
+                  placeholder={t("كلمة المرور الجديدة", "Yeni şifre", "New password")}
                   className={`${INPUT_CLASSES} pr-12`}
                   value={newPassword}
                   onChange={(e) => {
@@ -415,7 +415,7 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
               </div>
               <input
                 type={showPasswords ? "text" : "password"}
-                placeholder={t("تأكيد كلمة المرور الجديدة", "Yeni şifreyi onayla")}
+                placeholder={t("تأكيد كلمة المرور الجديدة", "Yeni şifreyi onayla", "Confirm new password")}
                 className={INPUT_CLASSES}
                 value={confirmPassword}
                 onChange={(e) => {
@@ -429,12 +429,12 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
             </div>
             {newPassword.length > 0 && newPassword.length < MIN_PASSWORD_LENGTH && (
               <p className="mt-2 text-xs text-muted">
-                {t(`${MIN_PASSWORD_LENGTH} أحرف على الأقل`, `En az ${MIN_PASSWORD_LENGTH} karakter`)}
+                {t(`${MIN_PASSWORD_LENGTH} أحرف على الأقل`, `En az ${MIN_PASSWORD_LENGTH} karakter`, `At least ${MIN_PASSWORD_LENGTH} characters`)}
               </p>
             )}
             {confirmPassword.length > 0 && newPassword !== confirmPassword && (
               <p className="mt-2 text-xs text-accent-red">
-                {t("كلمتا المرور غير متطابقتين", "Şifreler eşleşmiyor")}
+                {t("كلمتا المرور غير متطابقتين", "Şifreler eşleşmiyor", "Passwords don't match")}
               </p>
             )}
             {passwordError && <p className="mt-2 text-xs text-accent-red">{passwordError}</p>}
@@ -449,25 +449,22 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
               ) : passwordSaved ? (
                 <CheckIcon className="h-4 w-4" />
               ) : null}
-              {t("تحديث كلمة المرور", "Şifreyi Güncelle")}
+              {t("تحديث كلمة المرور", "Şifreyi Güncelle", "Update Password")}
             </button>
           </div>
 
           {/* Clear temporary files */}
           <div className="mt-6 rounded-xl border border-border bg-background/50 p-5">
             <h2 className="text-sm font-bold text-foreground mb-2">
-              {t("الملفات المؤقتة", "Geçici Dosyalar")}
+              {t("الملفات المؤقتة", "Geçici Dosyalar", "Temporary Files")}
             </h2>
             <p className="text-sm text-muted leading-relaxed mb-4">
-              {t(
-                "امسح الصور والفيديوهات والأصوات المؤقتة المتبقية من الجلسات والمسودات السابقة لتوفير مساحة التخزين. فيديوهات معرضك المحفوظة لن تتأثر.",
-                "Depolama alanı boşaltmak için önceki oturum ve taslaklardan kalan geçici görsel, video ve ses dosyalarını temizleyin. Kaydedilmiş galeri videolarınız etkilenmez."
-              )}
+              {t("امسح الصور والفيديوهات والأصوات المؤقتة المتبقية من الجلسات والمسودات السابقة لتوفير مساحة التخزين. فيديوهات معرضك المحفوظة لن تتأثر.", "Depolama alanı boşaltmak için önceki oturum ve taslaklardan kalan geçici görsel, video ve ses dosyalarını temizleyin. Kaydedilmiş galeri videolarınız etkilenmez.", "Clear the temporary images, videos and audio files left over from previous sessions and drafts to free up storage. Your saved gallery videos aren't affected.")}
             </p>
             {cleanupError && <p className="mb-3 text-xs text-accent-red">{cleanupError}</p>}
             {cleanupArmed && !cleanupRunning && (
               <p className="mb-3 text-xs text-accent-amber">
-                {t("اضغط مرة أخرى للتأكيد", "Onaylamak için tekrar tıklayın")}
+                {t("اضغط مرة أخرى للتأكيد", "Onaylamak için tekrar tıklayın", "Click again to confirm")}
               </p>
             )}
             <div className="flex items-center gap-3">
@@ -489,10 +486,10 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
                   <TrashIcon className="h-4 w-4" />
                 )}
                 {cleanupDone
-                  ? t("تم المسح", "Temizlendi")
+                  ? t("تم المسح", "Temizlendi", "Cleared")
                   : cleanupArmed
-                    ? t("تأكيد المسح", "Silmeyi Onayla")
-                    : t("مسح الملفات المؤقتة", "Geçici Dosyaları Temizle")}
+                    ? t("تأكيد المسح", "Silmeyi Onayla", "Confirm Deletion")
+                    : t("مسح الملفات المؤقتة", "Geçici Dosyaları Temizle", "Clear Temporary Files")}
               </button>
               {cleanupArmed && !cleanupRunning && (
                 <button
@@ -500,7 +497,7 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
                   onClick={() => setCleanupArmed(false)}
                   className="text-xs text-muted hover:text-foreground transition-colors"
                 >
-                  {t("إلغاء", "İptal")}
+                  {t("إلغاء", "İptal", "Cancel")}
                 </button>
               )}
             </div>
@@ -508,13 +505,10 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
 
           <div className="mt-6 rounded-xl border border-accent-red/30 bg-accent-red-bg/40 p-5">
             <h2 className="text-sm font-bold text-accent-red mb-2">
-              {t("منطقة الخطر", "Tehlikeli Bölge")}
+              {t("منطقة الخطر", "Tehlikeli Bölge", "Danger Zone")}
             </h2>
             <p className="text-sm text-foreground leading-relaxed mb-4">
-              {t(
-                "حذف حسابك يؤدي إلى إزالة جميع بياناتك نهائياً. لا يمكن التراجع عن هذه العملية.",
-                "Hesabınızı silmek tüm verilerinizi kalıcı olarak kaldırır. Bu işlem geri alınamaz."
-              )}
+              {t("حذف حسابك يؤدي إلى إزالة جميع بياناتك نهائياً. لا يمكن التراجع عن هذه العملية.", "Hesabınızı silmek tüm verilerinizi kalıcı olarak kaldırır. Bu işlem geri alınamaz.", "Deleting your account permanently removes all your data. This can't be undone.")}
             </p>
             <button
               type="button"
@@ -522,7 +516,7 @@ export default function AccountSettings({ email, initialName, initialAvatarUrl, 
               className="inline-flex items-center gap-2 rounded-lg border border-accent-red/50 bg-accent-red/10 px-5 py-2.5 text-sm font-semibold text-accent-red transition-colors hover:bg-accent-red/20"
             >
               <XMarkIcon className="h-4 w-4" />
-              {t("حذف الحساب", "Hesabı Sil")}
+              {t("حذف الحساب", "Hesabı Sil", "Delete Account")}
             </button>
           </div>
         </div>

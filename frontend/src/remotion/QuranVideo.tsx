@@ -1,11 +1,10 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   AbsoluteFill,
   Audio,
   Img,
-  Loop,
   OffthreadVideo,
   Sequence,
   continueRender,
@@ -16,7 +15,23 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
-import { ARABIC_FONT_OPTIONS, TRANSLATION_FONT_OPTIONS, type ArabicFontKey, type QuranVideoProps, type TranslationFontKey, type VerseMapping } from "./types";
+import {
+  ARABIC_FONT_OPTIONS,
+  BACKGROUND_BLUR_MAX,
+  BACKGROUND_DIM_MAX,
+  DEFAULT_BACKGROUND_DIM,
+  DEFAULT_WORD_HIGHLIGHT_COLOR,
+  TRANSLATION_FONT_OPTIONS,
+  resolveTranslationFont,
+  translationFontStack,
+  type ArabicFontKey,
+  type QuranVideoProps,
+  type TranslationFontKey,
+  type VerseMapping,
+  type WordTiming,
+} from "./types";
+import { isFontUsable, measureSpaceWidth, measureTokenWidths, resolveFontCss } from "./textMeasure";
+import { voicedSpan } from "./timing";
 
 const FPS = 30;
 const CONTAINER_PADDING = 32;
@@ -31,6 +46,15 @@ const TRANSLITERATION_LINE_HEIGHT = 1.4;
 const TRANSLITERATION_COLOR = "white";
 const TRANSLITERATION_LETTER_SPACING = "0.05em";
 const TRANSLITERATION_MARGIN_TOP = 20;
+// The reciter's name (an Arabic video's second header line, see
+// QuranVideoProps.reciterName), in Amiri Bold -- a Naskh, the classic
+// partner of the surah name's Ruqaa. Ruqaa itself stacks some letter pairs
+// vertically ("لعـ"), which broke short names: "أحمد العجمي" read
+// "أحمد ا لعجمي".
+const RECITER_NAME_FONT_SIZE = 34;
+const RECITER_NAME_FONT_WEIGHT = 700;
+const RECITER_NAME_LINE_HEIGHT = 1.5;
+const RECITER_NAME_MARGIN_TOP = 14;
 
 const HEADER_PADDING_TOP = 32;
 
@@ -57,29 +81,18 @@ const FONT_PUA_V1_DIR = "fonts/2005/QCF_BSML.fonts/QCF_P";
 const FONT_SURAH_NAME_PATH = "fonts/video-fonts/Ruqaa.ttf";
 const FONT_SURAH_NAME_FAMILY = "Ruqaa";
 
+const FONT_RECITER_NAME_PATH = "fonts/video-fonts/Amiri-Bold.ttf";
+// Not "Amiri": that family is the regular-weight tafsir font (TRANSLATION_FONT_OPTIONS).
+const FONT_RECITER_NAME_FAMILY = "Amiri Header";
+
 const FONT_TRANSLITERATION_PATH = "fonts/video-fonts/Sansita-Bold.ttf";
 const FONT_TRANSLITERATION_FAMILY = "Sansita";
 
-const FONT_TRANSLATION_PATH = "fonts/video-fonts/Aileron-Thin.otf";
-const FONT_TRANSLATION_FAMILY = "Aileron Thin";
-
-// Every selectable translation font (see TRANSLATION_FONT_OPTIONS in
-// types.ts, whose keys this mirrors exactly), self-hosted the same way as
-// every other font in this file -- see PageFontStyles, which declares a
-// @font-face for each entry unconditionally, same as it already does for
-// e.g. FONT_UTHMANIC_HAFS_FAMILY regardless of whether that one's picked.
-// All three new ones (Inter/Noto Sans/Poppins) were fetched as a
-// Turkish-alphabet-scoped WOFF2 subset (covers Ç ç Ğ ğ İ ı Ö ö Ş ş Ü ü)
-// specifically because the translation text is Turkish.
-const TRANSLATION_FONT_FILES: Record<
-  TranslationFontKey,
-  { path: string; format: "opentype" | "woff2"; weight: number }
-> = {
-  aileron: { path: FONT_TRANSLATION_PATH, format: "opentype", weight: 300 },
-  inter: { path: "fonts/video-fonts/Inter-Regular.woff2", format: "woff2", weight: 400 },
-  notosans: { path: "fonts/video-fonts/NotoSans-Regular.woff2", format: "woff2", weight: 400 },
-  poppins: { path: "fonts/video-fonts/Poppins-Regular.woff2", format: "woff2", weight: 400 },
-};
+// Every selectable translation font (files, weights, which languages each
+// covers) is defined once in TRANSLATION_FONT_OPTIONS in types.ts;
+// PageFontStyles declares a @font-face for each entry unconditionally, same
+// as it already does for e.g. FONT_UTHMANIC_HAFS_FAMILY regardless of
+// whether that one's picked.
 
 const TRANSLATION_FONT_SIZE = 24;
 const TRANSLATION_LINE_HEIGHT = 1.625;
@@ -89,13 +102,21 @@ const TRANSLATION_MARGIN_TOP = 10;
 // hasn't been resolved yet (module-level references only; the actual
 // component always resolves its own from the translationFont prop, see
 // resolvedTranslationFontFamily below).
-const TRANSLATION_FONT_FAMILY = `${FONT_TRANSLATION_FAMILY}, Arial, sans-serif`;
+const TRANSLATION_FONT_FAMILY = `${TRANSLATION_FONT_OPTIONS.aileron.family}, Arial, sans-serif`;
 // Fixed family name for a user-uploaded translation font (translationFont
-// === "custom") -- unlike the built-in TRANSLATION_FONT_FILES registry,
+// === "custom") -- unlike the built-in TRANSLATION_FONT_OPTIONS registry,
 // there's exactly one of these per project, so one constant name is
 // enough; PageFontStyles declares its @font-face only when a URL is
 // actually present.
 const CUSTOM_TRANSLATION_FONT_FAMILY = "CustomTranslationFont";
+
+const ARABIC_INDIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
+// The verse-number prefix in front of a translation: "12. " for LTR text,
+// "١٢. " for an Arabic tafsir.
+function verseNumberPrefix(verseId: number, rtl: boolean): string {
+  const digits = rtl ? String(verseId).replace(/\d/g, (d) => ARABIC_INDIC_DIGITS[Number(d)]) : String(verseId);
+  return `${digits}. `;
+}
 
 const TEXT_SHADOW = "0 1px 2px rgba(0,0,0,0.6), 0 0 6px rgba(0,0,0,0.4)";
 const TEXT_SHADOW_STRONG = "0 2px 4px rgba(0,0,0,0.7), 0 0 12px rgba(0,0,0,0.4)";
@@ -103,6 +124,24 @@ const TEXT_SHADOW_STRONG = "0 2px 4px rgba(0,0,0,0.7), 0 0 12px rgba(0,0,0,0.4)"
 const ANIMATION_FADE_DURATION_FRAMES = Math.round(0.7 * FPS);
 
 const CROSSFADE_DURATION_FRAMES = Math.round(0.3 * FPS);
+
+// How long a chunk of text takes to fade in or out.
+const TEXT_FADE_FRAMES = Math.round(0.6 * FPS);
+// How long before the reciter starts a chunk it is already fully visible.
+// Fully visible exactly at his first word still read as the voice coming
+// first (the user, 2026-10-28): a word's audible start -- a hamza, a breath
+// -- precedes its aligned onset slightly, and frames round it later still.
+const TEXT_EARLY_FRAMES = Math.round(0.2 * FPS);
+// A fade-in that only STARTS when the reciter does reads as late -- the eye
+// only registers the text about halfway through it -- so each chunk starts
+// fading in this much BEFORE its first word, and is fully visible just
+// before the reciter starts it. Done by drawing the whole text track this much
+// earlier than the audio (word highlighting adds it back, see
+// buildWordWindows' call); each chunk stays until the next one starts
+// fading in (see the chunk loop). Only with one continuous audio track (globalAudioPath): the
+// per-ayah fallback keeps each ayah's audio inside its own Sequence, which
+// must not move.
+const TEXT_LEAD_FRAMES = TEXT_FADE_FRAMES + TEXT_EARLY_FRAMES;
 
 function easeInOut(t: number): number {
   return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
@@ -164,60 +203,174 @@ function handleImageError(assetKind: string, src: string) {
   };
 }
 
-// Splits `total` items across `numLines` lines with counts that never
-// increase from one line to the next (e.g. total=10, numLines=3 -> [4,3,3],
-// never [3,3,4]) -- the front-loaded remainder guarantees this by
-// construction for any input, no search/heuristic needed. Shared by
-// formatInvertedPyramid (translation) and formatArabicVerse below; both
-// need the SAME "first line is always the longest" guarantee.
-function distributeCountsNonIncreasing(total: number, numLines: number): number[] {
-  const base = Math.floor(total / numLines);
-  const remainder = total - base * numLines;
-  return Array.from({ length: numLines }, (_, i) => base + (i < remainder ? 1 : 0));
-}
-
-// Distributes `words` across the fewest non-increasing-count lines (see
-// distributeCountsNonIncreasing) that fit `maxLineChars` per line, starting
-// the search at `startNumLines` and growing by one at a time until every
-// line fits (or there's one line per word, the most it could ever take).
-// `firstLineExtraLength` is only charged against the FIRST line's budget --
-// used for the ayah-number prefix ("26. ") on a segment's very first line.
-// Shared by both formatInvertedPyramid branches below: the automatic
+// Builds lines by filling each one, left to right, with the longest run of
+// tokens (at least one, even if it alone exceeds the cap -- a line can
+// never be left empty) that fits under a SHARED width cap -- every line
+// gets the SAME cap, exactly like ordinary CSS text-wrap. That's what makes
+// this gradual: narrowing the box by a small amount moves at most one word
+// down to the next line, matching what VideoPreviewPlayer's width-drag
+// handles are meant to feel like. An earlier version instead capped each
+// line at the ACTUAL rendered width of the line right before it (to
+// guarantee line[i] >= line[i+1] by construction) -- correct, but it meant
+// a single early line breaking even one word short could cascade into
+// shrinking every line after it, so a small narrowing could suddenly
+// collapse the text across several lines at once instead of moving one
+// word, reported as exactly that against a real verse. Flat, shared-cap
+// filling essentially never produces that invariant violation for ordinary
+// (short, evenly-worded) text, but it isn't IMPOSSIBLE for a long sentence
+// with wildly irregular word lengths (a 29-word Turkish translation with
+// individual words from 2 to 15 characters, reported against a real
+// verse) -- see isValid/cascadingFill below, which only ever engages in
+// that rare case (or to satisfy the soft "at least minLines" floor),
+// leaving the common gradual path above untouched. An earlier version of
+// THIS fallback tried an even width-per-line division (totalWidth/L,
+// retrying at growing L) -- broken for exactly that long/irregular case:
+// dividing evenly ignores where the actual violation sits, so it could
+// keep re-violating at many different L values in a row, climbing all the
+// way to nearly one word per line before finally succeeding. Falling back
+// to the OLDER cascading-cap construction instead -- provably valid by
+// construction on a single pass, no search needed at all -- fixes this
+// unconditionally, and is safe to use ONLY here (not as the common path)
+// since this rare repair case isn't the one that needed to stay gradual
+// under box-narrowing. `firstLineExtraWidthPx` is only charged against the
+// FIRST line's budget -- the ayah-number prefix ("26. ") rendered inline
+// before a translation segment's first line. Shared by both
+// formatInvertedPyramid/formatArabicVerse branches below: the automatic
 // whole-text pyramid, and each individual chunk of a manually-broken one --
-// so a manual chunk that's still too long for the current width/scale (e.g.
-// after the user later narrows the box) gets exactly the same overflow
+// so a manual chunk still too wide for the current width/scale (e.g. after
+// the user later narrows the box) gets exactly the same overflow
 // protection the fully-automatic path already had, instead of silently
 // running past the edge of the box.
-function wrapWordsToFit(words: string[], maxLineChars: number, firstLineExtraLength: number, startNumLines: number): string[] {
-  if (words.length === 0) return [""];
-  let numLines = Math.max(1, Math.min(startNumLines, words.length));
-  let lines: string[];
-  while (true) {
-    const counts = distributeCountsNonIncreasing(words.length, numLines);
+function buildPyramidLines(
+  tokens: string[],
+  widths: number[],
+  spaceWidth: number,
+  maxLineWidthPx: number,
+  firstLineExtraWidthPx: number,
+  minLines: number
+): string[] {
+  if (tokens.length === 0) return [""];
+  const n = tokens.length;
+
+  function flatFill(cap: number): string[][] {
+    const lines: string[][] = [];
     let idx = 0;
-    lines = counts.map((count) => {
-      const line = words.slice(idx, idx + count).join(" ");
+    let isFirst = true;
+    while (idx < n) {
+      const extra = isFirst ? firstLineExtraWidthPx : 0;
+      const lineCap = Math.max(0, cap - extra);
+      let count = 1;
+      let w = widths[idx];
+      while (idx + count < n) {
+        const nextWidth = w + spaceWidth + widths[idx + count];
+        if (nextWidth > lineCap) break;
+        w = nextWidth;
+        count++;
+      }
+      lines.push(tokens.slice(idx, idx + count));
       idx += count;
-      return line;
-    });
-    const fits = (lines[0].length + firstLineExtraLength) <= maxLineChars && lines.slice(1).every((l) => l.length <= maxLineChars);
-    if (fits || numLines >= words.length) break;
-    numLines++;
+      isFirst = false;
+    }
+    return lines;
   }
-  return lines;
+
+  // Identical words always measure identically (same font, same string),
+  // so this is a safe way to recover a candidate split's own line widths
+  // without threading original token indices through flatFill's output.
+  const widthByToken = new Map<string, number>();
+  tokens.forEach((t, i) => { if (!widthByToken.has(t)) widthByToken.set(t, widths[i]); });
+  function lineWidth(line: string[], isFirst: boolean): number {
+    if (line.length === 0) return 0;
+    let w = widthByToken.get(line[0]) ?? 0;
+    for (let i = 1; i < line.length; i++) w += spaceWidth + (widthByToken.get(line[i]) ?? 0);
+    return w + (isFirst ? firstLineExtraWidthPx : 0);
+  }
+  function isValid(candidate: string[][]): boolean {
+    let prevWidth = Infinity;
+    for (let i = 0; i < candidate.length; i++) {
+      const w = lineWidth(candidate[i], i === 0);
+      if (w > maxLineWidthPx || w > prevWidth) return false;
+      prevWidth = w;
+    }
+    return true;
+  }
+
+  // Guaranteed valid on a single pass, by construction: every line after
+  // the first is capped at min(maxLineWidthPx, the line right before it's
+  // OWN actual width), so no later line can ever end up wider than an
+  // earlier one -- no search, no retry, unlike flatFill above. Only used
+  // as the repair fallback below (see this function's own top comment for
+  // why it's not the common path).
+  function cascadingFill(firstLineCap: number): string[][] {
+    const lines: string[][] = [];
+    let idx = 0;
+    let prevWidth = firstLineCap;
+    let isFirst = true;
+    while (idx < n) {
+      const extra = isFirst ? firstLineExtraWidthPx : 0;
+      const cap = Math.max(0, (isFirst ? firstLineCap : Math.min(maxLineWidthPx, prevWidth)) - extra);
+      let count = 1;
+      let w = widths[idx];
+      while (idx + count < n) {
+        const nextWidth = w + spaceWidth + widths[idx + count];
+        if (nextWidth > cap) break;
+        w = nextWidth;
+        count++;
+      }
+      lines.push(tokens.slice(idx, idx + count));
+      prevWidth = w + extra;
+      idx += count;
+      isFirst = false;
+    }
+    return lines;
+  }
+
+  let lines = flatFill(maxLineWidthPx);
+  const target = Math.min(Math.max(minLines, 1), n);
+
+  // Only reached for the rare flat-fill invariant violation described
+  // above, or to satisfy the soft "at least minLines" pyramid floor (short
+  // text that would otherwise sit on a single line).
+  if (lines.length < target || !isValid(lines)) {
+    let candidate = cascadingFill(maxLineWidthPx);
+    if (candidate.length < target) {
+      // Same "shrink the first line's own share to nudge more lines out"
+      // idea as before, just feeding cascadingFill instead of flatFill --
+      // every attempt here is unconditionally valid already, so this loop
+      // only needs to pick the one that reaches enough lines, no isValid
+      // re-check needed.
+      const totalWidthPx = widths.reduce((a, b) => a + b, 0) + spaceWidth * Math.max(0, n - 1) + firstLineExtraWidthPx;
+      for (let L = 2; L <= target; L++) {
+        candidate = cascadingFill(totalWidthPx / L);
+        if (candidate.length >= target) break;
+      }
+    }
+    lines = candidate;
+  }
+
+  return lines.map((line) => line.join(" "));
 }
 
-function formatInvertedPyramid(text: string, forceTwoLines = true, textScale = 1, prefixLength = 0, textWidthScale = 1): React.ReactNode {
+function formatInvertedPyramid(
+  text: string,
+  forceTwoLines = true,
+  prefixText = "",
+  textWidthScale = 1,
+  fontCss = "",
+  maxLineWidthPx = 0
+): React.ReactNode {
   if (!text) return null;
 
-  // Maximum allowed characters per visual line to completely avoid native browser
-  // wrapping. textWidthScale (user-draggable, see VideoPreviewPlayer's width
-  // handles) narrows OR widens this independently of textScale (font size) --
-  // 1 is the original/default width, matching the translation <div>'s own
-  // width below exactly so the character budget and the visible box never
-  // disagree. No artificial ceiling below the actual word count: narrowed
-  // far enough, every word can end up on its own line.
-  const MAX_LINE_CHARS = Math.floor((48 * textWidthScale) / textScale);
+  // maxLineWidthPx is the translation <div>'s own 100%-width box (see its
+  // `width: ${translationWidthScale*100}%` style right below) -- multiplying
+  // by textWidthScale here reproduces that exact same box, so the pixel
+  // budget and the visible box can never disagree. Font size no longer needs
+  // to divide anything here (unlike the old MAX_LINE_CHARS formula): it's
+  // already baked into fontCss's own px size, so every measured token width
+  // already reflects it directly.
+  const lineBudget = maxLineWidthPx * textWidthScale;
+  const spaceWidth = measureSpaceWidth(fontCss);
+  const prefixWidthPx = prefixText ? measureTokenWidths([prefixText], fontCss)[0] : 0;
 
   let lines: string[];
 
@@ -229,14 +382,15 @@ function formatInvertedPyramid(text: string, forceTwoLines = true, textScale = 1
     // verbatim -- none of the "collapse short text to one line"/"always at
     // least 2 lines" pyramid aesthetics below apply, since the user has
     // already made that call explicitly. A chunk still gets wrapped into
-    // MORE lines via wrapWordsToFit if it's too long to fit on one at the
+    // MORE lines via buildPyramidLines if it's too wide to fit on one at the
     // CURRENT width/scale (e.g. the box was narrowed after the break was
     // placed) -- manual control over where lines split, not an exemption
     // from ever overflowing the box.
     const chunks = text.split("\n");
     lines = chunks.flatMap((chunk, i) => {
       const chunkWords = chunk.split(" ").filter(Boolean);
-      return wrapWordsToFit(chunkWords, MAX_LINE_CHARS, i === 0 ? prefixLength : 0, 1);
+      const widths = measureTokenWidths(chunkWords, fontCss);
+      return buildPyramidLines(chunkWords, widths, spaceWidth, lineBudget, i === 0 ? prefixWidthPx : 0, 1);
     });
   } else {
     const words = text.split(" ");
@@ -246,17 +400,22 @@ function formatInvertedPyramid(text: string, forceTwoLines = true, textScale = 1
     // (textWidthScale < 1, dragged via VideoPreviewPlayer's width handles),
     // even originally-short text must be free to respond by wrapping into
     // more lines -- that's the entire point of the control. Dragging back out
-    // to the original width restores this exact original behavior.
+    // to the original width restores this exact original behavior. This
+    // short-text gate is a stylistic call (an inherently short phrase forced
+    // into two lines looks off), orthogonal to the width-fit math below --
+    // intentionally left on the original character/word-count heuristic.
     if (forceTwoLines && textWidthScale >= 1 && (text.length < 30 || words.length <= 4)) {
       forceTwoLines = false;
     }
 
     if (words.length <= 4 && forceTwoLines === false) return text;
 
-    const totalChars = text.length + prefixLength;
+    const widths = measureTokenWidths(words, fontCss);
+    const totalWidthPx =
+      widths.reduce((a, b) => a + b, 0) + spaceWidth * Math.max(0, words.length - 1) + prefixWidthPx;
     const MAX_LINES = words.length;
 
-    let numLines = Math.ceil(totalChars / MAX_LINE_CHARS);
+    let numLines = Math.ceil(totalWidthPx / lineBudget);
     // The "always at least 2 lines" pyramid look is the DEFAULT-width
     // aesthetic (this function's whole reason for existing) -- only enforced
     // at/below the original width. Widened past it, text that now actually
@@ -266,7 +425,7 @@ function formatInvertedPyramid(text: string, forceTwoLines = true, textScale = 1
     if (!forceTwoLines && numLines < 2) return text;
     numLines = Math.max(1, Math.min(numLines, MAX_LINES, words.length));
 
-    lines = wrapWordsToFit(words, MAX_LINE_CHARS, prefixLength, numLines);
+    lines = buildPyramidLines(words, widths, spaceWidth, lineBudget, prefixWidthPx, numLines);
   }
 
   return (
@@ -281,69 +440,201 @@ function formatInvertedPyramid(text: string, forceTwoLines = true, textScale = 1
   );
 }
 
-function formatArabicVerse(text: string, arabicWidthScale = 1): React.ReactNode {
+// The word being recited (see QuranVideoProps.wordHighlight): positions in
+// the verse text's space-separated glyph tokens -- the same tokens
+// formatArabicVerse builds its lines from -- to draw in `color`.
+type ArabicHighlight = { tokens: ReadonlySet<number>; color: string };
+
+// One line's text, with any highlighted tokens wrapped in a colored span.
+// Only the color changes, so the measured line widths stay valid.
+function renderArabicLine(line: string, firstTokenIdx: number, highlight?: ArabicHighlight): React.ReactNode {
+  if (!highlight || highlight.tokens.size === 0) return line;
+  return line.split(" ").map((token, i) => (
+    <React.Fragment key={i}>
+      {i > 0 && " "}
+      {highlight.tokens.has(firstTokenIdx + i) ? <span style={{ color: highlight.color }}>{token}</span> : token}
+    </React.Fragment>
+  ));
+}
+
+function formatArabicVerse(
+  text: string,
+  arabicWidthScale = 1,
+  fontCss = "",
+  maxLineWidthPx = 0,
+  manualBreakAfterTokens: number[] = [],
+  highlight?: ArabicHighlight
+): React.ReactNode {
   if (!text) return null;
   const words = text.split(" ");
+  const spaceWidth = measureSpaceWidth(fontCss);
+  // arabicWidthScale (user-draggable, see VideoPreviewPlayer's Arabic width
+  // handles) narrows OR widens this independently of the translation's own
+  // width control -- 1 is the original/default width (the Arabic <div>'s
+  // own 100%-width box, see its `width: ${arabicWidthScale*100}%` style
+  // right below), and it's not clamped to never exceed that: widened past it
+  // (up to render/route.ts's own safe ceiling), more words can fit per line,
+  // even collapsing the whole verse onto one.
+  const lineBudget = maxLineWidthPx * arabicWidthScale;
 
-  const totalWords = words.length;
-  // A single line fits about 6 to 7 PUA words on mobile before wrapping
-  // natively. arabicWidthScale (user-draggable, see VideoPreviewPlayer's
-  // Arabic width handles) narrows OR widens this independently of the
-  // translation's own width control -- 1 is the original/default width, and
-  // it's no longer clamped to never exceed that: widened past it (up to
-  // render/route.ts's own safe ceiling), more words can fit per line, even
-  // collapsing the whole verse onto one.
-  const baseMaxWordsPerLine = 8;
-  const maxWordsPerLine = Math.max(2, Math.round(baseMaxWordsPerLine * arabicWidthScale));
-
-  // "Return as a single line" is the original, unchanged behavior at/above
-  // the default width -- exactly like formatInvertedPyramid's identical
-  // check for the translation. Below it, even an originally-short verse
-  // must respond to narrowing. Above it, a verse that wouldn't have fit at
-  // the default width can now qualify too, since maxWordsPerLine itself
-  // grew with the widening.
-  if (totalWords <= maxWordsPerLine && arabicWidthScale >= 1) {
-    return text;
-  }
-
-  // No artificial ceiling below the actual word count -- narrowed far
-  // enough, every word can end up on its own line.
-  const MAX_LINES = totalWords;
-  let numLines = Math.min(MAX_LINES, Math.ceil(totalWords / maxWordsPerLine));
-  // Same DEFAULT-width-only "at least 2 lines" floor as the translation --
-  // only below/at the original width, so widening can still collapse a
-  // verse all the way down to one line once it fits.
-  if (arabicWidthScale <= 1) numLines = Math.max(2, numLines);
-  numLines = Math.max(1, numLines);
-
-  // Word counts are always non-increasing line to line (first line longest)
-  // by construction -- see distributeCountsNonIncreasing above
-  // (formatInvertedPyramid uses the exact same guarantee for the
-  // translation). If a line still exceeds maxWordsPerLine after
-  // distributing, add one more line and redistribute, up to MAX_LINES.
   let lines: string[];
-  while (true) {
-    const counts = distributeCountsNonIncreasing(totalWords, numLines);
-    let idx = 0;
-    lines = counts.map((count) => {
-      const line = words.slice(idx, idx + count).join(" ");
-      idx += count;
-      return line;
+
+  if (manualBreakAfterTokens.length > 0) {
+    // Mirrors formatInvertedPyramid's "\n" handling below: user-forced
+    // boundaries (see VerseMapping.arabic_manual_break_after_words) define
+    // independent chunks that never merge back together, each only further
+    // sub-wrapped by the automatic algorithm if it's still too wide for the
+    // current box on its own. Indices are real-word based and already
+    // converted to token positions by the caller (real-word indices survive
+    // an arabicFont/qcf1<->qcf2 switch; raw token positions don't, since the
+    // two PUA encodings aren't 1:1).
+    const sortedBreaks = [...new Set(manualBreakAfterTokens)].sort((a, b) => a - b);
+    const chunks: string[][] = [];
+    let start = 0;
+    for (const breakAfter of sortedBreaks) {
+      const end = Math.min(words.length - 1, breakAfter);
+      if (end >= start) {
+        chunks.push(words.slice(start, end + 1));
+        start = end + 1;
+      }
+    }
+    if (start < words.length) chunks.push(words.slice(start));
+
+    lines = chunks.flatMap((chunkWords) => {
+      const widths = measureTokenWidths(chunkWords, fontCss);
+      return buildPyramidLines(chunkWords, widths, spaceWidth, lineBudget, 0, 1);
     });
-    if (counts[0] <= maxWordsPerLine || numLines >= Math.min(MAX_LINES, totalWords)) break;
-    numLines++;
+  } else {
+    const totalWords = words.length;
+    const widths = measureTokenWidths(words, fontCss);
+    const totalWidthPx = widths.reduce((a, b) => a + b, 0) + spaceWidth * Math.max(0, totalWords - 1);
+
+    // "Return as a single line" is the original, unchanged behavior at/above
+    // the default width -- exactly like formatInvertedPyramid's identical
+    // check for the translation. Below it, even an originally-short verse
+    // must respond to narrowing.
+    if (totalWidthPx <= lineBudget && arabicWidthScale >= 1) {
+      return renderArabicLine(text, 0, highlight);
+    }
+
+    // No artificial ceiling below the actual word count -- narrowed far
+    // enough, every word can end up on its own line.
+    const MAX_LINES = totalWords;
+    let numLines = Math.min(MAX_LINES, Math.ceil(totalWidthPx / lineBudget));
+    // Same DEFAULT-width-only "at least 2 lines" floor as the translation --
+    // only below/at the original width, so widening can still collapse a
+    // verse all the way down to one line once it fits.
+    if (arabicWidthScale <= 1) numLines = Math.max(2, numLines);
+    numLines = Math.max(1, numLines);
+
+    lines = buildPyramidLines(words, widths, spaceWidth, lineBudget, 0, numLines);
   }
+
+  const lineStartTokens: number[] = [];
+  lines.reduce((start, line) => {
+    lineStartTokens.push(start);
+    return start + line.split(" ").length;
+  }, 0);
 
   return (
     <>
       {lines.map((line, index) => (
         <React.Fragment key={index}>
-          {line}
+          {renderArabicLine(line, lineStartTokens[index], highlight)}
           {index < lines.length - 1 && <br />}
         </React.Fragment>
       ))}
     </>
   );
+}
+
+// One recited word's on-screen window inside a VerseScene: local frames of
+// its Sequence, and which of the scene's glyph tokens it covers.
+type WordWindow = { start: number; end: number; tokens: number[] };
+
+// A word stays lit until the next one starts, but not through a long
+// pause after it.
+const WORD_HIGHLIGHT_HOLD_FRAMES = 9;
+
+// Letters (incl. alef wasla); a timed "word" without any is a standalone
+// waqf/pause mark, which lights up together with the word before it.
+const ARABIC_LETTER_RE = /[\u0621-\u064A\u0671-\u06D3]/;
+
+const sumOf = (values: number[]) => values.reduce((a, b) => a + b, 0);
+
+// The word windows for one displayed segment: which of its glyph tokens
+// each recited word covers, timed in the segment Sequence's local frames.
+// The segment shows verse glyph tokens [tokenStart, tokenEnd) -- the same
+// range QuranVideo's deriveChunkWords slices (any trailing glyphs fused
+// onto its last token don't add tokens). glyphCounts maps tokens back to
+// real words (one entry per word in wordTimings); null means 1:1. Every
+// later reading of a word (wordRepeats) lights the same glyphs again.
+function buildWordWindows({
+  wordTimings,
+  wordRepeats,
+  firstWord,
+  lastWord,
+  tokenStart,
+  tokenEnd,
+  glyphCounts,
+  chunkStartFrame,
+  fps,
+}: {
+  wordTimings: WordTiming[];
+  wordRepeats?: { i: number; start: number; end: number }[];
+  firstWord: number;
+  lastWord: number;
+  tokenStart: number;
+  tokenEnd: number;
+  glyphCounts: number[] | null;
+  chunkStartFrame: number;
+  fps: number;
+}): WordWindow[] {
+  const wordOfToken: number[] = [];
+  if (glyphCounts) glyphCounts.forEach((count, w) => { for (let k = 0; k < count; k++) wordOfToken.push(w); });
+  const toFrame = (ms: number) => Math.round((ms / 1000) * fps) - chunkStartFrame;
+
+  const windows: WordWindow[] = [];
+  const windowOfWord = new Map<number, WordWindow>();
+  let lastWindowWord = -1;
+  for (let g = tokenStart; g < tokenEnd; g++) {
+    const w = glyphCounts ? wordOfToken[g] : Math.min(g, lastWord);
+    if (w === undefined || w < firstWord || w > lastWord || !wordTimings[w]) continue;
+    const localToken = g - tokenStart;
+    const current = windows[windows.length - 1];
+    if (w === lastWindowWord && current) {
+      current.tokens.push(localToken);
+      continue;
+    }
+    if (current && !ARABIC_LETTER_RE.test(wordTimings[w].w)) {
+      current.tokens.push(localToken);
+      lastWindowWord = w;
+      continue;
+    }
+    const window = { start: toFrame(wordTimings[w].start), end: toFrame(wordTimings[w].end), tokens: [localToken] };
+    windows.push(window);
+    windowOfWord.set(w, window);
+    lastWindowWord = w;
+  }
+  if (!wordRepeats?.length) return windows;
+  for (const r of wordRepeats) {
+    const window = windowOfWord.get(r.i);
+    if (window) windows.push({ start: toFrame(r.start), end: toFrame(r.end), tokens: window.tokens });
+  }
+  // activeWordTokens takes the latest window that has started.
+  return windows.sort((a, b) => a.start - b.start);
+}
+
+function activeWordTokens(windows: WordWindow[] | undefined, frame: number): ReadonlySet<number> | null {
+  if (!windows || windows.length === 0) return null;
+  for (let i = windows.length - 1; i >= 0; i--) {
+    const w = windows[i];
+    if (w.start > frame) continue;
+    const next = windows[i + 1];
+    const until = Math.min(next ? next.start : Infinity, w.end + WORD_HIGHLIGHT_HOLD_FRAMES);
+    return frame < until ? new Set(w.tokens) : null;
+  }
+  return null;
 }
 
 function VerseScene({
@@ -358,10 +649,14 @@ function VerseScene({
   translationTextScale = 1,
   translationWidthScale = 1,
   translationFontFamily = TRANSLATION_FONT_FAMILY,
+  translationRtl = false,
   arabicFont = "qcf2",
   showNumber = true,
   compact = false,
+  hasTranslation = true,
   segmentKey,
+  wordWindows,
+  wordHighlightColor = DEFAULT_WORD_HIGHLIGHT_COLOR,
 }: {
   text: string;
   translation: string;
@@ -397,6 +692,10 @@ function VerseScene({
   // prop (see TRANSLATION_FONT_FILES) and passes it straight through,
   // falling back to the original Aileron family if omitted.
   translationFontFamily?: string;
+  // An Arabic tafsir: lay the translation out right-to-left with
+  // Arabic-Indic verse numbers (translationFontFamily is already the Arabic
+  // translation font in that case, see QuranVideo).
+  translationRtl?: boolean;
   showNumber?: boolean;
   // Portrait (the original, unchanged layout) splits the screen into two
   // tall flex:1 halves, each pushing its text to the FAR edge (Arabic
@@ -409,10 +708,25 @@ function VerseScene({
   // those ratios use this "compact" mode instead: both blocks centered
   // together as one group with a small gap between them.
   compact?: boolean;
+  // False when the whole video has no translation at all ("no translation"
+  // picked): portrait then centers the Arabic in the full frame instead of
+  // leaving it bottom-aligned above an always-empty translation half.
+  // Video-wide rather than read off this segment's own `translation`, so
+  // a translated video whose one segment happens to have no text doesn't
+  // jump that segment's Arabic to a different height.
+  hasTranslation?: boolean;
+  // Set only while word highlighting is on and this segment has aligned
+  // word timing -- see QuranVideoProps.wordHighlight.
+  wordWindows?: WordWindow[];
+  wordHighlightColor?: string;
 }) {
   const frame = useCurrentFrame();
-  const maxFadeIn = Math.min(Math.round(0.6 * 30), Math.floor(durationInFrames * 0.45));
-  const maxFadeOut = Math.min(Math.round(0.6 * 30), Math.floor(durationInFrames * 0.45));
+  const highlightTokens = activeWordTokens(wordWindows, frame);
+  const arabicHighlight: ArabicHighlight | undefined = highlightTokens
+    ? { tokens: highlightTokens, color: wordHighlightColor }
+    : undefined;
+  const maxFadeIn = Math.min(TEXT_FADE_FRAMES, Math.floor(durationInFrames * 0.45));
+  const maxFadeOut = Math.min(TEXT_FADE_FRAMES, Math.floor(durationInFrames * 0.45));
 
   let fadeInEnd = maxFadeIn;
   let fadeOutStart = durationInFrames - maxFadeOut;
@@ -440,6 +754,57 @@ function VerseScene({
   const resolvedVerseFontSize = Math.round(
     VERSE_FONT_SIZE * arabicTextScale * ARABIC_FONT_OPTIONS[arabicFont].sizeMultiplier
   );
+
+  // The actual pixel width of the AbsoluteFill's content box below (its
+  // CONTAINER_PADDING is horizontal-only) -- this is the true 100% both
+  // text divs' own `width: ${...WidthScale*100}%` style resolves against,
+  // so feeding it straight into formatArabicVerse/formatInvertedPyramid's
+  // pixel budget reproduces the exact box being rendered, no separate
+  // empirically-tuned constant needed.
+  const { width: canvasWidth } = useVideoConfig();
+  const contentWidthPx = canvasWidth - CONTAINER_PADDING * 2;
+
+  const arabicFontFamily = page ? (arabicFont === "qcf1" ? `'pv1-${page}'` : `'p${page}'`) : VERSE_FONT_FAMILY_FALLBACK;
+  const arabicFontCss = resolveFontCss(arabicFontFamily, resolvedVerseFontSize, VERSE_FONT_WEIGHT);
+  const resolvedTranslationFontSize = Math.round(TRANSLATION_FONT_SIZE * translationTextScale);
+  const translationFontCss = resolveFontCss(translationFontFamily, resolvedTranslationFontSize);
+
+  // The parent's `fontsReady` prop is a coarse, whole-video bulk-preload
+  // signal that can go stale under re-entrant effect runs, and treats a
+  // genuinely REJECTED font load the same as a successful one (see its own
+  // comment in QuranVideo's font-preload effect) -- reported as this exact
+  // explosion still recurring, for a still-loaded-fine font resource,
+  // after that effect's own Promise.all -> Promise.allSettled fix. This is
+  // the actual per-render decision instead: isFontUsable reads the
+  // browser's LIVE font cache fresh, synchronously, every single render --
+  // no memory of past load attempts to go stale. Deliberately NOT ANDed
+  // with the `fontsReady` prop (unlike an earlier version) -- that prop's
+  // own effect still briefly flips false on legitimate font-identity
+  // changes (a different arabicFont, a new page), and ANDing it in here
+  // meant every one of those brief flips hid the text even though
+  // isFontUsable alone already correctly kept saying "still fine" for a
+  // font that was never actually affected, reported as the verse/
+  // translation text flickering out and back in on unrelated changes.
+  // isFontUsable alone is authoritative and needs no such help. Needs no
+  // dedicated polling loop either: VerseScene already calls
+  // useCurrentFrame() below, so it re-renders on every video frame during
+  // playback, re-checking this fresh up to 30x/sec until it naturally
+  // comes back true; the effect further down only covers the paused-on-
+  // mount case, where nothing else would otherwise trigger a re-render
+  // once the font finishes loading.
+  const arabicReady = isFontUsable(arabicFontCss);
+  const translationReady = isFontUsable(translationFontCss);
+  const [, forceFontRecheck] = useState(0);
+  useEffect(() => {
+    if (arabicReady && translationReady) return;
+    let cancelled = false;
+    Promise.allSettled([document.fonts.load(arabicFontCss), document.fonts.load(translationFontCss)]).then(() => {
+      if (!cancelled) forceFontRecheck((n) => n + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [arabicReady, translationReady, arabicFontCss, translationFontCss]);
 
   if (compact) {
     // Reserves the same vertical space the header (surah name +
@@ -474,7 +839,7 @@ function VerseScene({
           style={{
             textAlign: "center",
             color: "white",
-            fontFamily: page ? (arabicFont === "qcf1" ? `'pv1-${page}'` : `'p${page}'`) : VERSE_FONT_FAMILY_FALLBACK,
+            fontFamily: arabicFontFamily,
             fontSize: resolvedVerseFontSize,
             fontWeight: VERSE_FONT_WEIGHT,
             lineHeight: VERSE_LINE_HEIGHT,
@@ -482,24 +847,29 @@ function VerseScene({
             width: `${Math.round(arabicWidthScale * 100)}%`,
           }}
         >
-          {formatArabicVerse(text, arabicWidthScale)}
+          {arabicReady ? formatArabicVerse(text, arabicWidthScale, arabicFontCss, contentWidthPx, [], arabicHighlight) : null}
         </div>
         {translation ? (
           <div
-            dir="ltr"
+            dir={translationRtl ? "rtl" : "ltr"}
             data-text-block="translation"
             data-segment-key={segmentKey}
             style={{
               textAlign: "center",
               color: TRANSLATION_COLOR,
               fontFamily: translationFontFamily,
-              fontSize: Math.round(TRANSLATION_FONT_SIZE * translationTextScale),
+              fontSize: resolvedTranslationFontSize,
               lineHeight: TRANSLATION_LINE_HEIGHT,
               marginTop: TRANSLATION_MARGIN_TOP,
               width: `${Math.round(translationWidthScale * 100)}%`,
             }}
           >
-            {showNumber && `${verseId}. `}{formatInvertedPyramid(translation, true, translationTextScale, showNumber ? `${verseId}. `.length : 0, translationWidthScale)}
+            {translationReady ? (
+              <>
+                {showNumber && verseNumberPrefix(verseId, translationRtl)}
+                {formatInvertedPyramid(translation, true, showNumber ? verseNumberPrefix(verseId, translationRtl) : "", translationWidthScale, translationFontCss, contentWidthPx)}
+              </>
+            ) : null}
           </div>
         ) : null}
       </AbsoluteFill>
@@ -514,13 +884,13 @@ function VerseScene({
         padding: `0 ${CONTAINER_PADDING}px`,
       }}
     >
-      {/* Top half for Arabic */}
+      {/* Top half for Arabic -- the whole frame, centered, without a translation */}
       <div
         style={{
           flex: 1,
           display: "flex",
           flexDirection: "column",
-          justifyContent: "flex-end",
+          justifyContent: hasTranslation ? "flex-end" : "center",
           alignItems: "center",
           paddingBottom: "0px",
         }}
@@ -532,7 +902,7 @@ function VerseScene({
           style={{
             textAlign: "center",
             color: "white",
-            fontFamily: page ? (arabicFont === "qcf1" ? `'pv1-${page}'` : `'p${page}'`) : VERSE_FONT_FAMILY_FALLBACK,
+            fontFamily: arabicFontFamily,
             fontSize: resolvedVerseFontSize,
             fontWeight: VERSE_FONT_WEIGHT,
             lineHeight: VERSE_LINE_HEIGHT,
@@ -540,40 +910,47 @@ function VerseScene({
             width: `${Math.round(arabicWidthScale * 100)}%`,
           }}
         >
-          {formatArabicVerse(text, arabicWidthScale)}
+          {arabicReady ? formatArabicVerse(text, arabicWidthScale, arabicFontCss, contentWidthPx, [], arabicHighlight) : null}
         </div>
       </div>
 
       {/* Bottom half for Translation */}
-      <div
-        style={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "flex-start",
-          alignItems: "center",
-          paddingTop: "0px",
-        }}
-      >
-        {translation ? (
-          <div
-            dir="ltr"
-            data-text-block="translation"
-            data-segment-key={segmentKey}
-            style={{
-              textAlign: "center",
-              color: TRANSLATION_COLOR,
-              fontFamily: translationFontFamily,
-              fontSize: Math.round(TRANSLATION_FONT_SIZE * translationTextScale),
-              lineHeight: TRANSLATION_LINE_HEIGHT,
-              marginTop: TRANSLATION_MARGIN_TOP,
-              width: `${Math.round(translationWidthScale * 100)}%`,
-            }}
-          >
-            {showNumber && `${verseId}. `}{formatInvertedPyramid(translation, true, translationTextScale, showNumber ? `${verseId}. `.length : 0, translationWidthScale)}
-          </div>
-        ) : null}
-      </div>
+      {hasTranslation ? (
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "flex-start",
+            alignItems: "center",
+            paddingTop: "0px",
+          }}
+        >
+          {translation ? (
+            <div
+              dir={translationRtl ? "rtl" : "ltr"}
+              data-text-block="translation"
+              data-segment-key={segmentKey}
+              style={{
+                textAlign: "center",
+                color: TRANSLATION_COLOR,
+                fontFamily: translationFontFamily,
+                fontSize: resolvedTranslationFontSize,
+                lineHeight: TRANSLATION_LINE_HEIGHT,
+                marginTop: TRANSLATION_MARGIN_TOP,
+                width: `${Math.round(translationWidthScale * 100)}%`,
+              }}
+            >
+              {translationReady ? (
+                <>
+                  {showNumber && verseNumberPrefix(verseId, translationRtl)}
+                  {formatInvertedPyramid(translation, true, showNumber ? verseNumberPrefix(verseId, translationRtl) : "", translationWidthScale, translationFontCss, contentWidthPx)}
+                </>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </AbsoluteFill>
   );
 }
@@ -645,8 +1022,7 @@ function PageFontStyles({
   // too even though nothing currently selects it).
   const translationFontFaces = (Object.keys(TRANSLATION_FONT_OPTIONS) as TranslationFontKey[])
     .map((key) => {
-      const { family } = TRANSLATION_FONT_OPTIONS[key];
-      const { path, format, weight } = TRANSLATION_FONT_FILES[key];
+      const { family, file: path, format, weight } = TRANSLATION_FONT_OPTIONS[key];
       return `
       @font-face {
         font-family: "${family}";
@@ -708,6 +1084,12 @@ function PageFontStyles({
         font-weight: 700;
         font-display: swap;
       }
+      @font-face {
+        font-family: "${FONT_RECITER_NAME_FAMILY}";
+        src: url("${staticFile(FONT_RECITER_NAME_PATH)}") format("truetype");
+        font-weight: 700;
+        font-display: swap;
+      }
       ${translationFontFaces}
       ${fontFaces}
       ${fontFacesV1}
@@ -720,12 +1102,70 @@ function PageFontStyles({
   );
 }
 
+// A background video shorter than the recitation repeats -- but instead of
+// jumping from its last frame back to its first, each repeat starts
+// BACKGROUND_CROSSFADE_FRAMES before the previous one ends and fades in on
+// top of it, so the seam dissolves. A Sequence only mounts its children
+// inside its own window (premountFor mounts the next copy a little early so
+// its file is already loaded when its fade starts), so at most two copies
+// play at once however long the video is.
+const BACKGROUND_CROSSFADE_FRAMES = 30;
+
+function CrossfadeIn({ frames, children }: { frames: number; children: React.ReactNode }) {
+  const frame = useCurrentFrame();
+  const opacity =
+    frames > 0 ? interpolate(frame, [0, frames], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }) : 1;
+  return <AbsoluteFill style={{ opacity }}>{children}</AbsoluteFill>;
+}
+
+function LoopingBackgroundVideo({
+  src,
+  clipFrames,
+  totalFrames,
+  style,
+  onError,
+}: {
+  src: string;
+  // The clip's own length; null (older drafts/renders saved before it was
+  // probed) plays it once, unlooped -- the best possible without it.
+  clipFrames: number | null;
+  totalFrames: number;
+  style: React.CSSProperties;
+  onError: React.ComponentProps<typeof OffthreadVideo>["onError"];
+}) {
+  // Never audible: the recitation is the only sound. The file itself has no
+  // audio track either (lib/silentVideo.ts). pauseWhenBuffering off: a
+  // repeat loading in must never stall the recitation.
+  const video = <OffthreadVideo src={src} muted volume={0} pauseWhenBuffering={false} onError={onError} style={style} />;
+  if (!clipFrames || clipFrames >= totalFrames) return video;
+
+  const crossfade = Math.min(BACKGROUND_CROSSFADE_FRAMES, Math.floor(clipFrames / 4));
+  const period = clipFrames - crossfade;
+  const copies = Math.ceil(totalFrames / period);
+  return (
+    <>
+      {Array.from({ length: copies }, (_, k) => (
+        <Sequence key={k} from={k * period} durationInFrames={clipFrames} premountFor={crossfade + 15}>
+          <CrossfadeIn frames={k === 0 ? 0 : crossfade}>{video}</CrossfadeIn>
+        </Sequence>
+      ))}
+    </>
+  );
+}
+
 export function QuranVideo({
   surahNameArabic,
   surahNameTransliteration,
+  surahTitle,
+  reciterName,
   backgroundImagePath,
   backgroundVideoPath,
   backgroundVideoDurationInFrames,
+  backgroundDim = DEFAULT_BACKGROUND_DIM,
+  backgroundBlur = 0,
+  backgroundZoom = false,
+  wordHighlight = false,
+  wordHighlightColor = DEFAULT_WORD_HIGHLIGHT_COLOR,
   globalAudioPath,
   isAudioExtracted,
   verses,
@@ -741,21 +1181,31 @@ export function QuranVideo({
   translationWidthScale = 1,
   translationFont = "aileron",
   customTranslationFontUrl,
+  translationRtl = false,
   arabicFont = "qcf2",
 }: QuranVideoProps) {
-  // Resolved ONCE here from the translationFont prop (see
-  // TRANSLATION_FONT_FILES) and threaded down to every place that used to
-  // reference the module-level TRANSLATION_FONT_FAMILY constant directly --
-  // that constant now only exists as the fallback default. "custom" (a
-  // user-uploaded font, see PageFontStyles' own @font-face for it) falls
-  // back to the original Aileron family whenever no file has actually been
-  // uploaded yet -- e.g. right after picking "custom" in the UI but before
-  // the upload finishes -- rather than resolving to a family nothing
-  // declared, which would silently show the browser's plain default font.
-  const resolvedTranslationFontFamily =
-    translationFont === "custom" && customTranslationFontUrl
-      ? `${CUSTOM_TRANSLATION_FONT_FAMILY}, Arial, sans-serif`
-      : `${TRANSLATION_FONT_OPTIONS[translationFont === "custom" ? "aileron" : translationFont].family}, Arial, sans-serif`;
+  // Which fonts can render the translation depends on its script (see
+  // TRANSLATION_FONT_OPTIONS' `languages`); "tr" stands in for any
+  // Latin-script translation, since every Latin font covers English too.
+  const translationScript = translationRtl ? "ar" : "tr";
+  // Resolved ONCE here from the translationFont prop and threaded down to
+  // every place that used to reference the module-level
+  // TRANSLATION_FONT_FAMILY constant directly -- that constant now only
+  // exists as the fallback default. resolveTranslationFont falls back to the
+  // script's default font when the chosen one can't render it (e.g. a Latin
+  // font saved on a project that has since switched to an Arabic tafsir), or
+  // when "custom" (a user-uploaded font, see PageFontStyles' own @font-face
+  // for it) has no file yet -- e.g. right after picking "custom" in the UI
+  // but before the upload finishes -- rather than resolving to a family
+  // nothing declared, which would silently show the browser's plain default.
+  const effectiveTranslationFont = resolveTranslationFont(translationFont, translationScript, Boolean(customTranslationFontUrl));
+  const resolvedTranslationFontFamily = translationFontStack(effectiveTranslationFont, translationScript, CUSTOM_TRANSLATION_FONT_FAMILY);
+  const latinSurahTitle = surahTitle ?? (surahNameTransliteration ? `${surahNameTransliteration} SURESİ` : "");
+  // "No translation" leaves every verse's text (and every segment's) empty --
+  // see VerseScene's hasTranslation.
+  const hasTranslation = verses.some(
+    (verse) => Boolean(verse.translation) || Boolean(verse.mappings?.some((mapping) => mapping.translation_text))
+  );
   // A delayRender() handle can only ever be continued once -- grabbing it
   // just once at mount (the previous `useState(() => delayRender(...))`
   // pattern) meant only the FIRST render was ever actually gated behind
@@ -799,9 +1249,35 @@ export function QuranVideo({
     VERSE_FONT_SIZE * effectiveArabicTextScale * ARABIC_FONT_OPTIONS[arabicFont].sizeMultiplier
   );
 
+  // Gates formatArabicVerse/formatInvertedPyramid's canvas-based width
+  // measurement (see textMeasure.ts) on the SAME font-load completion this
+  // effect already tracks below -- canvas.measureText silently falls back
+  // to a generic system font for any face that hasn't finished loading yet,
+  // so measuring before this flips true produces wildly wrong widths (an
+  // ayah briefly exploding into one word per line on first mount, since
+  // React's initial render runs before this effect even starts, let alone
+  // before the fonts it kicks off actually finish). VerseScene falls back
+  // to plain, unwrapped text while this is false; the moment it flips true,
+  // the resulting re-render measures for real and lays out correctly.
+  const [fontsReady, setFontsReady] = useState(false);
+
   useEffect(() => {
+    setFontsReady(false);
     const fontHandle = delayRender("Loading Quran video fonts");
-    Promise.all([
+    // allSettled, not all() -- a plain Promise.all rejects (and moves on)
+    // the instant the FIRST entry in this array rejects, without waiting
+    // for whichever other page/verse font loads are still genuinely
+    // in-flight at that moment. Since this array covers every page across
+    // the WHOLE video (not just the verse on screen right now), a single
+    // transient failure on any one of them used to flip fontsReady (and
+    // release Remotion's own delayRender gate) early -- before later
+    // verses' own fonts had actually finished -- so canvas measurement for
+    // THOSE verses ran against a still-loading/fallback font (wrong, often
+    // much wider, glyph metrics), reported as ordinary short words
+    // suddenly exploding one per line well into playback, not just on
+    // first mount. allSettled always waits for every entry to finish, pass
+    // or fail, before this .then runs.
+    Promise.allSettled([
       document.fonts.load(`${effectiveVerseFontSize}px "${FONT_KFGQPC_FAMILY}"`),
       ...verses.map((v) => {
         // Preload whichever page/family the CURRENTLY selected arabicFont
@@ -813,26 +1289,75 @@ export function QuranVideo({
       }),
       document.fonts.load(`${Math.round(SURAH_NAME_FONT_SIZE * effectiveTextScale)}px "${FONT_SURAH_NAME_FAMILY}"`),
       document.fonts.load(`${Math.round(TRANSLITERATION_FONT_SIZE * effectiveTextScale)}px "${FONT_TRANSLITERATION_FAMILY}"`),
+      document.fonts.load(`${RECITER_NAME_FONT_WEIGHT} ${Math.round(RECITER_NAME_FONT_SIZE * effectiveTextScale)}px "${FONT_RECITER_NAME_FAMILY}"`),
       document.fonts.load(
         `${Math.round(TRANSLATION_FONT_SIZE * effectiveTranslationTextScale)}px "${
-          translationFont === "custom" && customTranslationFontUrl
+          effectiveTranslationFont === "custom"
             ? CUSTOM_TRANSLATION_FONT_FAMILY
-            : TRANSLATION_FONT_OPTIONS[translationFont === "custom" ? "aileron" : translationFont].family
+            : TRANSLATION_FONT_OPTIONS[effectiveTranslationFont].family
         }"`
       ),
       document.fonts.ready,
-    ])
-      .catch(() => undefined)
-      .finally(() => continueRender(fontHandle));
-  }, [
-    verses,
-    effectiveTextScale,
-    effectiveArabicTextScale,
-    effectiveTranslationTextScale,
-    translationFont,
-    customTranslationFontUrl,
-    arabicFont,
-  ]);
+    ]).then(() => {
+      continueRender(fontHandle);
+      setFontsReady(true);
+    });
+    // effectiveTextScale/effectiveArabicTextScale/effectiveTranslationTextScale
+    // deliberately NOT in the dependency list below -- a font FACE's
+    // availability never depends on the pixel size it's requested at (only
+    // family/weight/style), so re-running this whole bulk preload (and
+    // synchronously flipping fontsReady back to false at its very top,
+    // however briefly) on every text-SIZE drag tick was pure churn with no
+    // correctness benefit, and it's exactly what was cascading into
+    // arabicReady/translationReady below going false and back on every
+    // tick -- reported as the verse/translation text visibly flickering
+    // out and back in while dragging a size or width slider. Still
+    // correctly re-runs on anything that actually changes WHICH font
+    // families are needed (a different arabicFont/translationFont/custom
+    // upload, or new verses covering new Mushaf pages).
+  }, [verses, translationFont, customTranslationFontUrl, translationRtl, arabicFont]);
+
+  // Same authoritative-per-render pattern as VerseScene's arabicReady/
+  // translationReady below (see its own comment) -- the header's own two
+  // lines use different, un-measured-but-still-font-dependent fonts, and
+  // were exactly what was visibly overlapping/garbled in the reported
+  // screenshot whenever the bulk fontsReady state above went stale-true. No
+  // dedicated polling needed during playback either: useCurrentFrame right
+  // below already re-renders this component every frame.
+  const surahNameFontCss = resolveFontCss(
+    FONT_SURAH_NAME_FAMILY,
+    Math.round(SURAH_NAME_FONT_SIZE * effectiveTextScale),
+    SURAH_NAME_FONT_WEIGHT
+  );
+  const transliterationFontCss = resolveFontCss(
+    FONT_TRANSLITERATION_FAMILY,
+    Math.round(TRANSLITERATION_FONT_SIZE * effectiveTextScale),
+    TRANSLITERATION_FONT_WEIGHT
+  );
+  const reciterNameFontCss = resolveFontCss(
+    FONT_RECITER_NAME_FAMILY,
+    Math.round(RECITER_NAME_FONT_SIZE * effectiveTextScale),
+    RECITER_NAME_FONT_WEIGHT
+  );
+  const headerFontsReady =
+    isFontUsable(surahNameFontCss) &&
+    isFontUsable(transliterationFontCss) &&
+    (!reciterName || isFontUsable(reciterNameFontCss));
+  const [, forceHeaderFontRecheck] = useState(0);
+  useEffect(() => {
+    if (headerFontsReady) return;
+    let cancelled = false;
+    Promise.allSettled([
+      document.fonts.load(surahNameFontCss),
+      document.fonts.load(transliterationFontCss),
+      document.fonts.load(reciterNameFontCss),
+    ]).then(() => {
+      if (!cancelled) forceHeaderFontRecheck((n) => n + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [headerFontsReady, surahNameFontCss, transliterationFontCss, reciterNameFontCss]);
 
   const frame = useCurrentFrame();
   const headerFadeInEnd = ANIMATION_FADE_DURATION_FRAMES;
@@ -844,7 +1369,31 @@ export function QuranVideo({
     { easing: easeInOut, extrapolateLeft: "clamp", extrapolateRight: "clamp" }
   );
 
+  // Background look (see QuranVideoProps.backgroundDim/Blur/Zoom). A blur
+  // fades the layer's own edges toward transparent, so the layer is scaled
+  // up just enough to push that fringe off-canvas; the zoom pushes in ~12%
+  // linearly over the whole video.
+  const bgDim = Math.max(0, Math.min(BACKGROUND_DIM_MAX, backgroundDim));
+  const bgBlur = Math.max(0, Math.min(BACKGROUND_BLUR_MAX, backgroundBlur));
+  const bgBlurBleed = bgBlur > 0 ? 1 + (4 * bgBlur) / Math.min(canvasWidth, canvasHeight) : 1;
+  const bgZoom = backgroundZoom
+    ? interpolate(frame, [0, Math.max(1, totalDurationInFrames - 1)], [1, 1.12], {
+        extrapolateLeft: "clamp",
+        extrapolateRight: "clamp",
+      })
+    : 1;
+  const bgScale = bgBlurBleed * bgZoom;
+  const backgroundMediaStyle: React.CSSProperties = {
+    position: "absolute",
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    ...(bgBlur > 0 ? { filter: `blur(${bgBlur}px)` } : {}),
+    ...(bgScale !== 1 ? { transform: `scale(${bgScale})` } : {}),
+  };
+
   let startFrame = 0;
+  const textLeadFrames = globalAudioPath ? TEXT_LEAD_FRAMES : 0;
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
@@ -852,43 +1401,28 @@ export function QuranVideo({
 
       {backgroundVideoPath ? (
         <AbsoluteFill>
-          {/* Loop needs the video's own natural length to replay it seamlessly
-              instead of freezing on its last frame once the (audio-driven)
-              total duration outlasts it -- and works just as correctly when
-              the video is instead LONGER than the total duration, since it
-              then simply never completes its first cycle. Older
-              drafts/renders saved before backgroundVideoDurationInFrames
-              existed fall back to the full timeline length, i.e. no looping
-              (the best that's possible without re-probing the file). */}
-          <Loop durationInFrames={backgroundVideoDurationInFrames || totalDurationInFrames}>
-            <OffthreadVideo
-              src={getAssetUrl(backgroundVideoPath)}
-              muted
-              onError={handleMediaError("background video", getAssetUrl(backgroundVideoPath))}
-              style={{
-                position: "absolute",
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                opacity: 0.8,
-              }}
-            />
-          </Loop>
+          <LoopingBackgroundVideo
+            src={getAssetUrl(backgroundVideoPath)}
+            clipFrames={backgroundVideoDurationInFrames ?? null}
+            totalFrames={totalDurationInFrames}
+            style={backgroundMediaStyle}
+            onError={handleMediaError("background video", getAssetUrl(backgroundVideoPath))}
+          />
         </AbsoluteFill>
       ) : backgroundImagePath ? (
         <AbsoluteFill>
           <Img
             src={getAssetUrl(backgroundImagePath)}
             onError={handleImageError("background image", getAssetUrl(backgroundImagePath))}
-            style={{
-              position: "absolute",
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-              opacity: 0.8,
-            }}
+            style={backgroundMediaStyle}
           />
         </AbsoluteFill>
+      ) : null}
+      {/* Darkening as one black layer over the whole background (the same
+          result as the media's own opacity over the black base) -- so two
+          crossfading video copies can't add up to a brighter frame. */}
+      {(backgroundVideoPath || backgroundImagePath) && bgDim > 0 ? (
+        <AbsoluteFill style={{ backgroundColor: "#000", opacity: bgDim }} />
       ) : null}
 
       {globalAudioPath ? (
@@ -898,6 +1432,9 @@ export function QuranVideo({
         />
       ) : null}
 
+      {/* The text track, drawn textLeadFrames ahead of the audio -- see
+          TEXT_LEAD_FRAMES. */}
+      <Sequence from={-textLeadFrames} layout="none">
       {verses.map((verse, i) => {
         const from = startFrame;
         startFrame += verse.durationInFrames;
@@ -935,7 +1472,7 @@ export function QuranVideo({
           <Sequence
             key={`${verse.id}-${from}`}
             from={from}
-            durationInFrames={d}
+            durationInFrames={isLast ? d + textLeadFrames : d}
           >
             {globalAudioPath ? null : (
               <Audio
@@ -1009,112 +1546,273 @@ export function QuranVideo({
                       },
                     ];
 
-              return mappings.map((mapping, idx) => {
-                const totalWords = mappings.reduce((sum, m) => sum + m.word_count, 0);
-                const previousWords = mappings.slice(0, idx).reduce((sum, m) => sum + m.word_count, 0);
+              // A "repeat" mapping (repeat_of_part set) re-displays an
+              // EARLIER mapping's own words -- it doesn't consume any NEW
+              // words of the ayah, so its word_count must be excluded here
+              // (contributes 0), matching VideoCreatorForm.tsx's own
+              // buildTimingEditorSegments (see its identical comment).
+              // Counting it anyway inflated totalWords and pushed every
+              // mapping AFTER a repeat that many words too far forward,
+              // slicing the wrong (too-far-into-the-verse, often near-empty)
+              // range for their Arabic text -- reported as a segment right
+              // after a repeated one showing only its last word or two.
+              const realWordCount = (m: VerseMapping) => (typeof m.repeat_of_part === "number" ? 0 : m.word_count);
 
-                const allWords = arabicVerseText.trim().split(/\s+/);
-
+              const totalWords = mappings.reduce((sum, m) => sum + realWordCount(m), 0);
+              // When mapping i's chunk is on screen, in frames on this
+              // ayah's own Sequence (on the audio's time).
+              const chunkWindow = (i: number) => {
+                const m = mappings[i];
+                const previousWords = mappings.slice(0, i).reduce((sum, x) => sum + realWordCount(x), 0);
                 // Proportional fallback (used only when real per-word audio
                 // timing isn't available for this verse, e.g. custom audio
-                // that wasn't aligned by the backend).
+                // that wasn't aligned by the backend). Uses realWordCount
+                // here too -- not mapping.word_count -- so every mapping's
+                // own share of `d` still sums to exactly 1 across the whole
+                // ayah (a repeat's raw word_count would otherwise double-
+                // count time already given to its source, over-allocating
+                // past `d`). A repeat effectively gets 0 share in this
+                // fallback-only path; in practice it always carries its own
+                // manual start_ms/end_ms anyway (see below), which takes
+                // absolute priority over this proportional guess regardless.
                 let chunkStartFrame = Math.round((previousWords / totalWords) * d);
-                let chunkDuration = idx === mappings.length - 1
+                let chunkDuration = i === mappings.length - 1
                   ? d - chunkStartFrame
-                  : Math.round((mapping.word_count / totalWords) * d);
+                  : Math.round((realWordCount(m) / totalWords) * d);
 
                 const startWordIdx = previousWords;
-                const endWordIdx = previousWords + mapping.word_count - 1;
+                const endWordIdx = previousWords + m.word_count - 1;
+                const isRepeatMapping = typeof m.repeat_of_part === "number";
 
-                if (
+                // When the chunk is on screen -- the rule shared with
+                // render/route.ts and the live preview (see ./timing): from
+                // the reciter's onset of its first voiced word to the end of
+                // its last one, so a pause between chunks shows no text and a
+                // waqf sign at either edge doesn't shift it. Direct index
+                // lookup: word_count counts REAL Uthmani words, the same
+                // tokens wordTimings is aligned to. A repeat re-shows earlier
+                // words, so it has no words of its own to time by.
+                let startMs: number | undefined;
+                let endMs: number | undefined;
+                const hasWordTiming =
                   (!globalAudioPath || isAudioExtracted) &&
-                  verse.wordTimings &&
-                  endWordIdx < verse.wordTimings.length
-                ) {
-                  // Direct index lookup: mapping.word_count is a count of REAL
-                  // Uthmani words, and wordTimings is aligned/ordered the same
-                  // way by the backend's forced alignment — no text matching
-                  // needed, so there's nothing here that can silently drift or
-                  // lock onto the wrong occurrence of a repeated word.
-                  const startMs = verse.wordTimings[startWordIdx].start;
-                  // This segment's OWN last word end — not the next segment's
-                  // start. Any natural pause between segments is simply not
-                  // covered by either segment's Sequence, so the text
-                  // disappears the instant the last letter is pronounced
-                  // instead of lingering through the silence until the next
-                  // segment begins.
-                  const endMs = verse.wordTimings[endWordIdx].end;
-
-                  chunkStartFrame = Math.round((startMs / 1000) * 30); // FPS is 30
-                  chunkDuration = Math.max(1, Math.round(((endMs - startMs) / 1000) * 30));
+                  !!verse.wordTimings &&
+                  endWordIdx < verse.wordTimings.length;
+                if (!isRepeatMapping && hasWordTiming && verse.wordTimings) {
+                  const span = voicedSpan(verse.wordTimings, startWordIdx, endWordIdx);
+                  startMs = span?.start ?? verse.wordTimings[startWordIdx].start;
+                  endMs = span?.end ?? verse.wordTimings[endWordIdx].end;
                 }
-
-                // Manual override from the waveform-based SegmentTimingEditor
-                // takes absolute priority over everything above — the user
-                // heard the audio directly and placed this boundary
-                // themselves, so no automatic computation (word-timing
-                // lookup or proportional fallback) should second-guess it.
-                // Already verse-relative milliseconds by the time it reaches
-                // here (render/route.ts normalizes it the same way as
-                // wordTimings before building this prop).
-                if (typeof mapping.start_ms === "number" && typeof mapping.end_ms === "number") {
-                  chunkStartFrame = Math.round((mapping.start_ms / 1000) * 30);
-                  chunkDuration = Math.max(1, Math.round(((mapping.end_ms - mapping.start_ms) / 1000) * 30));
+                // A boundary the user moved in SegmentTimingEditor wins over
+                // the words, each edge on its own (render/route.ts keeps only
+                // the moved ones, already verse-relative ms).
+                if (typeof m.start_ms === "number") startMs = m.start_ms;
+                if (typeof m.end_ms === "number") endMs = m.end_ms;
+                if (startMs !== undefined || endMs !== undefined) {
+                  const startFrame = startMs !== undefined ? Math.round((startMs / 1000) * 30) : chunkStartFrame; // FPS is 30
+                  const endFrame = endMs !== undefined ? Math.round((endMs / 1000) * 30) : chunkStartFrame + chunkDuration;
+                  chunkStartFrame = startFrame;
+                  chunkDuration = Math.max(1, endFrame - startFrame);
                 }
+                return { chunkStartFrame, chunkDuration, previousWords, startWordIdx, endWordIdx, isRepeatMapping, hasWordTiming };
+              };
 
-                // SegmentTimingEditor already resolved and validated this
-                // exact segment's Arabic text -- trusted verbatim for EVERY
-                // segment (not just "repeat" ones) so what renders always
-                // matches what the editor showed. The cumulative word/glyph-
-                // token slicing below is used only as a fallback for
-                // segments saved before this field existed, since that math
-                // can drift on a long, multi-part ayah and leave the LAST
-                // segment's chunk empty (see its own comment further down).
-                let chunkText: string;
-                if (typeof mapping.arabic_text === "string" && mapping.arabic_text.length > 0) {
-                  chunkText = mapping.arabic_text;
-                } else {
-                  // Convert the real-word range [startWordIdx, endWordIdx] into a
-                  // QCF glyph-token range using puaTokenCounts, since `text` is
-                  // page-glyph text where one real word can span >1 whitespace
-                  // token. Falls back to a 1:1 assumption when unavailable.
-                  let puaStart = startWordIdx;
-                  let puaEnd = previousWords + mapping.word_count;
+              return mappings.map((mapping, idx) => {
+                // Shown by another appearance of this ayah (see remotion/timing.ts).
+                if (mapping.hidden) return null;
+                const allWords = arabicVerseText.trim().split(/\s+/);
+                const chunkTiming = chunkWindow(idx);
+                const { previousWords, startWordIdx, isRepeatMapping } = chunkTiming;
+                // Never before the video's first frame (`from` is this ayah's
+                // place on the text track): a chunk the reciter starts less
+                // than textLeadFrames into the video -- the first one, when
+                // the trim leaves little silence before it -- would otherwise
+                // be mostly faded in already on frame 0, popping up instead
+                // of fading in. It fades in from the first frame instead, at
+                // the same speed as every other chunk.
+                const chunkStartFrame = Math.max(chunkTiming.chunkStartFrame, textLeadFrames - from);
+                // The text track runs textLeadFrames ahead of the audio (see
+                // TEXT_LEAD_FRAMES), so this Sequence -- placed at the
+                // chunk's audio start -- shows from textLeadFrames before
+                // it, fading in to be fully visible as the reciter starts.
+                // It stays on screen until the next chunk on screen -- of
+                // this ayah, or the next ayah, whose Sequence starts where
+                // this one ends -- starts fading in: its fade-out ends right
+                // there. The screen is never blank between two chunks, pause
+                // or not, and never shows two at once -- only the fades
+                // themselves change it (the user, 2026-10-28). The video's
+                // last chunk ends with its last word, never past the end of
+                // the video, which the trim may put before the words' own
+                // timing ends (a recording that repeats its last ayahs,
+                // trimmed to keep one recitation).
+                const verseEnd = isLast ? d + textLeadFrames : d;
+                const nextShown = mappings.findIndex((m, j) => j > idx && !m.hidden);
+                const displayEnd =
+                  nextShown >= 0
+                    ? Math.min(Math.max(chunkStartFrame + 1, chunkWindow(nextShown).chunkStartFrame), verseEnd)
+                    : isLast
+                      ? Math.min(chunkStartFrame + chunkTiming.chunkDuration + textLeadFrames, verseEnd)
+                      : Math.max(chunkStartFrame + 1, verseEnd);
+                const chunkDuration = Math.max(1, displayEnd - chunkStartFrame);
+
+                // SegmentTimingEditor saved a frozen `arabic_text` snapshot
+                // for this segment once, but it's locked into whichever QCF
+                // encoding (arabicFont) was selected at save time -- trusted
+                // verbatim, it rendered garbled glyphs the instant the user
+                // later switched arabicFont (right encoding for the font it
+                // was saved under, wrong one for whatever's picked now).
+                // Every mapping -- including "repeat" ones, which used to be
+                // the one exception that still trusted the frozen snapshot,
+                // since a repeat re-shows an EARLIER segment's words rather
+                // than the "next" sequential range the cumulative word_count
+                // math below assumes -- now instead re-derives its text live
+                // from arabicVerseText (already resolved for the CURRENTLY
+                // selected arabicFont, see isQcf1 above). A repeat just
+                // borrows its SOURCE part's own word range (the mapping
+                // `repeat_of_part` points at) instead of its own sequential
+                // position, through the exact same real-word -> QCF glyph-
+                // token slicing every other segment already uses -- so no
+                // frozen text needs to be trusted at all anymore, and a
+                // repeat survives a later font switch exactly like every
+                // other segment already did. Convert a real-word range into
+                // a QCF glyph-token range using puaTokenCounts, since `text`
+                // is page-glyph text where one real word can span >1
+                // whitespace token; falls back to a 1:1 assumption when
+                // unavailable.
+                const deriveChunkWords = (rangeStartWordIdx: number, rangeWordCount: number, attachTrailing: boolean): string => {
+                  let puaStart = rangeStartWordIdx;
+                  let puaEnd = rangeStartWordIdx + rangeWordCount;
                   if (arabicVersePuaTokenCounts && arabicVersePuaTokenCounts.length === totalWords) {
-                    puaStart = arabicVersePuaTokenCounts.slice(0, startWordIdx).reduce((a, b) => a + b, 0);
-                    puaEnd = puaStart + arabicVersePuaTokenCounts.slice(startWordIdx, startWordIdx + mapping.word_count).reduce((a, b) => a + b, 0);
+                    puaStart = arabicVersePuaTokenCounts.slice(0, rangeStartWordIdx).reduce((a, b) => a + b, 0);
+                    puaEnd = puaStart + arabicVersePuaTokenCounts.slice(rangeStartWordIdx, rangeStartWordIdx + rangeWordCount).reduce((a, b) => a + b, 0);
                   }
+                  const coreWords = allWords.slice(puaStart, puaEnd);
+                  let rangeWords = coreWords;
                   // Trailing QCF glyph tokens (waqf marks, the ayah-number
                   // marker) sit past totalWords in both the naive fallback and
-                  // any undercounted puaTokenCounts map -- always let the LAST
-                  // segment of a split ayah reach the true end of allWords so
-                  // it never renders without its ayah-ending number glyph.
+                  // any undercounted puaTokenCounts map -- a segment whose
+                  // words reach the ayah's end reaches the true end of
+                  // allWords too, so it never renders without its
+                  // ayah-ending number glyph. Requested only for such a range
+                  // (see caller below): one ending mid-verse would get most
+                  // of the rest of the verse fused onto it.
                   // Fused onto the last real word with no separating space
                   // (matching Mushaf typesetting, and keeping it from being
                   // treated as its own wrappable "word" by VerseScene's
                   // line-breaking, which would isolate it on its own line).
-                  const coreWords = allWords.slice(puaStart, puaEnd);
-                  let chunkWords = coreWords;
-                  if (idx === mappings.length - 1) {
+                  if (attachTrailing) {
                     const trailing = allWords.slice(puaEnd, allWords.length);
                     if (trailing.length > 0) {
-                      chunkWords = [...coreWords.slice(0, -1), (coreWords[coreWords.length - 1] ?? "") + trailing.join("")];
+                      rangeWords = [...coreWords.slice(0, -1), (coreWords[coreWords.length - 1] ?? "") + trailing.join("")];
                     }
                   }
-                  chunkText = chunkWords.join(" ");
-                  // The 1:1 real-word-to-glyph-token assumption right above
-                  // is never guaranteed for qcf1 (puaTokenCounts, the thing
+                  let result = rangeWords.join(" ");
+                  // The 1:1 real-word-to-glyph-token assumption above is
+                  // never guaranteed for qcf1 (puaTokenCounts, the thing
                   // that would make this exact, is deliberately never
                   // computed for it -- see this file's own comment on that).
                   // For a segment deep enough into a long, multi-part ayah,
                   // enough drift between the two counts can push the sliced
                   // range past the end of allWords entirely, producing a
-                  // blank chunkText instead of merely a slightly wrong one.
+                  // blank result instead of merely a slightly wrong one.
                   // Showing the WHOLE verse's text for that one segment
                   // (still correctly qcf1, still readable) is a far smaller
                   // fault than showing nothing at all.
-                  if (isQcf1 && chunkText.trim().length === 0) {
+                  if (isQcf1 && result.trim().length === 0) {
+                    result = arabicVerseText;
+                  }
+                  return result;
+                };
+
+                // The ayah-number marker goes on every segment whose words
+                // reach the ayah's end -- an original or a repeat of one --
+                // the same rule as VideoCreatorForm's sliceArabicForWordRange
+                // (the timing editor). It used to go on the LAST mapping
+                // only, which a repeat never is allowed to take: a copied
+                // whole ayah then showed the number on neither copy.
+                const reachesAyahEnd = (rangeStartWordIdx: number, rangeWordCount: number) =>
+                  rangeStartWordIdx + rangeWordCount >= totalWords;
+                let chunkText: string;
+                // The real words the shown text holds: a repeat's are its
+                // source part's (null: unknown, no highlight).
+                let shownWords: { start: number; count: number } | null = { start: startWordIdx, count: mapping.word_count };
+                if (isRepeatMapping) {
+                  shownWords = null;
+                  const sourceIdx = mappings.findIndex((m) => m.part === mapping.repeat_of_part);
+                  if (sourceIdx !== -1) {
+                    const sourcePreviousWords = mappings.slice(0, sourceIdx).reduce((sum, m) => sum + realWordCount(m), 0);
+                    const sourceWordCount = mappings[sourceIdx].word_count;
+                    shownWords = { start: sourcePreviousWords, count: sourceWordCount };
+                    chunkText = deriveChunkWords(sourcePreviousWords, sourceWordCount, reachesAyahEnd(sourcePreviousWords, sourceWordCount));
+                  } else if (typeof mapping.arabic_text === "string" && mapping.arabic_text.length > 0) {
+                    // Source part no longer exists (segmentation re-split/
+                    // merged since this repeat was created) -- fall back to
+                    // whatever was last saved rather than showing nothing,
+                    // same tolerance this field always had before this fix.
+                    chunkText = mapping.arabic_text;
+                  } else {
                     chunkText = arabicVerseText;
+                  }
+                } else {
+                  chunkText = deriveChunkWords(startWordIdx, mapping.word_count, reachesAyahEnd(startWordIdx, mapping.word_count));
+                }
+
+                // Word highlighting (see QuranVideoProps.wordHighlight). A
+                // repeat lights its source part's words, through their later
+                // readings (wordRepeats). The glyph range
+                // is the one deriveChunkWords sliced; it's only trusted when
+                // the shown text has exactly that many tokens, so a
+                // highlight can never land on the wrong glyphs. The old
+                // (qcf1) script is only mapped where its glyph tokens line
+                // up with the new script's, which the counts describe.
+                let wordWindows: WordWindow[] | undefined;
+                const highlightWords =
+                  shownWords &&
+                  (!globalAudioPath || isAudioExtracted) &&
+                  verse.wordTimings &&
+                  shownWords.start + shownWords.count - 1 < verse.wordTimings.length
+                    ? shownWords
+                    : null;
+                if (wordHighlight && highlightWords && verse.wordTimings) {
+                  const firstWord = highlightWords.start;
+                  const wordCount = highlightWords.count;
+                  const slicingCounts =
+                    arabicVersePuaTokenCounts && arabicVersePuaTokenCounts.length === totalWords ? arabicVersePuaTokenCounts : null;
+                  const tokenStart = slicingCounts ? sumOf(slicingCounts.slice(0, firstWord)) : firstWord;
+                  const tokenEnd = Math.min(
+                    allWords.length,
+                    slicingCounts
+                      ? tokenStart + sumOf(slicingCounts.slice(firstWord, firstWord + wordCount))
+                      : firstWord + wordCount
+                  );
+                  const newScriptTokenCount = verse.text.trim().split(/\s+/).length;
+                  const scriptsLineUp = allWords.length === newScriptTokenCount;
+                  const candidateCounts = verse.puaTokenCounts ?? verse.highlightGlyphCounts;
+                  const glyphCounts =
+                    scriptsLineUp &&
+                    candidateCounts &&
+                    candidateCounts.length === verse.wordTimings.length &&
+                    sumOf(candidateCounts) === newScriptTokenCount
+                      ? candidateCounts
+                      : null;
+                  if (
+                    (glyphCounts || !isQcf1) &&
+                    tokenEnd > tokenStart &&
+                    chunkText.split(" ").length === tokenEnd - tokenStart
+                  ) {
+                    wordWindows = buildWordWindows({
+                      wordTimings: verse.wordTimings,
+                      wordRepeats: verse.wordRepeats,
+                      firstWord,
+                      lastWord: firstWord + wordCount - 1,
+                      tokenStart,
+                      tokenEnd,
+                      glyphCounts,
+                      // The text track runs textLeadFrames ahead of the
+                      // audio; the highlight must stay on the audio's time.
+                      chunkStartFrame: chunkStartFrame - textLeadFrames,
+                      fps: 30,
+                    });
                   }
                 }
 
@@ -1151,9 +1849,13 @@ export function QuranVideo({
                       translationTextScale={effectiveMappingTranslationTextScale}
                       translationWidthScale={mappingTranslationWidthScale}
                       translationFontFamily={resolvedTranslationFontFamily}
+                      translationRtl={translationRtl}
                       showNumber={mapping.isFirstOfAyah ?? idx === 0}
                       segmentKey={segmentKey}
                       compact={!isPortrait}
+                      hasTranslation={hasTranslation}
+                      wordWindows={wordWindows}
+                      wordHighlightColor={wordHighlightColor}
                     />
                   </Sequence>
                 );
@@ -1162,29 +1864,56 @@ export function QuranVideo({
           </Sequence>
         );
       })}
+      </Sequence>
 
       <AbsoluteFill
         style={{
           alignItems: "center",
-          paddingTop: HEADER_PADDING_TOP,
+          // Without a second line (an Arabic video with no reciter name),
+          // the Arabic name moves down by half the Latin line's height so it
+          // sits centered where the two-line header used to, rather than
+          // leaving a gap under it.
+          paddingTop: latinSurahTitle || reciterName
+            ? HEADER_PADDING_TOP
+            : HEADER_PADDING_TOP +
+              (TRANSLITERATION_MARGIN_TOP +
+                Math.round(TRANSLITERATION_FONT_SIZE * effectiveTextScale) * TRANSLITERATION_LINE_HEIGHT) /
+                2,
           color: "white",
           fontFamily: resolvedTranslationFontFamily,
           opacity: headerOpacity,
         }}
       >
-        <div
-          dir="rtl"
-          style={{
-            fontSize: Math.round(SURAH_NAME_FONT_SIZE * effectiveTextScale),
-            fontWeight: SURAH_NAME_FONT_WEIGHT,
-            lineHeight: SURAH_NAME_LINE_HEIGHT,
-            fontFamily: FONT_SURAH_NAME_FAMILY,
-            textShadow: TEXT_SHADOW_STRONG,
-          }}
-        >
-          {surahNameArabic}
-        </div>
-        {surahNameTransliteration ? (
+        {headerFontsReady ? (
+          <div
+            dir="rtl"
+            style={{
+              fontSize: Math.round(SURAH_NAME_FONT_SIZE * effectiveTextScale),
+              fontWeight: SURAH_NAME_FONT_WEIGHT,
+              lineHeight: SURAH_NAME_LINE_HEIGHT,
+              fontFamily: FONT_SURAH_NAME_FAMILY,
+              textShadow: TEXT_SHADOW_STRONG,
+            }}
+          >
+            سورة {surahNameArabic}
+          </div>
+        ) : null}
+        {headerFontsReady && reciterName ? (
+          <div
+            dir="rtl"
+            style={{
+              fontSize: Math.round(RECITER_NAME_FONT_SIZE * effectiveTextScale),
+              fontWeight: RECITER_NAME_FONT_WEIGHT,
+              lineHeight: RECITER_NAME_LINE_HEIGHT,
+              fontFamily: FONT_RECITER_NAME_FAMILY,
+              color: TRANSLITERATION_COLOR,
+              marginTop: RECITER_NAME_MARGIN_TOP,
+              textShadow: TEXT_SHADOW_STRONG,
+            }}
+          >
+            {reciterName}
+          </div>
+        ) : headerFontsReady && latinSurahTitle ? (
           <div
             style={{
               fontSize: Math.round(TRANSLITERATION_FONT_SIZE * effectiveTextScale),
@@ -1197,7 +1926,7 @@ export function QuranVideo({
               textShadow: TEXT_SHADOW_STRONG,
             }}
           >
-            {surahNameTransliteration} SURESİ
+            {latinSurahTitle}
           </div>
         ) : null}
       </AbsoluteFill>

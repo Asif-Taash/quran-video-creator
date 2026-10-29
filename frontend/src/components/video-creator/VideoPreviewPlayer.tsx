@@ -13,7 +13,7 @@ import {
 import { ExclamationTriangleIcon, ArrowPathIcon } from "@heroicons/react/24/outline";
 import { QuranVideo } from "@/remotion/QuranVideo";
 import { ASPECT_RATIO_DIMENSIONS, type QuranVideoProps } from "@/remotion/types";
-import { useLanguage } from "@/lib/LanguageContext";
+import { useLanguage, useT } from "@/lib/LanguageContext";
 
 interface VideoPreviewPlayerProps {
   inputProps: QuranVideoProps;
@@ -99,6 +99,10 @@ const BOX_PADDING_PERCENT = 1.5;
 // below it, so it no longer needs much extra room to stay reachable.
 const HOVER_MARGIN_PERCENT = 1.5;
 const HOVER_BOTTOM_EXTRA_PERCENT = 1.5;
+// How long after a drag ends a click on the trigger hotzone is treated as
+// the drag's own spurious synthetic click rather than a real tap -- see
+// suppressClickUntilRef's own comment.
+const SUPPRESS_CLICK_AFTER_DRAG_MS = 400;
 
 type BoxRect = { top: number; left: number; width: number; height: number };
 
@@ -170,6 +174,7 @@ export default function VideoPreviewPlayer({
   onTranslationTextScaleChange,
   onTranslationWidthScaleChange,
 }: VideoPreviewPlayerProps) {
+  const tx = useT();
   const { language } = useLanguage();
   const isArabic = language === "ar";
   const playerRef = useRef<PlayerRef>(null);
@@ -255,6 +260,25 @@ export default function VideoPreviewPlayer({
   const [hoveredBlock, setHoveredBlock] = useState<TextBlock | null>(null);
   const [dragging, setDragging] = useState<DragState | null>(null);
   const dragStartRef = useRef<DragState | null>(null);
+  // Releasing a drag (pointerup) routinely lands the pointer back over the
+  // trigger hotzone's own area -- its sibling drag handle and this hotzone
+  // share one outer region, so the browser's native click synthesis can
+  // fire a click on the hotzone right after, even though the user never
+  // meant to tap/click it. That click hits the SAME toggle onClick uses for
+  // touch's tap-to-reveal below, immediately hiding the box the instant
+  // every drag ends -- reported as "the box disappears right after a
+  // single adjustment". A plain "suppress the next click" boolean, cleared
+  // only once a click actually consumes it, turned out worse: on touch (or
+  // some browsers/interaction patterns), that spurious click sometimes
+  // never fires at all, so the flag stayed stuck true FOREVER and silently
+  // swallowed every real tap after the first drag -- reported as "hovering/
+  // tapping shows nothing at all anymore" once a segment had already been
+  // adjusted once. A short timestamp-based expiry instead: valid only for
+  // SUPPRESS_CLICK_AFTER_DRAG_MS after drag-end, so even if nothing ever
+  // consumes it, it naturally stops suppressing on its own shortly after --
+  // long enough to catch the spurious click's ~0ms-after-pointerup timing,
+  // far too short to ever eat a deliberate later tap.
+  const suppressClickUntilRef = useRef(0);
   // The REAL rendered bounding box of each text block, in percent of the
   // container -- QuranVideo.tsx tags the Arabic verse/translation divs with
   // data-text-block for exactly this. Remotion's Player renders actual DOM
@@ -773,6 +797,7 @@ export default function VideoPreviewPlayer({
     const onPointerUp = () => {
       setDragging(null);
       dragStartRef.current = null;
+      suppressClickUntilRef.current = Date.now() + SUPPRESS_CLICK_AFTER_DRAG_MS;
     };
 
     window.addEventListener("pointermove", onPointerMove);
@@ -885,7 +910,21 @@ export default function VideoPreviewPlayer({
           // its own unambiguous territory first, so it's already on top.
           zIndex: isActive ? 2 : 1,
         }}
-        onMouseLeave={() => setHoveredBlock((v) => (v === block ? null : v))}
+        // Skipped entirely while dragging THIS block -- the same reasoning
+        // as the pointerdown-outside listener below (a width/corner drag
+        // routinely tracks the pointer past this region's own edge, e.g.
+        // widening the box drags the handle further out than the box
+        // itself). Without this guard, that ordinary drag motion cleared
+        // hoveredBlock mid-drag; the box/handles stayed visible only
+        // because `isActive` also checks `dragging?.block === block`, but
+        // the instant the drag ended (pointer released, dragging -> null)
+        // hoveredBlock was ALREADY null from the stray leave, so the whole
+        // box vanished immediately after every single adjustment instead
+        // of staying open until the pointer actually leaves afterward.
+        onMouseLeave={() => {
+          if (dragging?.block === block) return;
+          setHoveredBlock((v) => (v === block ? null : v));
+        }}
       >
         <div
           className="absolute"
@@ -896,6 +935,21 @@ export default function VideoPreviewPlayer({
             height: `${(triggerRect.height / region.height) * 100}%`,
           }}
           onMouseEnter={() => setHoveredBlock(block)}
+          // A live edit elsewhere (translation text, a size/width slider --
+          // anything that replaces previewProps wholesale from a fresh
+          // server response) can leave the underlying data-text-block node
+          // swapped for a new one at the exact same screen position, while
+          // the pointer itself never actually moved. Browsers only fire
+          // mouseenter on a genuine move INTO an element -- a pointer that
+          // was already sitting there before the swap gets no such event on
+          // the new node, so onMouseEnter above alone left the box stuck
+          // not reappearing until the pointer was moved fully away and back
+          // in, reported as "the box doesn't show up again after any edit".
+          // onMouseMove fires continuously for as long as the pointer sits
+          // anywhere over this hotzone regardless of node identity, so it
+          // self-heals within one pointer tick either way -- an idempotent
+          // no-op via the functional setState form on every other call.
+          onMouseMove={() => setHoveredBlock((v) => (v === block ? v : block))}
           // Touch has no hover at all -- onMouseEnter above never fires on a
           // phone, so the box/handles this reveals (see isActive below)
           // would otherwise be permanently undiscoverable there: nothing to
@@ -906,7 +960,10 @@ export default function VideoPreviewPlayer({
           // on top of that either changes nothing (still hovered) or, if it
           // happens to toggle off while the mouse sits still, comes back the
           // moment the pointer actually leaves and re-enters.
-          onClick={() => setHoveredBlock((v) => (v === block ? null : block))}
+          onClick={() => {
+            if (Date.now() < suppressClickUntilRef.current) return;
+            setHoveredBlock((v) => (v === block ? null : block));
+          }}
         />
         {isActive && box && (
           <>
@@ -1005,9 +1062,7 @@ export default function VideoPreviewPlayer({
           <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center gap-3 bg-black/90 px-6 text-center">
             <ExclamationTriangleIcon className="h-10 w-10 text-accent-amber" />
             <p className="max-w-xs text-sm text-white/90">
-              {isArabic
-                ? "تعذّر تشغيل المعاينة بسبب خلل متكرر في أداة العرض. أعد تحميل الصفحة."
-                : "Önizleme oynatıcıda tekrarlayan bir hata oluştu. Sayfayı yeniden yükleyin."}
+              {tx("تعذّر تشغيل المعاينة بسبب خلل متكرر في أداة العرض. أعد تحميل الصفحة.", "Önizleme oynatıcıda tekrarlayan bir hata oluştu. Sayfayı yeniden yükleyin.", "The preview player hit a recurring error. Please reload the page.")}
             </p>
             <button
               type="button"
@@ -1019,7 +1074,7 @@ export default function VideoPreviewPlayer({
               className="inline-flex items-center gap-1.5 rounded-lg border border-white/30 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/10"
             >
               <ArrowPathIcon className="h-4 w-4" />
-              {isArabic ? "إعادة المحاولة" : "Tekrar Dene"}
+              {tx("إعادة المحاولة", "Tekrar Dene", "Try Again")}
             </button>
           </div>
         )}

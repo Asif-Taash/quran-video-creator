@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
+import { stripAudioInPlace } from "@/lib/silentVideo";
 
 export const runtime = "nodejs";
 
@@ -37,6 +38,13 @@ async function saveDraftFile(draftId: string, kind: "bg" | "bgVideo" | "audio" |
   // probe fails loudly on anything it can't read.
 
   await fs.writeFile(absolutePath, buffer);
+  if (kind === "bgVideo") {
+    // Background videos are always silent (see lib/silentVideo.ts), so a
+    // restored draft's copy has no sound either.
+    await stripAudioInPlace(absolutePath).catch((err) => {
+      console.warn("[Drafts] Could not strip audio from background video:", err);
+    });
+  }
   return `/api/serve-audio?file=render-assets/drafts/${draftId}/${filename}`;
 }
 
@@ -62,6 +70,15 @@ export async function POST(req: Request) {
       translationWidthScale: Number(formData.get("translationWidthScale")) || 1,
       translationFont: (formData.get("translationFont") as string) || "aileron",
       arabicFont: (formData.get("arabicFont") as string) || "qcf2",
+      ...(formData.has("backgroundDim") ? { backgroundDim: Number(formData.get("backgroundDim")) } : {}),
+      backgroundBlur: Number(formData.get("backgroundBlur")) || 0,
+      backgroundZoom: formData.get("backgroundZoom") === "true",
+      wordHighlight: formData.get("wordHighlight") === "true",
+      ...(formData.get("wordHighlightColor") ? { wordHighlightColor: formData.get("wordHighlightColor") as string } : {}),
+      showReciterName: formData.get("showReciterName") !== "false",
+      // Present only once the user typed their own text (see
+      // VideoCreatorForm's reciterNameEdit); absent = the reciter's own name.
+      ...(formData.has("reciterNameEdit") ? { reciterNameEdit: String(formData.get("reciterNameEdit")).slice(0, 80) } : {}),
     };
 
     const preparedAudioStr = formData.get("preparedAudio") as string | null;

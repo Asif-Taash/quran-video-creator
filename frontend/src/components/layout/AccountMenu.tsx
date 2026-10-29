@@ -4,11 +4,12 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { UserCircleIcon } from "@heroicons/react/24/outline";
-import { useLanguage } from "@/lib/LanguageContext";
+import { useLanguage, useT } from "@/lib/LanguageContext";
 
 type Profile = { email: string; name: string | null; avatarUrl: string | null };
 
 export default function AccountMenu() {
+  const tx = useT();
   const { language } = useLanguage();
   const isAr = language === "ar";
   const router = useRouter();
@@ -65,8 +66,8 @@ export default function AccountMenu() {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center justify-center p-1.5 rounded-full text-foreground hover:bg-surface transition-colors focus:outline-none focus:ring-2 focus:ring-primary"
-        aria-label={isAr ? "الحساب" : "Hesap"}
-        title={isAr ? "الحساب" : "Hesap"}
+        aria-label={tx("الحساب", "Hesap", "Account")}
+        title={tx("الحساب", "Hesap", "Account")}
       >
         {profile?.avatarUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -98,14 +99,14 @@ export default function AccountMenu() {
                 className="block w-full text-right px-4 py-2 text-sm text-foreground hover:bg-primary/10 transition-colors"
                 dir={isAr ? "rtl" : "ltr"}
               >
-                {isAr ? "الحساب" : "Hesap"}
+                {tx("الحساب", "Hesap", "Account")}
               </Link>
               <button
                 onClick={handleLogout}
                 className="w-full text-right px-4 py-2 text-sm text-foreground hover:bg-primary/10 transition-colors"
                 dir={isAr ? "rtl" : "ltr"}
               >
-                {isAr ? "تسجيل الخروج" : "Çıkış Yap"}
+                {tx("تسجيل الخروج", "Çıkış Yap", "Sign Out")}
               </button>
             </>
           ) : (
@@ -116,7 +117,7 @@ export default function AccountMenu() {
                 className="block w-full text-right px-4 py-2 text-sm text-foreground hover:bg-primary/10 transition-colors"
                 dir={isAr ? "rtl" : "ltr"}
               >
-                {isAr ? "تسجيل الدخول" : "Giriş Yap"}
+                {tx("تسجيل الدخول", "Giriş Yap", "Sign In")}
               </Link>
               <Link
                 href="/signup"
@@ -124,7 +125,7 @@ export default function AccountMenu() {
                 className="block w-full text-right px-4 py-2 text-sm text-foreground hover:bg-primary/10 transition-colors"
                 dir={isAr ? "rtl" : "ltr"}
               >
-                {isAr ? "إنشاء حساب" : "Kayıt Ol"}
+                {tx("إنشاء حساب", "Kayıt Ol", "Sign Up")}
               </Link>
             </>
           )}
