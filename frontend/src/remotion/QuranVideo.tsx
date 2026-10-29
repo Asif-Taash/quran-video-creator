@@ -1614,7 +1614,7 @@ export function QuranVideo({
                   chunkStartFrame = startFrame;
                   chunkDuration = Math.max(1, endFrame - startFrame);
                 }
-                return { chunkStartFrame, chunkDuration, previousWords, startWordIdx, endWordIdx, isRepeatMapping, hasWordTiming };
+                return { chunkStartFrame, chunkDuration, startWordIdx, endWordIdx, isRepeatMapping, hasWordTiming };
               };
 
               return mappings.map((mapping, idx) => {
@@ -1622,7 +1622,7 @@ export function QuranVideo({
                 if (mapping.hidden) return null;
                 const allWords = arabicVerseText.trim().split(/\s+/);
                 const chunkTiming = chunkWindow(idx);
-                const { previousWords, startWordIdx, isRepeatMapping } = chunkTiming;
+                const { startWordIdx, isRepeatMapping } = chunkTiming;
                 // Never before the video's first frame (`from` is this ayah's
                 // place on the text track): a chunk the reciter starts less
                 // than textLeadFrames into the video -- the first one, when

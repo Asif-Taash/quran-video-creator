@@ -6,9 +6,9 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import AccountMenu from "@/components/layout/AccountMenu";
-import { useState, useEffect, useCallback } from "react";
-import { Bars3Icon, XMarkIcon, PlusCircleIcon } from "@heroicons/react/24/outline";
-import { useLanguage, useT } from "@/lib/LanguageContext";
+import { useState, useEffect } from "react";
+import { PlusCircleIcon } from "@heroicons/react/24/outline";
+import { useT } from "@/lib/LanguageContext";
 
 
 
@@ -22,7 +22,6 @@ export default function Navbar() {
   // not just the path.
   const isOnGalleryTab = pathname === "/" && searchParams.get("tab") === "gallery";
   const isOnCreateTab = pathname === "/" && !isOnGalleryTab;
-  const { language } = useLanguage();
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {

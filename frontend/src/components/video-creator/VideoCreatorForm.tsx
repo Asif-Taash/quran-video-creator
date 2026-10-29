@@ -8,7 +8,6 @@ import { fixMojibake } from "@/lib/textEncoding";
 import { RECITER_DISPLAY_NAMES, RECITER_ARABIC_NAMES } from "@/lib/reciterNames";
 import quranData from "@/data/quran.json";
 import quranQcfV1Data from "@/data/quran-qcf-v1.json";
-import Spinner from "@/components/ui/Spinner";
 
 import { useTranslationContext } from "@/lib/TranslationContext";
 import { surahEnglishName } from "@/lib/surahEnglishNames";
@@ -100,7 +99,7 @@ export interface Surah {
 export type RenderState = "idle" | "rendering" | "done" | "error";
 
 // Polled from GET /api/video/render while the download button waits.
-export type RenderProgress = { stage: "preparing" | "rendering" | "saving"; progress: number; etaMs: number | null };
+export type RenderProgress = { stage: "preparing" | "rendering" | "saving"; progress: number };
 
 type RealRenderRecord = {
   signature: string;
@@ -311,7 +310,6 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     new Map(surahs.map((s) => [s.id, s.transliteration]))
   );
   const [renderError, setRenderError] = useState("");
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   // Live in-browser preview (Step 5, before the actual slow render) --
   // populated from the SAME /api/video/render endpoint's "preview" mode, so
   // it can never structurally drift from what the real render would produce.
@@ -425,7 +423,6 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
 
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [showStartOverConfirm, setShowStartOverConfirm] = useState(false);
-  const [isVerseSearchOpen, setIsVerseSearchOpen] = useState(false);
 
   const [draftId, setDraftId] = useState<string | null>(null);
   const [autosaveStatus, setAutosaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -1289,7 +1286,6 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
       const renderedUrl = (await reusableRenderUrl(signature)) ?? (await runRealRender(formData, signature, false));
 
       const finalVideoUrl = `${renderedUrl}?t=${Date.now()}`;
-      setVideoUrl(finalVideoUrl);
       setRenderState("done");
 
       // The "Videoyu İndir" button both renders AND downloads in one click --
@@ -1317,7 +1313,7 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
 
   // Real render + gallery save, run silently in the background as the user
   // edits an already-complete project -- no download, and deliberately NEVER
-  // touches renderState/videoUrl (those drive the "تنزيل الفيديو" button's
+  // touches renderState (it drives the "تنزيل الفيديو" button's
   // own disabled/spinner state, which must stay tied ONLY to a user-clicked
   // download, not to this). See the debounced effect below for when this
   // actually fires, and saveToGallery's upsert-by-draftId (videoGallery.ts)
@@ -1605,7 +1601,6 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     setAudioTrimEnd(0);
     setTrimmedPreviewAudioUrl(null);
     setTrimmedPreviewOffset(0);
-    setVideoUrl(null);
     setRenderState("idle");
     setPendingSegmentationData([]);
     setLiveTimingResults(null);
@@ -1991,7 +1986,6 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     setWordHighlightColor(DEFAULT_WORD_HIGHLIGHT_COLOR);
     setRenderState("idle");
     setRenderError("");
-    setVideoUrl(null);
     // The live-preview trio (previewProps/isLoadingPreview/previewError)
     // was never touched here -- previewProps happens to get cleared as a
     // side effect of preparedAudioUrl going null below (see the debounced
@@ -2045,33 +2039,6 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     setSelectedTranslationId("none");
   }, [setSelectedTranslationId]);
 
-  const handleSurahChange = async (surahId: number | string) => {
-    surahId = Number(surahId);
-    const surah = surahs.find((item) => item.id === surahId) || null;
-    setSelectedSurah(surah);
-    setSelectedApiSurah(null);
-    setStartVerse(null);
-    setEndVerse(null);
-    setVideoUrl(null);
-    setRenderError("");
-    setRenderState("idle");
-
-    if (!surah) return;
-
-    try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "/backend";
-      const response = await fetch(`${baseUrl}/surahs/${surahId}`);
-      if (response.ok) {
-        setSelectedApiSurah(await response.json());
-      }
-
-      // Fetch dynamic translations for the selected surah
-      await fetchSurahTranslations(surah.id);
-
-    } catch {
-      setSelectedApiSurah(null);
-    }
-  };
 
   useEffect(() => {
     if (!selectedSurah) return;
@@ -2121,23 +2088,12 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     });
   }, [selectedSurah?.id, selectedTranslation.id, fetchSurahTranslations, selectedApiSurah, getTranslation]);
 
-  const handleStartVerseChange = (verse: number | string) => {
-    let num = Number(verse);
-    if (isNaN(num) || num < 1) num = 1;
-    if (selectedSurah && num > selectedSurah.total_verses) num = selectedSurah.total_verses;
-    setStartVerse(num);
-    setEndVerse(num);
-    setVideoUrl(null);
-    setRenderError("");
-    setRenderState("idle");
-  };
 
   const handleAddNextVerse = () => {
     if (!selectedSurah || endVerse === null) return;
     if (endVerse < selectedSurah.total_verses) {
       setEndVerse(endVerse + 1);
     }
-    setVideoUrl(null);
     setRenderError("");
     setRenderState("idle");
   };
@@ -2147,7 +2103,6 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     if (endVerse > startVerse) {
       setEndVerse(endVerse - 1);
     }
-    setVideoUrl(null);
     setRenderError("");
     setRenderState("idle");
   };
@@ -2171,7 +2126,6 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
       setBgVideo(file);
       setBgVideoPreview(URL.createObjectURL(file));
     }
-    setVideoUrl(null);
     setRenderState("idle");
   };
 
@@ -2186,7 +2140,6 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     }
     setBgImage(null);
     setBgPreview(null);
-    setVideoUrl(null);
     setRenderState("idle");
   };
 
@@ -2201,11 +2154,8 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     }
     setBgVideo(null);
     setBgVideoPreview(null);
-    setVideoUrl(null);
     setRenderState("idle");
   };
-
-  const LONG_VERSE_THRESHOLD = 7; // Only segment verses with more than 7 Arabic words
 
   // A part never opens on a waqf sign nor ends on a Hizb sign ۞ (see
   // moveBoundariesOffMarks) -- the server's aligner places them already;
@@ -2770,7 +2720,6 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
 
     setRenderState("rendering");
     setRenderError("");
-    setVideoUrl(null);
     setSegmentationProgress(null);
     setRenderProgress(null);
 
@@ -2815,7 +2764,6 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     const file = e.target.files?.[0];
     if (!file) return;
     setCustomAudio(file);
-    setVideoUrl(null);
     setRenderState("idle");
   };
 
@@ -2829,13 +2777,11 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     const file = e.target.files?.[0];
     if (!file) return;
     setCustomAudio(file);
-    setVideoUrl(null);
     setRenderState("idle");
   };
 
   const removeCustomAudio = () => {
     setCustomAudio(null);
-    setVideoUrl(null);
     setRenderState("idle");
   };
 
@@ -2918,7 +2864,6 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
               <StepCard key={step.label} idx={idx} label={step.label}>
                 {idx === 0 && (
                   <Step1SurahVerse
-                    onSearchOpenChange={setIsVerseSearchOpen}
                     isArabic={isArabic}
                     surahs={surahs}
                     surahTurkishNames={surahTurkishNames}
@@ -2929,7 +2874,6 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
                     setStartVerse={setStartVerse}
                     endVerse={endVerse}
                     setEndVerse={setEndVerse}
-                    setVideoUrl={setVideoUrl}
                     setRenderError={setRenderError}
                     setRenderState={setRenderState}
                     handleAddNextVerse={handleAddNextVerse}
@@ -3055,7 +2999,6 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
                 renderState={renderState}
                 preparedAudioUrl={preparedAudioUrl}
                 renderError={renderError}
-                videoUrl={videoUrl}
                 previewProps={displayedPreviewProps}
                 previewVersion={previewVersion}
                 isLoadingPreview={isLoadingPreview}

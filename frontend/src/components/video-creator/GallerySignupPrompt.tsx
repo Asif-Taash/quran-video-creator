@@ -1,15 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useLanguage, useT } from "@/lib/LanguageContext";
+import { useT } from "@/lib/LanguageContext";
 
 // Shown on /gallery in place of GalleryGrid whenever there is no logged-in
 // session -- videos are never listed to a logged-out visitor, only this
 // prompt to create an account or sign in.
 export default function GallerySignupPrompt() {
   const tx = useT();
-  const { language } = useLanguage();
-  const isAr = language === "ar";
 
   return (
     <div className="rounded-2xl border border-dashed border-border/60 bg-surface/30 p-10 text-center space-y-4">

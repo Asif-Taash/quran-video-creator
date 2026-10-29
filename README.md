@@ -54,12 +54,17 @@ docker compose up --build
 
 The first build takes a while (CUDA PyTorch is ~3 GB).
 
-**3. First run only: create the database tables and Quran data**
+**3. First run only: create the user tables**
 
 ```bash
-docker compose exec frontend npx prisma migrate deploy        # user accounts
-cp frontend/src/data/quran.json backend/data/quran.json        # Mushaf text + page numbers
-docker compose exec backend python seed_quran.py               # surahs, ayahs, Turkish text
+docker compose exec frontend npx prisma migrate deploy
+```
+
+Optional: the Quran text the videos use is bundled with the frontend, so the app works without this. Seeding the database only adds the Turkish surah names (with their diacritics) and a fallback Turkish text:
+
+```bash
+cp frontend/src/data/quran.json backend/data/quran.json
+docker compose exec backend python seed_quran.py
 ```
 
 **4. Open** [http://localhost:3000](http://localhost:3000). The backend API docs are at [http://localhost:8000/docs](http://localhost:8000/docs), Postgres at `localhost:5433` (user `user`, password `password`, database `kurannuru`).
@@ -79,8 +84,8 @@ backend/
   scripts/              quran_aligner.py (current aligner), extract_precise_clip.py (old
                         Whisper pipeline, kept for ALIGN_ENGINE=legacy and shared helpers),
                         segment_align.py, eval_* scripts and their test cases
-  seed_quran.py, update_words_data.py, patch_pua_data.py, validate_quran.py
-                        one-off database setup/maintenance scripts
+  seed_quran.py, validate_quran.py
+                        optional database seeding and its check
   data/                 (git-ignored) model caches, downloaded surah audio, eval audio
 ```
 

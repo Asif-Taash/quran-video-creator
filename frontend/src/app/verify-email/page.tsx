@@ -5,14 +5,12 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import Navbar from "@/components/layout/Navbar";
 import Spinner from "@/components/ui/Spinner";
-import { useLanguage, useT } from "@/lib/LanguageContext";
+import { useT } from "@/lib/LanguageContext";
 import { CheckBadgeIcon, XCircleIcon } from "@heroicons/react/24/outline";
 
 type Status = "verifying" | "success" | "error";
 
 function VerifyEmailContent() {
-  const { language } = useLanguage();
-  const isAr = language === "ar";
   const t = useT();
   const token = useSearchParams().get("token") ?? "";
 

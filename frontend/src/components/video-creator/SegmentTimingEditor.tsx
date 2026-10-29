@@ -1158,7 +1158,6 @@ export default function SegmentTimingEditor({
     const idx = localSegments.findIndex((s) => s.id === id);
     const targetIdx = idx + direction;
     if (idx === -1 || targetIdx < 0 || targetIdx >= localSegments.length) return;
-    const seg = localSegments[idx];
     if (!canMoveSegment(idx, direction)) return;
 
     const next = localSegments.map((s) => {

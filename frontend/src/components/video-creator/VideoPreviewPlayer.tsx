@@ -13,7 +13,7 @@ import {
 import { ExclamationTriangleIcon, ArrowPathIcon } from "@heroicons/react/24/outline";
 import { QuranVideo } from "@/remotion/QuranVideo";
 import { ASPECT_RATIO_DIMENSIONS, type QuranVideoProps } from "@/remotion/types";
-import { useLanguage, useT } from "@/lib/LanguageContext";
+import { useT } from "@/lib/LanguageContext";
 
 interface VideoPreviewPlayerProps {
   inputProps: QuranVideoProps;
@@ -175,8 +175,6 @@ export default function VideoPreviewPlayer({
   onTranslationWidthScaleChange,
 }: VideoPreviewPlayerProps) {
   const tx = useT();
-  const { language } = useLanguage();
-  const isArabic = language === "ar";
   const playerRef = useRef<PlayerRef>(null);
   // Bumped only to force a clean remount of the inner <Player> after a
   // crash -- see the "error" listener below. Carries the frame across that

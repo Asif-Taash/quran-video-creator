@@ -31,7 +31,6 @@ interface Step1Props {
   setStartVerse: (n: number | null) => void;
   endVerse: number | null;
   setEndVerse: (n: number | null) => void;
-  setVideoUrl: (v: string | null) => void;
   setRenderError: (s: string) => void;
   setRenderState: (s: RenderState) => void;
   handleAddNextVerse: () => void;
@@ -39,7 +38,6 @@ interface Step1Props {
   versesArray: number[];
   selectedVersesContent: (Verse & { translation?: string; textV1?: string; pageV1?: number })[];
   lowConfidenceAyahs: Set<number>;
-  onSearchOpenChange?: (isOpen: boolean) => void;
   // Which Arabic verse script to use -- see ARABIC_FONT_OPTIONS in
   // types.ts. Applied instantly to the live preview client-side (see
   // VideoCreatorForm's own effect), no server round-trip needed.
@@ -86,7 +84,6 @@ export default function Step1SurahVerse({
   setStartVerse,
   endVerse,
   setEndVerse,
-  setVideoUrl,
   setRenderError,
   setRenderState,
   handleAddNextVerse,
@@ -94,7 +91,6 @@ export default function Step1SurahVerse({
   versesArray,
   selectedVersesContent,
   lowConfidenceAyahs,
-  onSearchOpenChange,
   arabicFont,
   onArabicFontChange,
   translationFont,
@@ -262,7 +258,6 @@ export default function Step1SurahVerse({
                 if (selectedSurah && num > selectedSurah.total_verses) num = selectedSurah.total_verses;
                 setStartVerse(num);
                 setEndVerse(num);
-                setVideoUrl(null);
                 setRenderError("");
                 setRenderState("idle");
               } else if (e.target.value === "") {
@@ -320,7 +315,6 @@ export default function Step1SurahVerse({
 
       <div className="mt-4">
         <QuranSearch
-          onOpenChange={onSearchOpenChange}
           getSurahName={(id) => {
             const surah = surahs.find((s) => s.id === id);
             if (!surah) return "";
@@ -336,7 +330,6 @@ export default function Step1SurahVerse({
               setSelectedApiSurah(null);
               setStartVerse(ayahNumber);
               setEndVerse(ayahNumber);
-              setVideoUrl(null);
               setRenderError("");
               setRenderState("idle");
             }

@@ -8,11 +8,6 @@ import { QUALITY_TIER_OPTIONS, WORD_HIGHLIGHT_COLORS, type AspectRatio, type Qua
 import VideoPreviewPlayer from "../VideoPreviewPlayer";
 
 import { useT } from "@/lib/LanguageContext";
-// "m:ss" for the render's estimated time left.
-function formatRemaining(ms: number) {
-  const totalSeconds = Math.max(1, Math.round(ms / 1000));
-  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
-}
 
 interface Step5Props {
   isArabic: boolean;
@@ -21,7 +16,6 @@ interface Step5Props {
   renderState: RenderState;
   preparedAudioUrl: string | null;
   renderError: string;
-  videoUrl: string | null;
   previewProps: QuranVideoProps | null;
   previewVersion: number;
   isLoadingPreview: boolean;
@@ -103,11 +97,9 @@ const ASPECT_RATIO_OPTIONS: { value: AspectRatio; shape: string; labelAr: string
 ];
 
 function AspectRatioPicker({
-  isArabic,
   aspectRatio,
   onAspectRatioChange,
 }: {
-  isArabic: boolean;
   aspectRatio: AspectRatio;
   onAspectRatioChange: (ratio: AspectRatio) => void;
 }) {
@@ -144,11 +136,9 @@ function AspectRatioPicker({
 // border/background here since the popover card around it already
 // provides that.
 function QualityPicker({
-  isArabic,
   quality,
   onQualityChange,
 }: {
-  isArabic: boolean;
   quality: QualityTier;
   onQualityChange: (quality: QualityTier) => void;
 }) {
@@ -244,7 +234,6 @@ export default function Step5Generate({
   renderState,
   preparedAudioUrl,
   renderError,
-  videoUrl,
   previewProps,
   previewVersion,
   isLoadingPreview,
@@ -314,7 +303,7 @@ export default function Step5Generate({
     // (isArabic ? ... : ...) -- only the LAYOUT direction is pinned here,
     // not the copy.
     <div className="space-y-4" dir="ltr">
-      <AspectRatioPicker isArabic={isArabic} aspectRatio={aspectRatio} onAspectRatioChange={onAspectRatioChange} />
+      <AspectRatioPicker aspectRatio={aspectRatio} onAspectRatioChange={onAspectRatioChange} />
 
       {/* The actual rendered/downloaded file is never shown here -- the live
           preview (auto-refreshing on every relevant change, see
@@ -578,7 +567,7 @@ export default function Step5Generate({
                     document listener. */}
                 <div className="fixed inset-0 z-10" onClick={() => setShowQualityPanel(false)} />
                 <div className="animate-fade-in absolute bottom-full right-0 z-20 mb-2 w-72 rounded-lg border border-border bg-background p-4 shadow-xl">
-                  <QualityPicker isArabic={isArabic} quality={quality} onQualityChange={onQualityChange} />
+                  <QualityPicker quality={quality} onQualityChange={onQualityChange} />
                 </div>
               </>
             )}
@@ -594,13 +583,6 @@ export default function Step5Generate({
               style={{ width: `${Math.round(renderProgress.progress * 100)}%` }}
             />
           </div>
-          {renderProgress.etaMs !== null && (
-            <p className="text-xs text-muted-foreground">
-              {tx("الوقت المتبقي تقريباً: ", "Tahmini kalan süre: ", "About ")}
-              {formatRemaining(renderProgress.etaMs)}
-              {tx("", "", " left")}
-            </p>
-          )}
         </div>
       )}
 

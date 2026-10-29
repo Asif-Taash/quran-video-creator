@@ -212,11 +212,6 @@ HUROOF_MUQATTAAH = {
     "ن": "نون"
 }
 
-def clean_arabic(text):
-    # Remove all diacritics and tashkeel for Whisper alignment
-    text = re.sub(r'[\u0617-\u061A\u064B-\u0652\u06D6-\u06DC\u06DF-\u06E8\u06EA-\u06ED]', '', text)
-    return text.strip()
-
 _surah_download_locks = {}
 _surah_download_locks_guard = threading.Lock()
 

@@ -439,7 +439,6 @@ async function renderMediaWithPersistentBrowser(
 type RenderJob = {
   stage: "preparing" | "rendering" | "saving";
   progress: number;
-  etaMs: number | null;
   cancelled: boolean;
   cancel: () => void;
 };
@@ -462,7 +461,7 @@ export async function GET(req: Request) {
   if (!job) {
     return NextResponse.json({ error: "Unknown render" }, { status: 404 });
   }
-  return NextResponse.json({ stage: job.stage, progress: job.progress, etaMs: job.etaMs });
+  return NextResponse.json({ stage: job.stage, progress: job.progress });
 }
 
 export async function DELETE(req: Request) {
@@ -631,7 +630,7 @@ export async function POST(req: Request) {
       const { makeCancelSignal } = await import("@remotion/renderer");
       const signal = makeCancelSignal();
       cancelSignal = signal.cancelSignal;
-      renderJob = { stage: "preparing", progress: 0, etaMs: null, cancelled: false, cancel: signal.cancel };
+      renderJob = { stage: "preparing", progress: 0, cancelled: false, cancel: signal.cancel };
       renderRegistry.jobs.set(renderJobId, renderJob);
     }
     const throwIfCancelled = () => {
@@ -1461,11 +1460,10 @@ export async function POST(req: Request) {
         console.log(`[Chromium ${log.type}]`, log.text);
       },
       cancelSignal,
-      onProgress: ({ progress, renderEstimatedTime }) => {
+      onProgress: ({ progress }) => {
         if (!renderJob) return;
         renderJob.stage = "rendering";
         renderJob.progress = progress;
-        renderJob.etaMs = renderEstimatedTime > 0 ? renderEstimatedTime : null;
       },
     }, () => Boolean(renderJob?.cancelled));
     throwIfCancelled();

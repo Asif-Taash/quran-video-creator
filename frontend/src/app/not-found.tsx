@@ -2,12 +2,10 @@
 
 import Link from "next/link";
 import Navbar from "@/components/layout/Navbar";
-import { useLanguage, useT } from "@/lib/LanguageContext";
+import { useT } from "@/lib/LanguageContext";
 
 export default function NotFound() {
   const tx = useT();
-  const { language } = useLanguage();
-  const isArabic = language === "ar";
 
   return (
     <div className="min-h-screen flex flex-col bg-background transition-colors duration-300">

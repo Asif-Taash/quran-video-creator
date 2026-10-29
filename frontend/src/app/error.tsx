@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import Navbar from "@/components/layout/Navbar";
-import { useLanguage, useT } from "@/lib/LanguageContext";
+import { useT } from "@/lib/LanguageContext";
 import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 
 export default function ErrorPage({
@@ -13,8 +13,6 @@ export default function ErrorPage({
   reset: () => void;
 }) {
   const tx = useT();
-  const { language } = useLanguage();
-  const isArabic = language === "ar";
 
   useEffect(() => {
     console.error("[App Error]", error);

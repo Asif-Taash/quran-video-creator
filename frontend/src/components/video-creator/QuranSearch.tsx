@@ -7,7 +7,6 @@ import { findWordStartMatches } from "@/lib/arabicSearch";
 interface QuranSearchProps {
   onSelectVerse: (surahNumber: number, ayahNumber: number) => void;
   getSurahName: (surahNumber: number) => string;
-  onOpenChange?: (isOpen: boolean) => void;
 }
 
 interface SearchResult {
@@ -16,7 +15,7 @@ interface SearchResult {
   text: string;
 }
 
-export default function QuranSearch({ onSelectVerse, getSurahName, onOpenChange }: QuranSearchProps) {
+export default function QuranSearch({ onSelectVerse, getSurahName }: QuranSearchProps) {
   const tx = useT();
   const { language } = useLanguage();
   const isArabic = language === "ar";
@@ -30,19 +29,10 @@ export default function QuranSearch({ onSelectVerse, getSurahName, onOpenChange 
   const containerRef = useRef<HTMLDivElement>(null);
   const [dropdownMaxHeight, setDropdownMaxHeight] = useState(420);
 
-  // Let the caller (the wizard) hide whatever sits below — e.g. the
-  // Back/Next footer — while the dropdown is open, instead of us capping
-  // our own height to dodge it.
-  useEffect(() => {
-    onOpenChange?.(isOpen);
-  }, [isOpen, onOpenChange]);
-
   // Size the dropdown as a share of the viewport (half its height, clamped
   // between 220 and 560px) rather than a flat pixel value, so it scales up
-  // on taller phones instead of looking cramped. It doesn't need to dodge
-  // whatever sits below on the page — the wizard hides its footer nav while
-  // the dropdown is open (see onOpenChange above) — and being an overlay
-  // over a scrollable page, it's fine for it to extend past the fold.
+  // on taller phones instead of looking cramped. Being an overlay over a
+  // scrollable page, it's fine for it to extend past the fold.
   useEffect(() => {
     if (!isOpen) return;
     const updateMaxHeight = () => {

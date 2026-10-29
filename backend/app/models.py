@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Boolean, JSON
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -26,6 +26,5 @@ class Ayah(Base):
     juz_number = Column(Integer)
     page_number = Column(Integer, nullable=True)
     sajdah = Column(Boolean, default=False)
-    words = Column(JSON, nullable=True)
 
     surah = relationship("Surah", back_populates="ayahs")

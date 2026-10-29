@@ -10,14 +10,12 @@ export function fileResponse(
   filePath: string,
   size: number,
   contentType: string,
-  rangeHeader: string | null,
-  extraHeaders: Record<string, string> = {}
+  rangeHeader: string | null
 ): Response {
   const baseHeaders = {
     "Accept-Ranges": "bytes",
     "Content-Type": contentType,
     "Cache-Control": "no-store, max-age=0",
-    ...extraHeaders,
   };
 
   if (!rangeHeader) {

@@ -7,15 +7,6 @@ import { DEFAULT_RECITER_ID, getReciter } from "@/lib/reciterNames";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function fileExists(filePath: string) {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function downloadAudioToPublic(audioUrl: string, audioPath: string) {
   const absolutePath = path.join(process.cwd(), "public", audioPath);
 

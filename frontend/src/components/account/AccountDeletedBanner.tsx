@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { useLanguage, useT } from "@/lib/LanguageContext";
+import { useT } from "@/lib/LanguageContext";
 import { CheckCircleIcon } from "@heroicons/react/24/outline";
 
 // One-time banner shown after an account is deleted. Strips the ?deleted=1
@@ -10,8 +10,6 @@ import { CheckCircleIcon } from "@heroicons/react/24/outline";
 // re-show it.
 export default function AccountDeletedBanner() {
   const tx = useT();
-  const { language } = useLanguage();
-  const isAr = language === "ar";
   const router = useRouter();
 
   React.useEffect(() => {

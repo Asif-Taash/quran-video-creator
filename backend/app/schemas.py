@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional, Any
+from typing import List, Optional
 
 class AyahBase(BaseModel):
     ayah_number: int
@@ -9,7 +9,6 @@ class AyahBase(BaseModel):
     juz_number: int
     page_number: Optional[int] = None
     sajdah: bool
-    words: Optional[Any] = None
 
 class Ayah(AyahBase):
     id: int

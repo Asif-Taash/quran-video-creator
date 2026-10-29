@@ -142,8 +142,6 @@ function ResetPasswordForm() {
 
 export default function ResetPasswordPage() {
   const tx = useT();
-  const { language } = useLanguage();
-  const isAr = language === "ar";
 
   return (
     <div className="relative min-h-screen bg-background transition-colors duration-300 overflow-hidden">
