@@ -2064,20 +2064,19 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
           const liveTranslation = getTranslation(surahId, entry.ayah, fallback);
           if (entry.mappings[0]?.translation_text === liveTranslation) return entry;
           changed = true;
+          // A box width the user set for the old text doesn't fit the new
+          // one -- kept, a box narrowed around a short translation squeezed
+          // a longer one into a word or two per line.
+          const withNewText = ({ translationWidthScale: _oldTextWidth, ...m }: any) => ({ ...m, translation_text: liveTranslation });
           if (entry.mappings.length <= 1) {
-            return {
-              ...entry,
-              mappings: entry.mappings.map((m: any) => ({ ...m, translation_text: liveTranslation })),
-            };
+            return { ...entry, mappings: entry.mappings.map(withNewText) };
           }
           // Split ayah: only the first part is safe to auto-update -- the
           // rest hold text the user manually distributed across them.
           touchedMultiPart = true;
           return {
             ...entry,
-            mappings: entry.mappings.map((m: any, idx: number) =>
-              idx === 0 ? { ...m, translation_text: liveTranslation } : m
-            ),
+            mappings: entry.mappings.map((m: any, idx: number) => (idx === 0 ? withNewText(m) : m)),
           };
         });
         if (touchedMultiPart) setTranslationSyncNotice(true);

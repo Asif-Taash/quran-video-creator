@@ -31,6 +31,7 @@ import {
   type WordTiming,
 } from "./types";
 import { isFontUsable, measureSpaceWidth, measureTokenWidths, resolveFontCss } from "./textMeasure";
+import { buildPyramidLines } from "./pyramidLines";
 import { voicedSpan } from "./timing";
 
 const FPS = 30;
@@ -110,12 +111,9 @@ const TRANSLATION_FONT_FAMILY = `${TRANSLATION_FONT_OPTIONS.aileron.family}, Ari
 // actually present.
 const CUSTOM_TRANSLATION_FONT_FAMILY = "CustomTranslationFont";
 
-const ARABIC_INDIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
-// The verse-number prefix in front of a translation: "12. " for LTR text,
-// "١٢. " for an Arabic tafsir.
-function verseNumberPrefix(verseId: number, rtl: boolean): string {
-  const digits = rtl ? String(verseId).replace(/\d/g, (d) => ARABIC_INDIC_DIGITS[Number(d)]) : String(verseId);
-  return `${digits}. `;
+// The verse-number prefix in front of a translation: "12. ".
+function verseNumberPrefix(verseId: number): string {
+  return `${verseId}. `;
 }
 
 const TEXT_SHADOW = "0 1px 2px rgba(0,0,0,0.6), 0 0 6px rgba(0,0,0,0.4)";
@@ -201,154 +199,6 @@ function handleImageError(assetKind: string, src: string) {
   return () => {
     console.error(`[QuranVideo] Failed to load ${assetKind}, continuing without it: ${src}`);
   };
-}
-
-// Builds lines by filling each one, left to right, with the longest run of
-// tokens (at least one, even if it alone exceeds the cap -- a line can
-// never be left empty) that fits under a SHARED width cap -- every line
-// gets the SAME cap, exactly like ordinary CSS text-wrap. That's what makes
-// this gradual: narrowing the box by a small amount moves at most one word
-// down to the next line, matching what VideoPreviewPlayer's width-drag
-// handles are meant to feel like. An earlier version instead capped each
-// line at the ACTUAL rendered width of the line right before it (to
-// guarantee line[i] >= line[i+1] by construction) -- correct, but it meant
-// a single early line breaking even one word short could cascade into
-// shrinking every line after it, so a small narrowing could suddenly
-// collapse the text across several lines at once instead of moving one
-// word, reported as exactly that against a real verse. Flat, shared-cap
-// filling essentially never produces that invariant violation for ordinary
-// (short, evenly-worded) text, but it isn't IMPOSSIBLE for a long sentence
-// with wildly irregular word lengths (a 29-word Turkish translation with
-// individual words from 2 to 15 characters, reported against a real
-// verse) -- see isValid/cascadingFill below, which only ever engages in
-// that rare case (or to satisfy the soft "at least minLines" floor),
-// leaving the common gradual path above untouched. An earlier version of
-// THIS fallback tried an even width-per-line division (totalWidth/L,
-// retrying at growing L) -- broken for exactly that long/irregular case:
-// dividing evenly ignores where the actual violation sits, so it could
-// keep re-violating at many different L values in a row, climbing all the
-// way to nearly one word per line before finally succeeding. Falling back
-// to the OLDER cascading-cap construction instead -- provably valid by
-// construction on a single pass, no search needed at all -- fixes this
-// unconditionally, and is safe to use ONLY here (not as the common path)
-// since this rare repair case isn't the one that needed to stay gradual
-// under box-narrowing. `firstLineExtraWidthPx` is only charged against the
-// FIRST line's budget -- the ayah-number prefix ("26. ") rendered inline
-// before a translation segment's first line. Shared by both
-// formatInvertedPyramid/formatArabicVerse branches below: the automatic
-// whole-text pyramid, and each individual chunk of a manually-broken one --
-// so a manual chunk still too wide for the current width/scale (e.g. after
-// the user later narrows the box) gets exactly the same overflow
-// protection the fully-automatic path already had, instead of silently
-// running past the edge of the box.
-function buildPyramidLines(
-  tokens: string[],
-  widths: number[],
-  spaceWidth: number,
-  maxLineWidthPx: number,
-  firstLineExtraWidthPx: number,
-  minLines: number
-): string[] {
-  if (tokens.length === 0) return [""];
-  const n = tokens.length;
-
-  function flatFill(cap: number): string[][] {
-    const lines: string[][] = [];
-    let idx = 0;
-    let isFirst = true;
-    while (idx < n) {
-      const extra = isFirst ? firstLineExtraWidthPx : 0;
-      const lineCap = Math.max(0, cap - extra);
-      let count = 1;
-      let w = widths[idx];
-      while (idx + count < n) {
-        const nextWidth = w + spaceWidth + widths[idx + count];
-        if (nextWidth > lineCap) break;
-        w = nextWidth;
-        count++;
-      }
-      lines.push(tokens.slice(idx, idx + count));
-      idx += count;
-      isFirst = false;
-    }
-    return lines;
-  }
-
-  // Identical words always measure identically (same font, same string),
-  // so this is a safe way to recover a candidate split's own line widths
-  // without threading original token indices through flatFill's output.
-  const widthByToken = new Map<string, number>();
-  tokens.forEach((t, i) => { if (!widthByToken.has(t)) widthByToken.set(t, widths[i]); });
-  function lineWidth(line: string[], isFirst: boolean): number {
-    if (line.length === 0) return 0;
-    let w = widthByToken.get(line[0]) ?? 0;
-    for (let i = 1; i < line.length; i++) w += spaceWidth + (widthByToken.get(line[i]) ?? 0);
-    return w + (isFirst ? firstLineExtraWidthPx : 0);
-  }
-  function isValid(candidate: string[][]): boolean {
-    let prevWidth = Infinity;
-    for (let i = 0; i < candidate.length; i++) {
-      const w = lineWidth(candidate[i], i === 0);
-      if (w > maxLineWidthPx || w > prevWidth) return false;
-      prevWidth = w;
-    }
-    return true;
-  }
-
-  // Guaranteed valid on a single pass, by construction: every line after
-  // the first is capped at min(maxLineWidthPx, the line right before it's
-  // OWN actual width), so no later line can ever end up wider than an
-  // earlier one -- no search, no retry, unlike flatFill above. Only used
-  // as the repair fallback below (see this function's own top comment for
-  // why it's not the common path).
-  function cascadingFill(firstLineCap: number): string[][] {
-    const lines: string[][] = [];
-    let idx = 0;
-    let prevWidth = firstLineCap;
-    let isFirst = true;
-    while (idx < n) {
-      const extra = isFirst ? firstLineExtraWidthPx : 0;
-      const cap = Math.max(0, (isFirst ? firstLineCap : Math.min(maxLineWidthPx, prevWidth)) - extra);
-      let count = 1;
-      let w = widths[idx];
-      while (idx + count < n) {
-        const nextWidth = w + spaceWidth + widths[idx + count];
-        if (nextWidth > cap) break;
-        w = nextWidth;
-        count++;
-      }
-      lines.push(tokens.slice(idx, idx + count));
-      prevWidth = w + extra;
-      idx += count;
-      isFirst = false;
-    }
-    return lines;
-  }
-
-  let lines = flatFill(maxLineWidthPx);
-  const target = Math.min(Math.max(minLines, 1), n);
-
-  // Only reached for the rare flat-fill invariant violation described
-  // above, or to satisfy the soft "at least minLines" pyramid floor (short
-  // text that would otherwise sit on a single line).
-  if (lines.length < target || !isValid(lines)) {
-    let candidate = cascadingFill(maxLineWidthPx);
-    if (candidate.length < target) {
-      // Same "shrink the first line's own share to nudge more lines out"
-      // idea as before, just feeding cascadingFill instead of flatFill --
-      // every attempt here is unconditionally valid already, so this loop
-      // only needs to pick the one that reaches enough lines, no isValid
-      // re-check needed.
-      const totalWidthPx = widths.reduce((a, b) => a + b, 0) + spaceWidth * Math.max(0, n - 1) + firstLineExtraWidthPx;
-      for (let L = 2; L <= target; L++) {
-        candidate = cascadingFill(totalWidthPx / L);
-        if (candidate.length >= target) break;
-      }
-    }
-    lines = candidate;
-  }
-
-  return lines.map((line) => line.join(" "));
 }
 
 function formatInvertedPyramid(
@@ -794,6 +644,9 @@ function VerseScene({
   // once the font finishes loading.
   const arabicReady = isFontUsable(arabicFontCss);
   const translationReady = isFontUsable(translationFontCss);
+  // An Arabic tafsir goes without it: the user found the number beside it
+  // out of place there.
+  const translationNumberPrefix = showNumber && !translationRtl ? verseNumberPrefix(verseId) : "";
   const [, forceFontRecheck] = useState(0);
   useEffect(() => {
     if (arabicReady && translationReady) return;
@@ -866,8 +719,8 @@ function VerseScene({
           >
             {translationReady ? (
               <>
-                {showNumber && verseNumberPrefix(verseId, translationRtl)}
-                {formatInvertedPyramid(translation, true, showNumber ? verseNumberPrefix(verseId, translationRtl) : "", translationWidthScale, translationFontCss, contentWidthPx)}
+                {translationNumberPrefix}
+                {formatInvertedPyramid(translation, true, translationNumberPrefix, translationWidthScale, translationFontCss, contentWidthPx)}
               </>
             ) : null}
           </div>
@@ -943,8 +796,8 @@ function VerseScene({
             >
               {translationReady ? (
                 <>
-                  {showNumber && verseNumberPrefix(verseId, translationRtl)}
-                  {formatInvertedPyramid(translation, true, showNumber ? verseNumberPrefix(verseId, translationRtl) : "", translationWidthScale, translationFontCss, contentWidthPx)}
+                  {translationNumberPrefix}
+                  {formatInvertedPyramid(translation, true, translationNumberPrefix, translationWidthScale, translationFontCss, contentWidthPx)}
                 </>
               ) : null}
             </div>
