@@ -99,6 +99,19 @@ export interface Surah {
 
 export type RenderState = "idle" | "rendering" | "done" | "error";
 
+// Polled from GET /api/video/render while the download button waits.
+export type RenderProgress = { stage: "preparing" | "rendering" | "saving"; progress: number; etaMs: number | null };
+
+type RealRenderRecord = {
+  signature: string;
+  renderId: string;
+  background: boolean;
+  inFlight: boolean;
+  videoUrl: string | null;
+};
+
+class RenderCancelledError extends Error {}
+
 interface ApiAyah {
   ayah_number: number;
   text_arabic: string;
@@ -238,7 +251,7 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("portrait");
   // Export resolution tier only -- never affects the live preview, which
   // always renders at the composition's own fixed canvas size (see
-  // render/route.ts's `scale` option and QUALITY_SCALE in remotion/types.ts).
+  // render/route.ts's `scale` option and qualityScale in remotion/types.ts).
   const [quality, setQuality] = useState<QualityTier>("720p");
   const [translationFont, setTranslationFont] = useState<TranslationFontKey | "custom">("aileron");
   // A translation language whose letters the current font can't render (a
@@ -447,6 +460,11 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
   // most one is ever actually running for this project at a time -- a
   // second one simply waits its turn.
   const realRenderChainRef = useRef<Promise<void>>(Promise.resolve());
+  // The latest real render, manual or background -- see runRealRender.
+  const lastRealRenderRef = useRef<RealRenderRecord | null>(null);
+  // Uploaded Files by identity, for renderSignature.
+  const renderFileIdsRef = useRef({ ids: new WeakMap<File, number>(), next: 1 });
+  const [renderProgress, setRenderProgress] = useState<RenderProgress | null>(null);
   // Set for the whole duration of resuming a draft so the prepared-audio/
   // segmentation invalidation effect below (which reacts to surah/verse/
   // reciter/custom-audio changes) doesn't immediately wipe the very state
@@ -1188,6 +1206,73 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     return run;
   };
 
+  // What a real render's video depends on: every form field (an uploaded
+  // File by identity -- the same File object is the same upload) plus the
+  // segmentation it applies. draftId/renderId don't change the video.
+  const renderSignature = (formData: FormData, segmentationData: any[] | null) => {
+    const parts: string[] = [];
+    formData.forEach((value, key) => {
+      if (key === "draftId" || key === "renderId") return;
+      if (typeof value === "string") {
+        parts.push(`${key}=${value}`);
+        return;
+      }
+      const fileIds = renderFileIdsRef.current;
+      let id = fileIds.ids.get(value);
+      if (id === undefined) {
+        id = fileIds.next++;
+        fileIds.ids.set(value, id);
+      }
+      parts.push(`${key}=file#${id}`);
+    });
+    parts.push(`segmentation=${JSON.stringify(segmentationData ?? [])}`);
+    return parts.join("\n");
+  };
+
+  const lastRenderMatches = (signature: string) => {
+    const last = lastRealRenderRef.current;
+    return Boolean(last && !last.inFlight && last.videoUrl && last.signature === signature);
+  };
+
+  // The finished video of the last real render, when it was rendered from
+  // exactly these settings and its file is still there (render/route.ts
+  // prunes old ones) -- so a download right after the background auto-save
+  // rendered the same thing reuses it instead of rendering it all again.
+  const reusableRenderUrl = async (signature: string): Promise<string | null> => {
+    const videoUrl = lastRealRenderRef.current?.videoUrl;
+    if (!videoUrl || !lastRenderMatches(signature)) return null;
+    const res = await fetch(videoUrl, { headers: { Range: "bytes=0-0" } }).catch(() => null);
+    await res?.body?.cancel().catch(() => undefined);
+    return res?.ok ? videoUrl : null;
+  };
+
+  // POSTs one real render, tracked in lastRealRenderRef while it runs (the
+  // download button polls its progress; a newer download cancels it if it's
+  // a background one of older settings). Resolves to its video URL.
+  const runRealRender = async (formData: FormData, signature: string, background: boolean): Promise<string> => {
+    // crypto.randomUUID only exists in secure contexts, and the app is also
+    // opened over plain-http LAN addresses.
+    const renderId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+    formData.append("renderId", renderId);
+    const record: RealRenderRecord = { signature, renderId, background, inFlight: true, videoUrl: null };
+    lastRealRenderRef.current = record;
+    try {
+      const response = await fetch("/api/video/render", { method: "POST", body: formData });
+      const data = await response.json();
+      if (data.cancelled) throw new RenderCancelledError();
+      if (!response.ok || !data.videoUrl) {
+        throw new Error(data.error || "Video render failed");
+      }
+      record.videoUrl = data.videoUrl;
+      return data.videoUrl;
+    } catch (err) {
+      if (lastRealRenderRef.current === record) lastRealRenderRef.current = null;
+      throw err;
+    } finally {
+      record.inFlight = false;
+    }
+  };
+
   const executeVideoRender = async (segmentationData: any[] | null = null) => {
     try {
       await applyPendingSegmentation(segmentationData);
@@ -1200,19 +1285,10 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
       const currentDraftId = await autosaveDraft();
 
       const formData = buildRenderFormData(undefined, currentDraftId);
-      console.log("[UI] Sending payload:", Object.fromEntries(formData.entries()));
+      const signature = renderSignature(formData, segmentationData);
+      const renderedUrl = (await reusableRenderUrl(signature)) ?? (await runRealRender(formData, signature, false));
 
-      const response = await fetch("/api/video/render", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await response.json();
-
-      if (!response.ok || !data.videoUrl) {
-        throw new Error(data.error || "Video render failed");
-      }
-
-      const finalVideoUrl = `${data.videoUrl}?t=${Date.now()}`;
+      const finalVideoUrl = `${renderedUrl}?t=${Date.now()}`;
       setVideoUrl(finalVideoUrl);
       setRenderState("done");
 
@@ -1279,29 +1355,33 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
           // file; preview reloads no longer refresh it on every timing edit
           // (they re-time client-side), so this render brings it up to date
           // itself, like executeVideoRender does.
-          if (pendingSegmentationData.length > 0) {
+          const segmentationData = pendingSegmentationData.length > 0 ? pendingSegmentationData : null;
+          if (segmentationData) {
             await fetch("/api/segmentation/apply", {
               method: "POST",
-              body: JSON.stringify(pendingSegmentationData),
+              body: JSON.stringify(segmentationData),
               headers: { "Content-Type": "application/json" },
             });
           }
           const formData = buildRenderFormData(undefined, currentDraftId);
-          const response = await fetch("/api/video/render", {
-            method: "POST",
-            body: formData,
-          });
-          const data = await response.json();
-          if (!response.ok || !data.videoUrl) {
-            throw new Error(data.error || "Background render failed");
-          }
+          const signature = renderSignature(formData, segmentationData);
+          // A download of exactly these settings already rendered -- and
+          // saved to the gallery -- this video.
+          if (lastRenderMatches(signature)) return;
+          await runRealRender(formData, signature, true);
         });
       } while (backgroundRenderStaleRef.current);
 
       setBackgroundSaveStatus("saved");
     } catch (error) {
-      console.error("[Auto-save] Background gallery render failed:", error);
-      setBackgroundSaveStatus("error");
+      if (error instanceof RenderCancelledError) {
+        // Cancelled by a download of newer settings, which saves to the
+        // gallery itself.
+        setBackgroundSaveStatus("idle");
+      } else {
+        console.error("[Auto-save] Background gallery render failed:", error);
+        setBackgroundSaveStatus("error");
+      }
     } finally {
       backgroundRenderInFlightRef.current = false;
     }
@@ -2692,6 +2772,27 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     setRenderError("");
     setVideoUrl(null);
     setSegmentationProgress(null);
+    setRenderProgress(null);
+
+    const segmentationData = pendingSegmentationData.length > 0 ? pendingSegmentationData : null;
+    // A background auto-save still rendering OLDER settings would make this
+    // download wait out a whole render nobody needs anymore -- cancel it.
+    // One of these exact settings is left running: its video is reused.
+    const running = lastRealRenderRef.current;
+    if (running?.inFlight && running.background && running.signature !== renderSignature(buildRenderFormData(), segmentationData)) {
+      fetch(`/api/video/render?id=${encodeURIComponent(running.renderId)}`, { method: "DELETE" }).catch(() => undefined);
+    }
+
+    // Follows whichever real render is running -- the background one this
+    // download waits on, then its own.
+    const progressTimer = setInterval(async () => {
+      const current = lastRealRenderRef.current;
+      if (!current?.inFlight) return;
+      const res = await fetch(`/api/video/render?id=${encodeURIComponent(current.renderId)}`).catch(() => null);
+      if (!res?.ok || lastRealRenderRef.current !== current) return;
+      const data = await res.json().catch(() => null);
+      if (data && typeof data.progress === "number") setRenderProgress(data);
+    }, 1000);
 
     try {
       // Queued behind any background auto-save render already in flight for
@@ -2699,13 +2800,14 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
       // renderState is already "rendering" from the moment of the click
       // above regardless of how long that wait turns out to be, so the
       // button's own spinner/disabled state is accurate either way.
-      await runSerializedRender(() =>
-        executeVideoRender(pendingSegmentationData.length > 0 ? pendingSegmentationData : null)
-      );
+      await runSerializedRender(() => executeVideoRender(segmentationData));
     } catch (error) {
       setRenderError(error instanceof Error ? error.message : "تعذر إنشاء الفيديو");
       setRenderState("error");
       setSegmentationProgress(null);
+    } finally {
+      clearInterval(progressTimer);
+      setRenderProgress(null);
     }
   };
 
@@ -2959,6 +3061,7 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
                 isLoadingPreview={isLoadingPreview}
                 previewError={previewError}
                 suggestedTitle={suggestedTitle}
+                renderProgress={renderProgress}
                 backgroundSaveStatus={backgroundSaveStatus}
                 isLoggedIn={isLoggedIn}
                 aspectRatio={aspectRatio}

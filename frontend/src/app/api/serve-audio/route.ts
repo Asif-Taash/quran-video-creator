@@ -1,6 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
+import fs from "fs/promises";
 import path from "path";
+import { fileResponse } from "@/lib/fileResponse";
+
+const PUBLIC_DIR = path.join(process.cwd(), "public");
+
+const CONTENT_TYPES: Record<string, string> = {
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".mp4": "video/mp4",
+  ".ttf": "font/ttf",
+  ".otf": "font/otf",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+};
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -10,68 +28,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 });
   }
 
-  // Ensure it only reads from public directory
-  const safeFile = file.replace(/\.\./g, "");
-  const absolutePath = path.join(process.cwd(), "public", safeFile);
+  // Only ever serves from inside public/.
+  const absolutePath = path.resolve(PUBLIC_DIR, file.replace(/^[/\\]+/, ""));
+  if (!absolutePath.startsWith(PUBLIC_DIR + path.sep)) {
+    return NextResponse.json({ error: "File not found" }, { status: 404 });
+  }
 
   try {
-    if (!fs.existsSync(absolutePath)) {
+    const stat = await fs.stat(absolutePath).catch(() => null);
+    if (!stat?.isFile()) {
       return NextResponse.json({ error: "File not found" }, { status: 404 });
     }
 
-    const stat = fs.statSync(absolutePath);
-    const total = stat.size;
-
-    const ext = path.extname(absolutePath).toLowerCase();
-    let contentType = "application/octet-stream";
-    if (ext === ".mp3") contentType = "audio/mpeg";
-    else if (ext === ".wav") contentType = "audio/wav";
-    else if (ext === ".png") contentType = "image/png";
-    else if (ext === ".jpg" || ext === ".jpeg") contentType = "image/jpeg";
-    else if (ext === ".webp") contentType = "image/webp";
-    else if (ext === ".mp4") contentType = "video/mp4";
-    else if (ext === ".ttf") contentType = "font/ttf";
-    else if (ext === ".otf") contentType = "font/otf";
-    else if (ext === ".woff") contentType = "font/woff";
-    else if (ext === ".woff2") contentType = "font/woff2";
-
-    const range = request.headers.get("range");
-
-    if (range) {
-      const parts = range.replace(/bytes=/, "").split("-");
-      const partialstart = parts[0];
-      const partialend = parts[1];
-
-      const start = parseInt(partialstart, 10);
-      const end = partialend ? parseInt(partialend, 10) : total - 1;
-      const chunksize = end - start + 1;
-
-      // Small files can be read into memory and sliced
-      const buffer = fs.readFileSync(absolutePath);
-      const chunk = buffer.subarray(start, end + 1);
-
-      return new NextResponse(chunk, {
-        status: 206,
-        headers: {
-          "Content-Range": `bytes ${start}-${end}/${total}`,
-          "Accept-Ranges": "bytes",
-          "Content-Length": chunksize.toString(),
-          "Content-Type": contentType,
-          "Cache-Control": "no-store, max-age=0",
-        },
-      });
-    } else {
-      const buffer = fs.readFileSync(absolutePath);
-      return new NextResponse(buffer, {
-        status: 200,
-        headers: {
-          "Content-Length": total.toString(),
-          "Accept-Ranges": "bytes",
-          "Content-Type": contentType,
-          "Cache-Control": "no-store, max-age=0",
-        },
-      });
-    }
+    const contentType = CONTENT_TYPES[path.extname(absolutePath).toLowerCase()] ?? "application/octet-stream";
+    return fileResponse(absolutePath, stat.size, contentType, request.headers.get("range"));
   } catch (error) {
     console.error("Error serving audio:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

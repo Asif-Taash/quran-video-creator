@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
 import { exec, execFile } from "child_process";
@@ -21,9 +22,10 @@ import {
   DEFAULT_BACKGROUND_DIM,
   DEFAULT_WORD_HIGHLIGHT_COLOR,
   QUALITY_BITRATE,
-  QUALITY_SCALE,
+  QUALITY_SHORT_SIDE,
   QUALITY_TIMEOUT_MULTIPLIER,
   TRANSLATION_FONT_OPTIONS,
+  qualityScale,
   type ArabicFontKey,
   type AspectRatio,
   type QualityTier,
@@ -97,11 +99,6 @@ function removeTashkeel(text: string): string {
   return text.replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u08D4-\u08FF]/g, "");
 }
 
-function safeUploadName(name: string, defaultExtension = ".jpg") {
-  const extension = path.extname(name).toLowerCase() || defaultExtension;
-  return `bg-${Date.now()}-${Math.random().toString(36).slice(2)}${extension}`;
-}
-
 async function fileExists(filePath: string) {
   try {
     await fs.access(filePath);
@@ -110,6 +107,55 @@ async function fileExists(filePath: string) {
     return false;
   }
 }
+
+// Saves an uploaded file under a name derived from its content, so the
+// same background/audio/font re-sent with every render (the client always
+// re-uploads for a real render) is stored once instead of as a fresh
+// timestamped copy each time -- that piled up 170 copies (158 MB) of a
+// handful of backgrounds. `prepare` runs once, on a new file only, against a
+// private temp path that is renamed into place afterward, so two requests
+// carrying the same file can't trip over each other's half-written copy.
+// Throwing from `prepare` (e.g. not a valid image) discards the upload.
+async function saveUploadOnce(
+  file: File,
+  subdir: string,
+  prefix: string,
+  defaultExtension: string,
+  prepare?: (tempPath: string) => Promise<void>
+): Promise<{ filename: string; absolutePath: string }> {
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const hash = crypto.createHash("sha256").update(buffer).digest("hex").slice(0, 32);
+  // The extension comes from the client's own filename -- only a short
+  // alphanumeric one is kept (see the execFile note on ffprobe below).
+  const rawExtension = path.extname(file.name).toLowerCase();
+  const extension = /^\.[a-z0-9]{1,5}$/.test(rawExtension) ? rawExtension : defaultExtension;
+  const filename = `${prefix}-${hash}${extension}`;
+  const uploadsDir = path.join(process.cwd(), "public", "render-assets", subdir);
+  const absolutePath = path.join(uploadsDir, filename);
+
+  if (!(await fileExists(absolutePath))) {
+    await fs.mkdir(uploadsDir, { recursive: true });
+    const tempPath = path.join(uploadsDir, `${prefix}-${hash}-${crypto.randomUUID()}.upload${extension}`);
+    await fs.writeFile(tempPath, buffer);
+    try {
+      await prepare?.(tempPath);
+      await fs.rename(tempPath, absolutePath);
+    } catch (err) {
+      await fs.unlink(tempPath).catch(() => undefined);
+      throw err;
+    }
+  }
+  return { filename, absolutePath };
+}
+
+const IMAGE_MAGIC_BYTES = [
+  [0xff, 0xd8, 0xff],              // JPEG
+  [0x89, 0x50, 0x4e, 0x47],         // PNG
+  [0x47, 0x49, 0x46],               // GIF
+  [0x52, 0x49, 0x46, 0x46],         // WEBP
+];
+
+class InvalidUploadError extends Error {}
 
 // A surah's Arabic/Turkish verse text never changes, but was being
 // re-fetched from the backend on every single request -- including every
@@ -271,13 +317,18 @@ async function getServeUrl() {
     return cachedServeUrl;
   }
 
+  // Assigned synchronously (no await before it), so concurrent callers --
+  // a preview's warm-up and a render -- share one build.
   if (!bundlePromise) {
     const buildStartedAt = Date.now();
-    const { bundle } = await import("@remotion/bundler");
-    bundlePromise = bundle({
+    bundlePromise = import("@remotion/bundler").then(({ bundle }) => bundle({
       entryPoint: path.join(process.cwd(), "src", "remotion", "index.ts"),
       publicDir: path.join(process.cwd(), "public"),
-    }).then((url) => {
+      // Linked, not copied: public/ also holds every user upload, draft and
+      // gallery video, and each copy (~0.5 GB and growing) was left behind
+      // in /tmp on every rebundle.
+      symlinkPublicDir: true,
+    })).then((url) => {
       // Recorded as the moment bundling STARTED, not finished -- an edit
       // landing while bundle() was still running must still count as
       // "changed since", even though this exact run might already have
@@ -318,11 +369,12 @@ let cachedBrowserPromise: ReturnType<
 > | null = null;
 
 async function getBrowserInstance() {
+  // Assigned synchronously, like bundlePromise, so concurrent callers can't
+  // each launch a browser.
   if (!cachedBrowserPromise) {
-    const { openBrowser } = await import("@remotion/renderer");
-    cachedBrowserPromise = openBrowser("chrome", {
+    cachedBrowserPromise = import("@remotion/renderer").then(({ openBrowser }) => openBrowser("chrome", {
       chromiumOptions: RENDER_CHROMIUM_OPTIONS,
-    }).catch((err) => {
+    })).catch((err) => {
       // The LAUNCH itself failed -- don't cache a rejected promise forever,
       // the next render should get a genuine fresh attempt instead of
       // reusing this same failure indefinitely.
@@ -341,13 +393,16 @@ async function getBrowserInstance() {
 // launched one, so a single dead browser can't turn into a hard failure for
 // whichever render happens to hit it first.
 async function renderMediaWithPersistentBrowser(
-  options: Omit<Parameters<typeof import("@remotion/renderer")["renderMedia"]>[0], "puppeteerInstance">
+  options: Omit<Parameters<typeof import("@remotion/renderer")["renderMedia"]>[0], "puppeteerInstance">,
+  isCancelled: () => boolean
 ) {
   const { renderMedia } = await import("@remotion/renderer");
   try {
     const browser = await getBrowserInstance();
     return await renderMedia({ ...options, puppeteerInstance: browser });
   } catch (err) {
+    // A cancelled render rejects too -- that's not a dead browser.
+    if (isCancelled()) throw err;
     console.error(
       "[Video Render] renderMedia failed on the cached browser instance -- discarding it and retrying once with a fresh one:",
       err
@@ -358,12 +413,96 @@ async function renderMediaWithPersistentBrowser(
   }
 }
 
+// Real (non-preview) renders in flight, keyed by the renderId the client
+// sends: GET reports one's progress (the download button shows it) and
+// DELETE cancels one -- VideoCreatorForm cancels a background auto-save
+// render of OLDER settings the moment the user asks for a download, instead
+// of making them wait out a whole render nobody needs anymore. Kept on
+// globalThis so a dev-mode recompile of this module mid-render can't orphan
+// a job. A DELETE can beat its own POST here (the upload still in transit),
+// hence cancelledEarly.
+type RenderJob = {
+  stage: "preparing" | "rendering" | "saving";
+  progress: number;
+  etaMs: number | null;
+  cancelled: boolean;
+  cancel: () => void;
+};
+const renderRegistry = ((globalThis as { __quranRenderRegistry?: unknown }).__quranRenderRegistry ??= {
+  jobs: new Map<string, RenderJob>(),
+  cancelledEarly: new Set<string>(),
+}) as { jobs: Map<string, RenderJob>; cancelledEarly: Set<string> };
+
+const RENDER_ID_PATTERN = /^[A-Za-z0-9-]{8,64}$/;
+
+class RenderCancelledError extends Error {}
+
+function cancelledResponse() {
+  return NextResponse.json({ error: "Render cancelled", cancelled: true }, { status: 409 });
+}
+
+export async function GET(req: Request) {
+  const id = new URL(req.url).searchParams.get("id") ?? "";
+  const job = renderRegistry.jobs.get(id);
+  if (!job) {
+    return NextResponse.json({ error: "Unknown render" }, { status: 404 });
+  }
+  return NextResponse.json({ stage: job.stage, progress: job.progress, etaMs: job.etaMs });
+}
+
+export async function DELETE(req: Request) {
+  const id = new URL(req.url).searchParams.get("id") ?? "";
+  if (!RENDER_ID_PATTERN.test(id)) {
+    return NextResponse.json({ error: "Invalid render id" }, { status: 400 });
+  }
+  const job = renderRegistry.jobs.get(id);
+  if (job) {
+    job.cancelled = true;
+    job.cancel();
+  } else {
+    renderRegistry.cancelledEarly.add(id);
+    setTimeout(() => renderRegistry.cancelledEarly.delete(id), 5 * 60_000);
+  }
+  return NextResponse.json({ success: true });
+}
+
+// Every real render now writes its own file (named by its renderId), so two
+// renders of the same ayah range -- two users, or a background auto-save
+// and a download -- can no longer overwrite each other's video mid-download.
+// public/renders is a 512 MB tmpfs (docker-compose.yml), so before each
+// render only the few newest finished files are kept, and nothing older than
+// an hour; the gallery keeps its own persistent copy anyway.
+const KEEP_RECENT_RENDERS = 3;
+const RENDER_FILE_TTL_MS = 60 * 60_000;
+
+async function pruneOldRenders() {
+  const entries = await fs.readdir(RENDERS_DIR, { withFileTypes: true }).catch(() => []);
+  const files = await Promise.all(
+    entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".mp4"))
+      .map(async (entry) => {
+        const filePath = path.join(RENDERS_DIR, entry.name);
+        const stat = await fs.stat(filePath).catch(() => null);
+        return { filePath, mtimeMs: stat?.mtimeMs ?? 0 };
+      })
+  );
+  files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const cutoff = Date.now() - RENDER_FILE_TTL_MS;
+  await Promise.all(
+    files
+      .filter((file, index) => index >= KEEP_RECENT_RENDERS || file.mtimeMs < cutoff)
+      .map((file) => fs.unlink(file.filePath).catch(() => undefined))
+  );
+}
+
 export async function POST(req: Request) {
   // Array to keep track of files to delete after rendering
   const tempFilesToCleanup: string[] = [];
   // Declared here (not inside the try block) so the "finally" cleanup guard
   // below can see it too.
   let mode: string | null = null;
+  // Set for a real render only -- see renderRegistry.
+  let renderJobId: string | null = null;
   // A logged-out request still renders and downloads normally -- it's only
   // used below to decide whether this render also gets persisted to the
   // (per-user, login-gated) gallery.
@@ -377,8 +516,7 @@ export async function POST(req: Request) {
       const tempFilePath = path.join(process.cwd(), "src", "data", "temp_segmentation.json");
       const fileContent = await fs.readFile(tempFilePath, "utf8");
       segmentationData = JSON.parse(fileContent);
-      console.log(`[Video Render] Temp file exists: true`);
-      console.log(`[Video Render] Temp file content: ${JSON.stringify(segmentationData, null, 2)}`);
+      console.log(`[Video Render] Segmentation loaded for ${segmentationData.length} ayah(s)`);
     } catch {
       console.log(`[Video Render] Temp file exists: false`);
     }
@@ -439,7 +577,7 @@ export async function POST(req: Request) {
     // before this feature existed.
     const requestedQuality = formData.get("quality") as string | null;
     const quality: QualityTier =
-      requestedQuality && requestedQuality in QUALITY_SCALE
+      requestedQuality && requestedQuality in QUALITY_SHORT_SIDE
         ? (requestedQuality as QualityTier)
         : "720p";
     const requestedTranslationFont = formData.get("translationFont") as string | null;
@@ -462,6 +600,28 @@ export async function POST(req: Request) {
     // function's data-assembly logic so preview and final render can never
     // drift apart.
     mode = formData.get("mode") as string | null;
+
+    let renderJob: RenderJob | null = null;
+    let cancelSignal: import("@remotion/renderer").CancelSignal | undefined;
+    if (mode !== "preview") {
+      const requestedRenderId = formData.get("renderId");
+      renderJobId =
+        typeof requestedRenderId === "string" && RENDER_ID_PATTERN.test(requestedRenderId)
+          ? requestedRenderId
+          : crypto.randomUUID();
+      if (renderRegistry.cancelledEarly.delete(renderJobId)) {
+        renderJobId = null;
+        return cancelledResponse();
+      }
+      const { makeCancelSignal } = await import("@remotion/renderer");
+      const signal = makeCancelSignal();
+      cancelSignal = signal.cancelSignal;
+      renderJob = { stage: "preparing", progress: 0, etaMs: null, cancelled: false, cancel: signal.cancel };
+      renderRegistry.jobs.set(renderJobId, renderJob);
+    }
+    const throwIfCancelled = () => {
+      if (renderJob?.cancelled) throw new RenderCancelledError();
+    };
 
     if (!getReciter(reciterId)) {
       return NextResponse.json({ error: "Unsupported reciter" }, { status: 400 });
@@ -551,33 +711,22 @@ export async function POST(req: Request) {
     const bgImage = formData.get("bgImage") as File | null;
     // Set by the client instead of re-sending the same File when a preview
     // reload was triggered by something unrelated (translation/timing edit)
-    // -- avoids rewriting an identical file to disk under a new timestamped
-    // name on every single reload. Only meaningful when no fresh `bgImage`
-    // file is present.
+    // -- skips re-sending an identical file on every single reload. Only
+    // meaningful when no fresh `bgImage` file is present.
     const existingBackgroundImagePath = formData.get("existingBackgroundImagePath") as string | null;
     let backgroundImagePath: string | null = null;
 
     if (bgImage && bgImage.size > 0) {
-      const buffer = Buffer.from(await bgImage.arrayBuffer());
-      const uploadsDir = path.join(process.cwd(), "public", "render-assets", "backgrounds");
-      await fs.mkdir(uploadsDir, { recursive: true });
-
-      const filename = safeUploadName(bgImage.name);
-      const absolutePath = path.join(uploadsDir, filename);
-      await fs.writeFile(absolutePath, buffer);
-
-      const validHeaders = [
-        [0xff, 0xd8, 0xff],              // JPEG
-        [0x89, 0x50, 0x4e, 0x47],         // PNG
-        [0x47, 0x49, 0x46],               // GIF
-        [0x52, 0x49, 0x46, 0x46],         // WEBP
-      ];
-      const fileBuffer = await fs.readFile(absolutePath);
-      const isValid = validHeaders.some((header) =>
-        header.every((byte, i) => fileBuffer[i] === byte)
-      );
-      if (!isValid) {
-        await fs.unlink(absolutePath);
+      let filename: string;
+      try {
+        ({ filename } = await saveUploadOnce(bgImage, "backgrounds", "bg", ".jpg", async (tempPath) => {
+          const fileBuffer = await fs.readFile(tempPath);
+          if (!IMAGE_MAGIC_BYTES.some((header) => header.every((byte, i) => fileBuffer[i] === byte))) {
+            throw new InvalidUploadError("not an image");
+          }
+        }));
+      } catch (err) {
+        if (!(err instanceof InvalidUploadError)) throw err;
         return NextResponse.json({ error: "Uploaded file is not a valid image (JPEG, PNG, GIF, or WebP)" }, { status: 400 });
       }
 
@@ -597,37 +746,29 @@ export async function POST(req: Request) {
     let backgroundVideoDurationInFrames: number | null = null;
 
     if (bgVideo && bgVideo.size > 0) {
-      const buffer = Buffer.from(await bgVideo.arrayBuffer());
-      const uploadsDir = path.join(process.cwd(), "public", "render-assets", "backgrounds");
-      await fs.mkdir(uploadsDir, { recursive: true });
-
-      const filename = safeUploadName(bgVideo.name, ".mp4");
-      const absolutePath = path.join(uploadsDir, filename);
-      await fs.writeFile(absolutePath, buffer);
-
+      let filename: string;
       try {
         // Background videos are always silent (see lib/silentVideo.ts) --
         // also fails here for a file ffmpeg can't read, i.e. not a video.
-        await stripAudioInPlace(absolutePath);
-        // execFile (argument array), NOT execAsync's shell string -- unlike
-        // every other path/filename interpolated into a shell command
-        // elsewhere in this file, `filename` here is built from the
-        // uploaded file's OWN extension (safeUploadName -> path.extname on
-        // attacker-controlled bgVideo.name), so it must never be pasted into
-        // a string a shell re-parses.
+        const saved = await saveUploadOnce(bgVideo, "backgrounds", "bg", ".mp4", stripAudioInPlace);
+        filename = saved.filename;
+        // execFile (argument array), NOT execAsync's shell string -- the
+        // path's extension comes from the uploaded file's own name (see
+        // saveUploadOnce), so it must never be pasted into a string a shell
+        // re-parses.
         const { stdout } = await execFileAsync("ffprobe", [
           "-v", "error",
           "-show_entries", "format=duration",
           "-of", "default=noprint_wrappers=1:nokey=1",
-          absolutePath,
+          saved.absolutePath,
         ]);
         const durationSeconds = parseFloat(stdout.trim());
         if (!durationSeconds || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+          await fs.unlink(saved.absolutePath).catch(() => undefined);
           throw new Error("ffprobe returned no usable duration");
         }
         backgroundVideoDurationInFrames = Math.round(durationSeconds * FPS);
       } catch (err) {
-        await fs.unlink(absolutePath).catch(() => undefined);
         console.error("Failed to probe uploaded background video:", err);
         return NextResponse.json({ error: "Uploaded file is not a valid video" }, { status: 400 });
       }
@@ -655,11 +796,7 @@ export async function POST(req: Request) {
     let customTranslationFontUrl: string | null = null;
 
     if (customTranslationFont && customTranslationFont.size > 0) {
-      const uploadsDir = path.join(process.cwd(), "public", "render-assets", "fonts");
-      await fs.mkdir(uploadsDir, { recursive: true });
-      const filename = safeUploadName(customTranslationFont.name, ".ttf").replace(/^bg-/, "font-");
-      const absolutePath = path.join(uploadsDir, filename);
-      await fs.writeFile(absolutePath, Buffer.from(await customTranslationFont.arrayBuffer()));
+      const { filename } = await saveUploadOnce(customTranslationFont, "fonts", "font", ".ttf");
       customTranslationFontUrl = `/api/serve-audio?file=render-assets/fonts/${filename}`;
     } else if (existingCustomTranslationFontUrl) {
       customTranslationFontUrl = existingCustomTranslationFontUrl;
@@ -723,15 +860,7 @@ export async function POST(req: Request) {
     // end up firing and this file was actually needed as a fallback.
     const willUsePreparedAudioBranch = preparedAudioFileExists && !!preparedJsonStr;
     if (!willUsePreparedAudioBranch && customAudio && customAudio.size > 0) {
-      const buffer = Buffer.from(await customAudio.arrayBuffer());
-      const uploadsDir = path.join(process.cwd(), "public", "render-assets", "custom-audio");
-      await fs.mkdir(uploadsDir, { recursive: true });
-
-      const extension = path.extname(customAudio.name).toLowerCase() || ".mp3";
-      const filename = `custom-${Date.now()}-${Math.random().toString(36).slice(2)}${extension}`;
-      const absolutePath = path.join(uploadsDir, filename);
-      await fs.writeFile(absolutePath, buffer);
-
+      const { filename, absolutePath } = await saveUploadOnce(customAudio, "custom-audio", "custom", ".mp3");
       globalAudioPath = `/api/serve-audio?file=render-assets/custom-audio/${filename}`;
       globalAudioDurationInFrames = await estimateAudioDurationInFrames(absolutePath);
     }
@@ -958,18 +1087,6 @@ export async function POST(req: Request) {
       console.error("[Video Render] Error calling extraction API", e);
     }
 
-    // Fallback if API fails or custom audio used
-    if (!apiExtracted && !wordTimingsData) {
-      try {
-        const tsPath = path.join(process.cwd(), "src", "data", "timestamps", shortReciterKey, `${surahId}.json`);
-        const tsContent = await fs.readFile(tsPath, "utf8");
-        wordTimingsData = JSON.parse(tsContent);
-        console.log(`[Video Render] Loaded word timestamps for ${shortReciterKey} Surah ${surahId}`);
-      } catch {
-        console.log(`[Video Render] No word timestamps found for ${shortReciterKey} Surah ${surahId}`);
-      }
-    }
-
     // The per-ayah fallback below needs a per-ayah set for THIS reciter;
     // without one, fail clearly rather than render silence or another voice.
     if (!globalAudioPath && !getReciter(reciterId)?.everyAyahDir) {
@@ -1106,11 +1223,6 @@ export async function POST(req: Request) {
         }
 
         const matchingSegmentation = segmentationData.find((s) => s.surah === surahId && s.ayah === verse.id);
-        if (matchingSegmentation) {
-          console.log(`[Video Render] Match found for surah ${surahId} ayah ${verse.id}: true`);
-        } else {
-          console.log(`[Video Render] Match found for surah ${surahId} ayah ${verse.id}: false`);
-        }
 
         let wordTimings: any[] | undefined;
         if (firstAppearance) {
@@ -1171,8 +1283,6 @@ export async function POST(req: Request) {
           ...(puaWordMap ? { puaTokenCounts: puaWordMap.puaTokenCounts } : {}),
           ...(highlightWordMap ? { highlightGlyphCounts: highlightWordMap.puaTokenCounts } : {}),
         };
-
-        console.log(`[Video Render] Verse data: ${JSON.stringify(verseData, null, 2)}`);
 
         return verseData;
       })
@@ -1265,6 +1375,11 @@ export async function POST(req: Request) {
     };
 
     if (mode === "preview") {
+      // A download usually follows the preview, so have the Remotion bundle
+      // (a cold webpack build, ~10 s) and the headless browser ready by then.
+      if (!cachedServeUrl) void getServeUrl().catch(() => undefined);
+      if (!cachedBrowserPromise) void getBrowserInstance().catch(() => undefined);
+
       // `timing` tells the client these props were timed from its own
       // preparedJsonData cut at trimStartMs, so it can re-time them itself
       // (remotion/timing.ts) on every segmentation edit instead of waiting
@@ -1277,11 +1392,14 @@ export async function POST(req: Request) {
       });
     }
 
-    const filename = `${surahId}-${startVerse}-${endVerse}.mp4`;
+    const filename = `${surahId}-${startVerse}-${endVerse}-${renderJobId}.mp4`;
     const outputLocation = path.join(RENDERS_DIR, filename);
     await fs.mkdir(RENDERS_DIR, { recursive: true });
+    await pruneOldRenders();
 
+    throwIfCancelled();
     const serveUrl = await getServeUrl();
+    throwIfCancelled();
     const { width: videoWidth, height: videoHeight } = ASPECT_RATIO_DIMENSIONS[aspectRatio];
 
     const composition: VideoConfig = {
@@ -1311,7 +1429,7 @@ export async function POST(req: Request) {
       // width/height (and every hand-tuned px constant that reads them via
       // useVideoConfig() in QuranVideo.tsx) stay exactly as ASPECT_RATIO_
       // DIMENSIONS defines them, regardless of quality tier.
-      scale: QUALITY_SCALE[quality],
+      scale: qualityScale(quality, aspectRatio),
       timeoutInMilliseconds: 600000 * QUALITY_TIMEOUT_MULTIPLIER[quality],
       videoBitrate: QUALITY_BITRATE[quality],
       x264Preset: "ultrafast",
@@ -1323,11 +1441,23 @@ export async function POST(req: Request) {
       onBrowserLog: (log) => {
         console.log(`[Chromium ${log.type}]`, log.text);
       },
-    });
+      cancelSignal,
+      onProgress: ({ progress, renderEstimatedTime }) => {
+        if (!renderJob) return;
+        renderJob.stage = "rendering";
+        renderJob.progress = progress;
+        renderJob.etaMs = renderEstimatedTime > 0 ? renderEstimatedTime : null;
+      },
+    }, () => Boolean(renderJob?.cancelled));
+    throwIfCancelled();
+    if (renderJob) {
+      renderJob.stage = "saving";
+      renderJob.progress = 1;
+    }
 
     // Best-effort copy into the persistent gallery -- outputLocation itself
     // lives in the ephemeral public/renders tmpfs (wiped on container
-    // restart, overwritten by the next render of this same verse range), so
+    // restart, pruned by later renders -- see pruneOldRenders), so
     // this is what lets the user come back later and still find/download a
     // video they made before. Never let a failure here fail the render the
     // user is actively waiting on. Skipped entirely for a logged-out
@@ -1357,6 +1487,10 @@ export async function POST(req: Request) {
       videoUrl: `/api/video/download/${filename}`,
     });
   } catch (error) {
+    if (error instanceof RenderCancelledError || (renderJobId && renderRegistry.jobs.get(renderJobId)?.cancelled)) {
+      console.log(`[Video Render] Render ${renderJobId} cancelled`);
+      return cancelledResponse();
+    }
     console.error("Video render API error:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to create video" },
@@ -1367,6 +1501,8 @@ export async function POST(req: Request) {
     // getServeUrl's own comment for why blindly wiping it on every request
     // used to defeat the whole point of caching it; staleness is now
     // detected on its own via remotionSourceChangedSince instead.
+
+    if (renderJobId) renderRegistry.jobs.delete(renderJobId);
 
     // Cleanup temporary files -- SKIPPED for a preview request, since its
     // response (containing URLs pointing at these exact files) is returned

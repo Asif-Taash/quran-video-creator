@@ -139,9 +139,9 @@ export const ASPECT_RATIO_DIMENSIONS: Record<AspectRatio, { width: number; heigh
 // line-wrap constant in QuranVideo.tsx is tuned in real pixels against
 // useVideoConfig()'s canvas size, so scaling the *output* instead of the
 // *composition* keeps that math (and the live preview, which never sees
-// `quality` at all) completely untouched. "720p" is scale 1 -- exactly
-// today's only-ever output size for every aspect ratio -- so it's the
-// default and changes nothing for an existing draft/render.
+// `quality` at all) completely untouched. "720p" (the default) is scale 1
+// for portrait/landscape; square's 1080x1080 canvas scales down to it (see
+// qualityScale below).
 export type QualityTier =
   | "144p"
   | "240p"
@@ -152,16 +152,25 @@ export type QualityTier =
   | "1440p"
   | "2160p";
 
-export const QUALITY_SCALE: Record<QualityTier, number> = {
-  "144p": 144 / 720,
-  "240p": 240 / 720,
-  "360p": 360 / 720,
-  "480p": 480 / 720,
-  "720p": 1,
-  "1080p": 1080 / 720,
-  "1440p": 1440 / 720,
-  "2160p": 2160 / 720,
+// The tier names the output's SHORT side, like YouTube's labels: 1080p is
+// 1080x1920 portrait, 1920x1080 landscape and 1080x1080 square. A plain
+// 1080/720 multiplier applied to square's 1080x1080 canvas used to export
+// 1620x1620 -- 2.25x the pixels the label promised, and as much slower.
+export const QUALITY_SHORT_SIDE: Record<QualityTier, number> = {
+  "144p": 144,
+  "240p": 240,
+  "360p": 360,
+  "480p": 480,
+  "720p": 720,
+  "1080p": 1080,
+  "1440p": 1440,
+  "2160p": 2160,
 };
+
+export function qualityScale(quality: QualityTier, aspectRatio: AspectRatio): number {
+  const { width, height } = ASPECT_RATIO_DIMENSIONS[aspectRatio];
+  return QUALITY_SHORT_SIDE[quality] / Math.min(width, height);
+}
 
 // Real-world (YouTube-style) upload bitrate guides, not a pure quadratic
 // function of pixel count -- keeps 4K's file size reasonable instead of

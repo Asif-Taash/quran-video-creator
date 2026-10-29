@@ -3,11 +3,17 @@
 import { useState } from "react";
 import { ArrowDownTrayIcon, AdjustmentsHorizontalIcon, ClipboardDocumentIcon, CheckIcon, SignalIcon } from "@heroicons/react/24/outline";
 import Spinner from "@/components/ui/Spinner";
-import type { RenderState } from "../VideoCreatorForm";
+import type { RenderProgress, RenderState } from "../VideoCreatorForm";
 import { QUALITY_TIER_OPTIONS, WORD_HIGHLIGHT_COLORS, type AspectRatio, type QualityTier, type QuranVideoProps } from "@/remotion/types";
 import VideoPreviewPlayer from "../VideoPreviewPlayer";
 
 import { useT } from "@/lib/LanguageContext";
+// "m:ss" for the render's estimated time left.
+function formatRemaining(ms: number) {
+  const totalSeconds = Math.max(1, Math.round(ms / 1000));
+  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
+}
+
 interface Step5Props {
   isArabic: boolean;
   handleGenerateVideo: () => void;
@@ -24,6 +30,9 @@ interface Step5Props {
   // VideoCreatorForm's own suggestedTitle) -- null until a surah/verse
   // range is actually selected.
   suggestedTitle: string | null;
+  // The running render's progress while renderState is "rendering" -- null
+  // until the server reports any (e.g. still applying segmentation).
+  renderProgress: RenderProgress | null;
   // Status of the SAVED GALLERY VIDEO's own background auto-render (see
   // VideoCreatorForm's triggerBackgroundRender) -- distinct from
   // isLoadingPreview's spinner above, which only reflects the free,
@@ -241,6 +250,7 @@ export default function Step5Generate({
   isLoadingPreview,
   previewError,
   suggestedTitle,
+  renderProgress,
   backgroundSaveStatus,
   isLoggedIn,
   aspectRatio,
@@ -513,7 +523,11 @@ export default function Step5Generate({
         >
           {renderState === "rendering" ? <Spinner size="md" className="border-white/30 border-t-white" /> : <ArrowDownTrayIcon className="h-6 w-6" />}
           {renderState === "rendering"
-            ? tx("جاري الإنشاء والتنزيل...", "İndiriliyor...", "Downloading...")
+            ? renderProgress?.stage === "rendering"
+              ? `${tx("جاري إنشاء الفيديو", "Video oluşturuluyor", "Creating the video")} ${Math.round(renderProgress.progress * 100)}%`
+              : renderProgress?.stage === "saving"
+                ? tx("جاري تجهيز التنزيل...", "İndirme hazırlanıyor...", "Preparing the download...")
+                : tx("جاري التحضير...", "Hazırlanıyor...", "Preparing...")
             : !preparedAudioUrl
               ? tx("يجب تجهيز الصوت أولاً", "Önce Sesi Hazırlayın", "Prepare the Audio First")
               : tx("تنزيل الفيديو", "Videoyu İndir", "Download Video")}
@@ -571,6 +585,24 @@ export default function Step5Generate({
           </div>
         )}
       </div>
+
+      {renderState === "rendering" && renderProgress?.stage === "rendering" && (
+        <div className="flex flex-col gap-1" dir={isArabic ? "rtl" : "ltr"}>
+          <div className="h-1.5 overflow-hidden rounded-full bg-border">
+            <div
+              className="h-full rounded-full bg-primary transition-[width] duration-700"
+              style={{ width: `${Math.round(renderProgress.progress * 100)}%` }}
+            />
+          </div>
+          {renderProgress.etaMs !== null && (
+            <p className="text-xs text-muted-foreground">
+              {tx("الوقت المتبقي تقريباً: ", "Tahmini kalan süre: ", "About ")}
+              {formatRemaining(renderProgress.etaMs)}
+              {tx("", "", " left")}
+            </p>
+          )}
+        </div>
+      )}
 
       {renderState === "error" && (
         <p className="animate-fade-in rounded-xl border border-accent-red/30 bg-accent-red-bg/60 p-3 text-sm text-accent-red">

@@ -29,6 +29,11 @@ COPY package.json package-lock.json* ./
 # Copy prisma schema before npm install so the postinstall `prisma generate` succeeds
 COPY prisma ./prisma
 RUN npm install
+# Remotion renders with its own chrome-headless-shell, not the Debian
+# chromium above (kept for the shared libraries it pulls in). Fetched here so
+# it's baked into node_modules: otherwise every recreated container's fresh
+# node_modules volume downloads it again on the first render.
+RUN node -e "require('@remotion/renderer').ensureBrowser().then(() => console.log('chrome-headless-shell ready'))"
 
 # We copy the rest of the files, although we will mount them using volumes in docker-compose
 COPY . .
