@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import OperationalError
 import logging
 import os
@@ -38,11 +37,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],  # Allow GET, POST, DELETE for public API
     allow_headers=["*"],
 )
-
-# ── Static files ──────────────────────────────────────────────────────────────
-os.makedirs("app/static/audio", exist_ok=True)
-os.makedirs("app/static/text", exist_ok=True)
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 from app.routers import surahs, ayahs, extraction, ai, vision, segmentation
 

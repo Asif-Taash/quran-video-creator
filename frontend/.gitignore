@@ -55,3 +55,7 @@ next-env.d.ts
 # runtime-generated word-count cache (see src/lib/quranWordMap.ts) -- grows
 # as verses are actually used locally, not source data
 /src/data/quran-word-map-cache.json
+
+# the segmentation the current render reads (see /api/segmentation/apply) --
+# runtime state, not source data
+/src/data/temp_segmentation.json
