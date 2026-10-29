@@ -53,7 +53,7 @@ const TRANSLITERATION_MARGIN_TOP = 20;
 // vertically ("لعـ"), which broke short names: "أحمد العجمي" read
 // "أحمد ا لعجمي".
 const RECITER_NAME_FONT_SIZE = 34;
-const RECITER_NAME_FONT_WEIGHT = 700;
+const RECITER_NAME_FONT_WEIGHT = 400;
 const RECITER_NAME_LINE_HEIGHT = 1.5;
 const RECITER_NAME_MARGIN_TOP = 14;
 
@@ -82,8 +82,7 @@ const FONT_PUA_V1_DIR = "fonts/2005/QCF_BSML.fonts/QCF_P";
 const FONT_SURAH_NAME_PATH = "fonts/video-fonts/Ruqaa.ttf";
 const FONT_SURAH_NAME_FAMILY = "Ruqaa";
 
-const FONT_RECITER_NAME_PATH = "fonts/video-fonts/Tajawal-Bold.ttf";
-// Not "Tajawal": that family is the regular-weight tafsir font (TRANSLATION_FONT_OPTIONS).
+const FONT_RECITER_NAME_PATH = "fonts/video-fonts/Tajawal-Regular.ttf";
 const FONT_RECITER_NAME_FAMILY = "Tajawal Header";
 
 const FONT_TRANSLITERATION_PATH = "fonts/video-fonts/Sansita-Bold.ttf";
