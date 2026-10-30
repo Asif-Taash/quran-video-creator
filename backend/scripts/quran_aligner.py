@@ -60,7 +60,7 @@ logger = logging.getLogger(__name__)
 # Bumped whenever output semantics change, so cached clips written by an
 # older engine (or by extract_precise_clip.py, which never wrote this field)
 # are never reused.
-ENGINE_VERSION = "ctc-v11"
+ENGINE_VERSION = "ctc-v12"
 
 SAMPLE_RATE = 16000
 FRAME_SAMPLES = 320  # wav2vec2 emission stride -> 20ms per frame
@@ -1853,6 +1853,31 @@ def _match_in_order(heard, text):
     return pairs[::-1]
 
 
+def _prefer_twins_inside(pairs, plain, k0, k1):
+    """Whisper's heard words (see _hear_deaf_stretches), each run of
+    consecutive ones outside the stretch's words (k0, k1) moved onto the same
+    words inside it when the text holds them there too. The same words can
+    stand twice in the text -- "ثُمَّ إِنِّىٓ" opens both 71:8 and 71:9 --
+    and heard where the path reads anyway they are those words: matched to
+    their twin before the stretch they made a false repeat (Maher 71:5-14
+    went 8, 8, 9, 8, 9 on screen)."""
+    out, n = [], 0
+    while n < len(pairs):
+        if k0 < pairs[n][1] < k1:
+            out.append(pairs[n])
+            n += 1
+            continue
+        m = n + 1
+        while m < len(pairs) and pairs[m][1] == pairs[m - 1][1] + 1 and not k0 < pairs[m][1] < k1:
+            m += 1
+        run = pairs[n:m]
+        text = [plain[p] for _, p in run]
+        twin = next((q for q in range(k0 + 1, k1 - len(text) + 1) if plain[q:q + len(text)] == text), None)
+        out.extend(run if twin is None else [(h, twin + i) for i, (h, _) in enumerate(run)])
+        n = m
+    return out
+
+
 def _hear_deaf_stretches(wav, emission, env, units, readings, words_by_ayah):
     """Where the alignment model can't hear the recitation (see DEAF_*),
     lets Whisper listen: words it hears there that the reading path times
@@ -1894,6 +1919,7 @@ def _hear_deaf_stretches(wav, emission, env, units, readings, words_by_ayah):
         k1 = after[0][0] if after else len(targets)
         lo, hi = max(0, k0 - DEAF_TEXT_BACK), min(len(targets), k1 + DEAF_TEXT_AHEAD + 1)
         pairs = [((None, s0, e0), lo + x) for x, s0, e0 in _heard_by_whisper(wav, a, b, plain[lo:hi])]
+        pairs = _prefer_twins_inside(pairs, plain, k0, k1)
         matched = ", ".join("%d:%d@%.1fs" % (targets[p]["ayah"], targets[p]["index"], h[1]) for h, p in pairs)
         logger.info(f"Unheard stretch {a:.1f}-{b:.1f}s: Whisper heard {matched or 'nothing of the text'}.")
         # Words the path reads once, across the stretch: their times.
