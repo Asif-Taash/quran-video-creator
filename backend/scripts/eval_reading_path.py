@@ -30,6 +30,16 @@ alignment) 7/26 -- 2 of 21 cases. ctc-v8 (path search) 20/26: 15/21 cases,
 Not found yet: a backstep inside one unsplit ayah (the screen is right, only
 the highlight isn't), a tail repeat in the echoing fajr audio, one word of
 the next ayah read in connection before going back (fajr79_back_after_next).
+
+Baseline (2026-10-31), 97 cases + 15 controls over 12 reciters, sources
+spliced with room tone and faded joins: ctc-v12 46/97 word-level, 68/97 on
+screen (every ayah appears in order, within SCREEN_TOL_SEC), 13 silently
+wrong on screen, 14/15 controls. ctc-v13 (Whisper's reading track, text
+after the selection, verified jumps kept, one-word restarts) 55/97 word-level,
+82/97 on screen, 9 silently wrong, 15/15 controls, no case worse on screen.
+Still missed: long one-word restarts neither ear hears (Ajmi, some 98:8
+"جزاؤهم"), fajr79_back_after_next.
+The HELDOUT_RECITERS_79 cases are never tuned on: run them only to measure.
 """
 import argparse
 import hashlib
@@ -78,7 +88,60 @@ CASES = {
     "fajr79_tail_repeat": ("kurdi_fajr_079_upload.mp3", 79, "upload", [(27, 0, 6), (28, 0, 2), (28, 1, 2)]),
     "fajr79_restart_ayah": ("kurdi_fajr_079_upload.mp3", 79, "upload", [(27, 0, 6), (28, 0, 2), (28, 0, 2)]),
     "fajr79_back_after_next": ("kurdi_fajr_079_upload.mp3", 79, "upload", [(32, 0, 1), (33, 0, 0), (32, 0, 1), (33, 0, 2)]),
+    # One word said, a breath, then said again and read on (user report,
+    # 2026-10-29): the word -- at an ayah's start, the ayah -- must show from
+    # the FIRST time it is said.
+    "maher98_one_word_restart": ("maher_098.mp3", 98, "upload", [(2, 0, 5), (3, 0, 0), (3, 0, 2), (4, 0, 10)]),
+    "maher98_one_word_mid": ("maher_098.mp3", 98, "upload", [(3, 0, 2), (4, 0, 1), (4, 1, 10), (5, 0, 5)]),
+    "maher98_one_word_restart_long": ("maher_098.mp3", 98, "upload", [(7, 0, 8), (8, 0, 0), (8, 0, 11)]),
+    "kurdi79_one_word_restart": ("kurdi_079.mp3", 79, "upload", [(30, 0, 3), (31, 0, 0), (31, 0, 3), (32, 0, 1)]),
+    "kurdi79_one_word_mid": ("kurdi_079.mp3", 79, "upload", [(28, 0, 2), (29, 0, 2), (29, 2, 3), (30, 0, 3)]),
+    "ajmi79_one_word_restart": ("ajmi_079.mp3", 79, "upload", [(27, 0, 6), (28, 0, 0), (28, 0, 2), (29, 0, 3)]),
+    "ajmi79_one_word_restart_31": ("ajmi_079.mp3", 79, "upload", [(30, 0, 3), (31, 0, 0), (31, 0, 3), (32, 0, 1)]),
+    "ajmi79_one_word_mid": ("ajmi_079.mp3", 79, "upload", [(28, 0, 2), (29, 0, 2), (29, 2, 3), (30, 0, 3)]),
 }
+
+# The same shapes read by eight more reciters (their mp3quran recordings of
+# Al-Bayyinah): the thresholds were found on Maher, Al-Kurdi and the fajr
+# upload, and must hold for every voice -- slow and fast, studio and echo, a
+# 32 kbps file (Abdul Basit).
+OTHER_RECITERS_98 = ["husary", "minshawi", "abdulbasit", "sudais", "mishary", "yasser", "shatri", "ghamdi"]
+SHAPES_98 = {
+    "tail_repeat": ("upload", [(2, 0, 5), (2, 4, 5), (3, 0, 2), (4, 0, 10)]),
+    "restart_ayah": ("upload", [(2, 0, 5), (3, 0, 2), (3, 0, 2), (4, 0, 10)]),
+    "back_after_next": ("upload", [(2, 0, 5), (3, 0, 2), (4, 0, 2), (3, 0, 2), (4, 0, 10)]),
+    "mid_ayah_backstep": ("upload", [(5, 0, 10), (5, 8, 16)]),
+    "two_repeats": ("upload", [(2, 0, 5), (2, 3, 5), (3, 0, 2), (3, 0, 2), (4, 0, 10)]),
+    "last_ayah_again": ("upload", [(2, 0, 5), (3, 0, 2), (3, 0, 2)]),
+    "surah_restart": ("surah", [(1, 0, 11), (2, 0, 5), (3, 0, 2), (3, 0, 2), (4, 0, 10), (5, 0, 16)]),
+    "one_word_restart": ("upload", [(2, 0, 5), (3, 0, 0), (3, 0, 2), (4, 0, 10)]),
+    "one_word_restart_long": ("upload", [(7, 0, 8), (8, 0, 0), (8, 0, 11)]),
+    "one_word_mid": ("upload", [(3, 0, 2), (4, 0, 1), (4, 1, 10), (5, 0, 5)]),
+}
+# These recordings already read part of 98:5-8 twice (see the controls
+# below), so a case built from those ayahs has a wrong truth.
+NATURAL_REPEATS_98 = {"yasser": 5, "shatri": 5, "ghamdi": 5, "minshawi": 5}
+for _reciter in OTHER_RECITERS_98:
+    for _shape, (_mode, _plan) in SHAPES_98.items():
+        _from = NATURAL_REPEATS_98.get(_reciter)
+        if _from and any(a >= _from for a, _, _ in _plan) and _mode == "upload":
+            continue
+        CASES[f"{_reciter}98_{_shape}"] = (f"{_reciter}_098.mp3", 98, _mode, _plan)
+# Held out: the same kinds of repeat in An-Nazi'at by six of them, never
+# looked at while ctc-v13 was tuned -- what it does on recitations it
+# wasn't fitted to.
+HELDOUT_RECITERS_79 = ["husary", "minshawi", "sudais", "abdulbasit", "mishary", "shatri"]
+SHAPES_79 = {
+    "tail_repeat": ("upload", [(28, 0, 2), (29, 0, 3), (29, 2, 3), (30, 0, 3)]),
+    "restart_ayah": ("upload", [(29, 0, 3), (30, 0, 3), (31, 0, 3), (31, 0, 3), (32, 0, 1)]),
+    "back_after_next": ("upload", [(29, 0, 3), (30, 0, 3), (31, 0, 1), (30, 2, 3), (31, 0, 3)]),
+    "one_word_restart": ("upload", [(30, 0, 3), (31, 0, 0), (31, 0, 3), (32, 0, 1)]),
+    "one_word_mid": ("upload", [(29, 0, 2), (29, 2, 3), (30, 0, 3)]),
+    "last_ayah_again": ("upload", [(32, 0, 1), (33, 0, 2), (33, 0, 2)]),
+}
+for _reciter in HELDOUT_RECITERS_79:
+    for _shape, (_mode, _plan) in SHAPES_79.items():
+        CASES[f"{_reciter}79_{_shape}"] = (f"{_reciter}_079.mp3", 79, _mode, _plan)
 
 # Unspliced recordings: (source, surah, first ayah, last ayah, extra seconds
 # around the ayahs -- None: the whole recording, as an upload is aligned --,
@@ -95,7 +158,28 @@ CONTROLS = {
     # The user's whole 7.5-minute upload: ctc-v8 lost 79:29's repeat here
     # (and, fixed alone, put 79:27 into the ayah before it).
     "control_fajr79_whole_upload": ("kurdi_fajr_079_upload.mp3", 79, 27, 33, None, [(29, 2, 3), (32, 0, 1)]),
+    # Real repeats, heard by the user. Their upload of Maher's whole Nuh
+    # (2026-10-30), aligned for 71:10-15: 12's "وَيَجْعَل لَّكُمْ" and all of
+    # 13-14 are read twice, and after 15 he reads on. ctc-v12 verified both
+    # repeats in every round, but kept inventing new ones in 16 until the
+    # rounds ran out, and fell back to reading everything once.
+    "control_maher71_upload": ("maher_upload_071.mp3", 71, 10, 15, None, [(12, 3, 8), (13, 0, 5)]),
+    # Al-Ajmi's mp3quran 17:70-72 (75 s from 1028.888 s): "فَأُو۟لَٰٓئِكَ يَقْرَءُونَ
+    # كِتَٰبَهُمْ" read twice (39.3 s and 44.8 s), the second time partly in a
+    # stretch the alignment model can't hear.
+    "control_ajmi17_natural": ("ajmi_017_70-72.mp3", 17, 70, 72, None, [(71, 10, 15)], "surah"),
 }
+for _reciter in OTHER_RECITERS_98:
+    # Yasser, Shatri and Ghamdi read parts of 98:6 and 98:8 twice in these
+    # recordings, Minshawi 98:5's "مُخْلِصِينَ لَهُ ٱلدِّينَ" (both ears hear
+    # it), so their controls stop at 98:4.
+    CONTROLS[f"control_{_reciter}98"] = (f"{_reciter}_098.mp3", 98, 1, 4 if _reciter in NATURAL_REPEATS_98 else 8, 3.0, [])
+for _reciter in HELDOUT_RECITERS_79:
+    CONTROLS[f"control_{_reciter}79"] = (f"{_reciter}_079.mp3", 79, 27, 33, 3.0, [])
+# The clean linear alignment of these sources: only these ayahs (the
+# upload's other ayahs repeat too; the clip holds just a few seconds of its
+# neighbours).
+SOURCE_AYAHS = {"maher_upload_071.mp3": (10, 15), "ajmi_017_70-72.mp3": (70, 72)}
 
 
 def _cached(key, compute):
@@ -125,9 +209,12 @@ def _source(name, surah):
     path = EVAL_DIR / name
     wav = qa._to_float(qa.decode_pcm(path, start=0, duration=qa._probe_duration(path)))
     words = qa.fetch_surah_words(surah)
-    ayahs = sorted({a for c in CASES.values() if c[0] == name for a, _, _ in c[3]}
-                   | {a for c in CONTROLS.values() if c[0] == name for a in range(c[2], c[3] + 1)})
-    a0, a1 = max(1, ayahs[0] - 1), min(len(words), ayahs[-1] + 1)
+    if name in SOURCE_AYAHS:
+        a0, a1 = SOURCE_AYAHS[name]
+    else:
+        ayahs = sorted({a for c in CASES.values() if c[0] == name for a, _, _ in c[3]}
+                       | {a for c in CONTROLS.values() if c[0] == name for a in range(c[2], c[3] + 1)})
+        a0, a1 = max(1, ayahs[0] - 1), min(len(words), ayahs[-1] + 1)
     emission = _emission(wav, name)
     units = qa._build_units(surah, words, range(a0, a1 + 1), set(range(a0, a1 + 1)))
     qa._ctc_align(emission, units)
@@ -137,16 +224,39 @@ def _source(name, surah):
     return _sources[name]
 
 
+DIGITAL_SILENCE_DB = -60.0
+SPLICE_FADE_SEC = 0.01
+
+
 def _pause_audio(wav, pos, seconds):
     """A real breath pause of the recording: its quietest stretch between
-    the aligned words (the longest gap can be a melodic hold, not a pause)."""
+    the aligned words (the longest gap can be a melodic hold, not a pause)
+    that still has room tone -- the gaps between ayahs in mp3quran's
+    recordings are edited to digital silence, which no breath is, and right
+    before it the alignment model heard a word much less clearly."""
     env = qa._energy_db(wav)
     n = int(seconds / qa.ENV_HOP_SEC)
     lo = int(min(s for s, _ in pos.values()) / qa.ENV_HOP_SEC)
     hi = int(max(e for _, e in pos.values()) / qa.ENV_HOP_SEC) - n
-    mean = np.convolve(env, np.ones(n) / n, mode="valid")
-    start = lo + int(np.argmin(mean[lo:hi]))
+    from numpy.lib.stride_tricks import sliding_window_view
+    mean = np.convolve(env, np.ones(n) / n, mode="valid")[lo:hi]
+    floor = sliding_window_view(env, n).min(axis=1)[lo:hi]
+    live = np.where(floor > DIGITAL_SILENCE_DB, mean, np.inf)
+    start = lo + int(np.argmin(live if np.isfinite(live).any() else mean))
     return wav[int(start * qa.ENV_HOP_SEC * SR):int(start * qa.ENV_HOP_SEC * SR) + int(seconds * SR)]
+
+
+def _faded(piece):
+    """The piece with SPLICE_FADE_SEC fades at both ends: no click where it
+    is joined to the next one."""
+    k = min(int(SPLICE_FADE_SEC * SR), len(piece) // 2)
+    if k < 2:
+        return piece
+    out = piece.astype(np.float32).copy()
+    ramp = np.linspace(0.0, 1.0, k, dtype=np.float32)
+    out[:k] *= ramp
+    out[-k:] *= ramp[::-1]
+    return out
 
 
 def _splice(name, surah, plan):
@@ -172,9 +282,12 @@ def _splice(name, surah, plan):
                 pieces.append(wav[int(gap_from * SR):int(start * SR)])
                 t += (int(start * SR) - int(gap_from * SR)) / SR
             else:
-                pieces.append(pause)
+                pieces[-1] = _faded(pieces[-1])
+                pieces.append(_faded(pause))
                 t += len(pause) / SR
         seg = wav[int(start * SR):int(end * SR)]
+        if prev is not None and not sequential:
+            seg = _faded(seg)
         for k in ks:
             ws, we = pos[(ayah, k)]
             truth.append((ayah, k, t + ws - start, t + we - start))
@@ -194,9 +307,20 @@ def _run(wav, surah, a0, a1, prev_ctx, next_ctx, tag):
                             prev_context=prev_ctx, next_context=next_ctx)
     qa._ctc_align(emission, units)
     qa._resolve_times(units, env, 0.0, len(wav) / SR)
-    readings, suspects = qa._reading_path(emission, units, env)
-    readings, unheard, moved = qa._hear_deaf_stretches(wav, emission, env, units, readings, words)
-    if readings or moved:
+    if not hasattr(qa, "_following_units"):  # ctc-v12 and before
+        readings, suspects = qa._reading_path(emission, units, env)
+        readings, unheard, moved = qa._hear_deaf_stretches(wav, emission, env, units, readings, words)
+        if readings or moved:
+            qa._resolve_times(units, env, 0.0, len(wav) / SR)
+        return units, readings, suspects + [a for a, _ in unheard]
+    readings, suspects, unexplained = qa._reading_path(emission, units, env, qa._following_units(surah, words, units),
+                                                       wav=wav, words_by_ayah=words)
+    qa._resolve_times(units, env, 0.0, len(wav) / SR)
+    readings, unheard, moved, explained = qa._hear_deaf_stretches(wav, emission, env, units, readings, words, unexplained)
+    suspects = [t for t in suspects if t not in explained]
+    if hasattr(qa, "_restarted_words"):
+        moved |= qa._restarted_words(emission, env, units, readings)
+    if moved:
         qa._resolve_times(units, env, 0.0, len(wav) / SR)
     return units, readings, suspects + [a for a, _ in unheard]
 
@@ -221,6 +345,34 @@ def _score(truth, occ):
         if cur is None or (cur[0], cur[1]) != (a, k):
             wrong.append(f"{a}:{k}@{mid:.1f}s->" + (f"{cur[0]}:{cur[1]}" if cur else "nothing"))
     return wrong
+
+
+SCREEN_TOL_SEC = 0.5
+
+
+def _appearances(occ, words):
+    """[(ayah, start)]: when each ayah comes on screen, by the display rules
+    (frontend lib/readingPath.ts, every ayah one part): another ayah, or a
+    restart at its first word, shows it (again); going back inside it keeps
+    it -- and so does saying one word twice in a row (a restart of a single
+    word holds the text from the first time)."""
+    out, prev = [], None
+    for a, k, s, _ in sorted(occ, key=lambda o: o[2]):
+        first = min(i for i, t in enumerate(words[a]["tokens"]) if not qa._is_mark_token(t))
+        if prev is None or a != prev[0] or (k == first and k < prev[1]):
+            out.append((a, s))
+        prev = (a, k)
+    return out
+
+
+def _screen_wrong(truth, occ, words):
+    """What differs between the ayahs on screen by the truth and by the
+    reading path: [] when the same ayahs come on in the same order, each
+    within SCREEN_TOL_SEC."""
+    want, got = _appearances(truth, words), _appearances(occ, words)
+    if [a for a, _ in want] != [a for a, _ in got]:
+        return [f"ayahs {[a for a, _ in got]} != {[a for a, _ in want]}"]
+    return [f"{a}@{w:.1f}s shown at {g:.1f}s" for (a, w), (_, g) in zip(want, got) if abs(w - g) > SCREEN_TOL_SEC]
 
 
 def _runs(readings):
@@ -260,7 +412,7 @@ def main():
         # _fail logs every rejected trial alignment as an error.
         logging.getLogger(qa.__name__).setLevel(logging.CRITICAL)
     exported = {}
-    passed = total = flagged = false_flags = 0
+    passed = total = flagged = false_flags = screen_ok = screen_flagged = cases = 0
     for name, (src, surah, mode, plan) in CASES.items():
         if args.only and not any(name.startswith(p) for p in args.only):
             continue
@@ -273,18 +425,25 @@ def main():
         else:
             a0, a1 = min(a for a, _, _ in plan), max(a for a, _, _ in plan)
             prev_ctx = next_ctx = None
+        cases += 1
         units, readings, suspects = _run(wav, surah, a0, a1, prev_ctx, next_ctx, name)
         target_truth = [t for t in truth if a0 <= t[0] <= a1]
-        wrong = _score(target_truth, _occurrences(units, readings))
+        occ = _occurrences(units, readings)
+        wrong = _score(target_truth, occ)
+        screen = _screen_wrong(target_truth, occ, qa.fetch_surah_words(surah))
         total += 1
         passed += not wrong
+        screen_ok += not screen
         flagged += bool(wrong) and bool(suspects)
+        screen_flagged += bool(screen) and bool(suspects)
         print(f"{'PASS' if not wrong else 'FAIL'} {name}: {' '.join(_runs(readings)) or 'no repeat found'}"
               + (f"  [flagged for review at {', '.join(f'{s:.1f}s' for s in suspects)}]" if suspects else "")
-              + (f"\n      wrong words: {' '.join(wrong)}" if wrong else ""))
+              + f"  screen {'ok' if not screen else 'WRONG'}"
+              + (f"\n      wrong words: {' '.join(wrong)}" if wrong else "")
+              + (f"\n      on screen: {'; '.join(screen)}" if screen else ""))
         exported[name] = _export(units, readings, target_truth, wav, None)
 
-    for name, (src, surah, a0, a1, margin, expected) in CONTROLS.items():
+    for name, (src, surah, a0, a1, margin, expected, *mode) in CONTROLS.items():
         if args.only and not any(name.startswith(p) for p in args.only):
             continue
         swav, pos, _, _ = _source(src, surah)
@@ -295,7 +454,12 @@ def main():
             t0 = max(0.0, pos[first_key][0] - margin)
             t1 = min(len(swav) / SR, pos[max(k for k in pos if k[0] == a1)][1] + margin)
             wav = swav[int(t0 * SR):int(t1 * SR)]
-        units, readings, suspects = _run(wav, surah, a0, a1, None, None, name if margin is not None else src)
+        prev_ctx = next_ctx = None
+        if mode == ["surah"]:
+            # A built-in reciter's recording: the neighbouring ayahs as context.
+            prev_ctx = (a0 - 1, qa.CONTEXT_WORDS) if a0 > 1 else None
+            next_ctx = (a1 + 1, qa.CONTEXT_WORDS) if a1 < len(qa.fetch_surah_words(surah)) else None
+        units, readings, suspects = _run(wav, surah, a0, a1, prev_ctx, next_ctx, name if margin is not None else src)
         jumps = [(r["ayah"], r["from"], r["to"]) for r in readings or [] if r["jump"]]
         first_start = min(o[2] for o in _occurrences(units, readings) if (o[0], o[1]) == first_key)
         moved = abs(first_start - (pos[first_key][0] - t0))
@@ -307,7 +471,8 @@ def main():
               + ("" if jumps == expected else f"  (expected jumps {expected})")
               + ("" if moved <= 1.5 else f"  (first word moved {moved:.1f}s)")
               + (f"  [flagged for review at {', '.join(f'{s:.1f}s' for s in suspects)}]" if suspects else ""))
-    print(f"\n{passed}/{total} passed; {flagged} failed cases flagged for review, {false_flags} controls flagged")
+    print(f"\n{passed}/{total} passed; {flagged} failed cases flagged for review, {false_flags} controls flagged; "
+          f"on screen {screen_ok}/{cases} cases right ({screen_flagged} of the wrong ones flagged)")
     if args.json:
         Path(args.json).write_text(json.dumps(exported, ensure_ascii=False))
 

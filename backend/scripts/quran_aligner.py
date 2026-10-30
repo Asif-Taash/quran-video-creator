@@ -60,7 +60,7 @@ logger = logging.getLogger(__name__)
 # Bumped whenever output semantics change, so cached clips written by an
 # older engine (or by extract_precise_clip.py, which never wrote this field)
 # are never reused.
-ENGINE_VERSION = "ctc-v12"
+ENGINE_VERSION = "ctc-v13"
 
 SAMPLE_RATE = 16000
 FRAME_SAMPLES = 320  # wav2vec2 emission stride -> 20ms per frame
@@ -157,7 +157,68 @@ RETURN_MIN_CLEAR = 0.3
 # too). Between RETURN_SUSPECT and RETURN_ACCEPT it is flagged for review.
 RETURN_ACCEPT = 0.76
 RETURN_SUSPECT = 0.68
+CLEAR_WIDEN_SEC = 0.12  # see _path_occurrences
 RETURN_ROUNDS = 24
+# One word said, a breath, and said again as he reads on (a restart) is too
+# short for the checks above -- the alignment model alone can't tell it
+# from a long madd, and the search can squeeze a "second reading" next to
+# the first where both see the same letters (a false restart, clarity
+# 0.97/0.98, in Minshawi's 98:8). So it is taken only where Whisper heard
+# it too (see TRACK_*), with RETURN_RESTART_GAP_SEC+ between the two. It is
+# no repeat on screen: the word just lasts from the first time he says it
+# (until then an ayah starting with it showed at the second, the first
+# absorbed by the word before).
+RETURN_RESTART_GAP_SEC = 2 * CLEAR_WIDEN_SEC
+# A second ear. In slow, long-madd recitation (Husary, Minshawi, Abdul
+# Basit: 1-2 of 10 spliced repeats found by ctc-v12) the alignment model
+# hears a repeat too faintly for the search to take it -- blanks absorb it
+# almost free -- while Whisper (VERIFY_MODEL) hears it plainly, timed to a
+# few tenths of a second. So Whisper listens to the whole searched audio:
+# windows of TRACK_WINDOW_SEC every TRACK_HOP_SEC (each moment in three),
+# words starting within TRACK_EDGE_SEC of a window's start or TRACK_END_SEC
+# of its end dropped (cut off; its word ends run on through the pause after
+# them, so only starts tell), each heard word placed
+# on a text word it matches at TRACK_MIN_SIM only when the word heard next
+# to it matches that word's neighbour too (it invents words in silences,
+# "وَالْمُؤْمِنِينَ" -- never two in the text's order), and kept only where
+# TRACK_MIN_SUPPORT windows heard it within TRACK_SAME_SEC. Where it hears
+# him go back to a word he read TRACK_AGAIN_SEC+ before and read on from
+# it, the search is offered that jump (TRACK_BONUS, landing within
+# TRACK_LAND_BEFORE/AFTER of when Whisper heard the word), and a jump
+# Whisper heard is verified at RETURN_HEARD_MIN_RATIO / RETURN_HEARD_ACCEPT
+# instead -- both ears must agree, the alignment model's clarity check
+# still turns down a jump onto words that aren't there.
+TRACK_WINDOW_SEC = 8.0
+TRACK_HOP_SEC = 2.5
+TRACK_EDGE_SEC = 0.3
+TRACK_END_SEC = 0.6
+TRACK_MIN_SIM = 0.75
+TRACK_SAME_SEC = 0.6
+TRACK_MIN_SUPPORT = 2
+TRACK_AGAIN_SEC = 0.8
+TRACK_LAND_BEFORE = 0.7
+TRACK_LAND_AFTER = 0.4
+TRACK_BONUS = 20.0
+# With an offered jump, the words Whisper heard in both readings pull the
+# search a little too: a reading of one starting within TRACK_ENTER_SEC of
+# when Whisper heard it gains TRACK_ENTER_BONUS. Where the alignment model
+# hears a word faintly, blanks swallowed it -- a whole reading of a
+# repeated ayah (Husary's 98:3 read twice: the first reading's last two
+# words went), and the jump offered was then a one-word restart. (Not for
+# every word Whisper heard: its times are only good to a few tenths, and
+# an ayah then came on that much early.)
+TRACK_ENTER_SEC = 0.3
+TRACK_ENTER_BONUS = 3.0
+# And where Whisper heard him say two words in order within TRACK_ON_SEC --
+# no time to go back between them -- a jump back the alignment model alone
+# proposes there is turned down: the rounds kept offering variants of a
+# false one at 71:13's "مَّا لَكُمْ" in the user's Maher upload until one
+# scraped through (+0.04). (Whisper swallows a repeated phrase often
+# enough -- 12's "وَيَجْعَل لَّكُمْ" there -- that hearing him read on
+# further apart says nothing.)
+TRACK_ON_SEC = 1.0
+RETURN_HEARD_MIN_RATIO = 0.4
+RETURN_HEARD_ACCEPT = 0.4
 # A pause = >= RETURN_PAUSE_MIN_SEC at least RETURN_PAUSE_DIP_DB below the
 # speech within RETURN_PAUSE_WIN_SEC on both sides (a breath), or
 # RETURN_SILENCE_DB below the region's speech level (a long silence, whose
@@ -182,6 +243,17 @@ RETURN_ARRIVE_AFTER_SEC = 0.2
 RETURN_LEAD_SEC = 1.0
 RETURN_SLACK_SEC = 15.0
 RETURN_CONTEXT_SLACK_SEC = 1.0
+# An upload has no next ayah aligned as context, and the reciter usually
+# reads on past the selection: those RETURN_SLACK_SEC then held speech the
+# searched text didn't have, which the search could only explain as a
+# repeat -- a new one every round, in the user's Maher upload of 71:10-15,
+# until the rounds ran out. So the text after the selection is searched too
+# (never shown, never jumped back to): as many words as this reciter reads
+# in RETURN_SLACK_SEC at RETURN_FOLLOW_PACE times his pace in the selection,
+# RETURN_FOLLOW_MIN_WORDS to RETURN_FOLLOW_MAX_WORDS.
+RETURN_FOLLOW_PACE = 1.5
+RETURN_FOLLOW_MIN_WORDS = 8
+RETURN_FOLLOW_MAX_WORDS = 60
 # Speech the reading leaves unexplained: between two pauses, at least
 # UNEXPLAINED_MIN_SEC long, no letter of the path in it, and
 # UNEXPLAINED_MIN_MASS of letter evidence (summed 1 - p(blank)) -- flagged
@@ -1336,10 +1408,18 @@ def _extract_from_long_audio(source_path, surah_id, start_ayah, end_ayah, pad_se
     # Where the reciter went back and read part of it again, the words move
     # onto their first reading and the repeats are timed too.
     env = _energy_db(wav)
-    readings, suspects = _reading_path(emission, units, env)
-    # Where the model can't hear the recitation at all, Whisper listens.
-    readings, unheard, moved = _hear_deaf_stretches(wav, emission, env, units, readings, words_by_ayah)
-    if readings or moved:
+    readings, suspects, unexplained = _reading_path(emission, units, env, _following_units(surah_id, words_by_ayah, units),
+                                                    wav=wav, words_by_ayah=words_by_ayah)
+    # It may have moved words onto where he first read them -- also with no
+    # repeat to show, a word he restarted (see RETURN_RESTART_*).
+    ayah_info = _resolve_times(units, env, 0.0, len(wav) / SAMPLE_RATE)
+    # Where the model can't hear the recitation at all, or the reading path
+    # left speech unexplained, Whisper listens.
+    readings, unheard, moved, explained = _hear_deaf_stretches(wav, emission, env, units, readings, words_by_ayah,
+                                                                unexplained)
+    suspects = [t for t in suspects if t not in explained]
+    moved |= _restarted_words(emission, env, units, readings)
+    if moved:
         ayah_info = _resolve_times(units, env, 0.0, len(wav) / SAMPLE_RATE)
     reasons, mean_conf = _assess(
         units, ayah_info, start_ayah, end_ayah, wav, words_by_ayah,
@@ -1465,13 +1545,20 @@ def _pause_runs(env, lo, hi):
     return runs
 
 
-def _path_search(em, y, words, start_words, end_words, arrive, no_span, banned=frozenset()):
+def _path_search(em, y, words, start_words, end_words, arrive, no_span, banned=frozenset(), allowed=None,
+                 landable=None, bonus=None, enter=None):
     """Viterbi over the CTC states of the concatenated words' letters `y`,
     with jumps back (see the RETURN_* comment). em: [T, V] log-posteriors of
     the searched frames; words: [(first token, last token, ayah)]; arrive:
     frame -> pause a jump may land on; no_span: frames no word may be inside
     of; banned: (pause, word gone back to, word gone back from) jumps not
-    allowed.
+    allowed; allowed: when given, the only jumps allowed, in that shape
+    (word gone back from None: from any); landable: per word, whether a
+    jump may go back to it (default all); bonus: {(frame, word gone back
+    to): amount} off the cost of such a jump landing on that very frame
+    (one frame: a path can't collect it twice); enter: {frame: [(word,
+    amount)]} added when a reading of that word starts on that frame
+    (entering its first letter, not staying in it: once per reading).
     Returns (state per frame, frames a jump landed on)."""
     T, N, W = em.shape[0], len(y), len(words)
     S = 2 * N + 1
@@ -1490,6 +1577,8 @@ def _path_search(em, y, words, start_words, end_words, arrive, no_span, banned=f
     # back[i, k]: a reading that ended at word k may go back to word i.
     i_idx, k_idx = np.meshgrid(np.arange(W), np.arange(W), indexing="ij")
     back = (k_idx >= i_idx) & (k_idx - i_idx < RETURN_MAX_WORDS) & (ayah[k_idx] - ayah[i_idx] <= RETURN_MAX_AYAHS)
+    if landable is not None:
+        back &= np.asarray(landable, dtype=bool)[:, None]
 
     def emit(t):
         e = np.maximum(em[t, labels], em[t, 0] - RETURN_LETTER_CAP)
@@ -1504,9 +1593,14 @@ def _path_search(em, y, words, start_words, end_words, arrive, no_span, banned=f
     bp = np.zeros((T, S), dtype=np.int8)
     jump_from = {}
     cols = np.arange(S)
-    banned_at = {}
+    banned_at, allowed_at = {}, {}
     for pause, i, k in banned:
         banned_at.setdefault(pause, []).append((i, k))
+    for pause, i, k in allowed or ():
+        allowed_at.setdefault(pause, []).append((i, k))
+    bonus_at = {}
+    for (frame, i), amount in (bonus or {}).items():
+        bonus_at.setdefault(frame, []).append((i, amount))
     for t in range(1, T):
         prev1 = np.concatenate(([-np.inf], delta[:-1]))
         prev2 = np.where(skip, np.concatenate(([-np.inf, -np.inf], delta[:-2])), -np.inf)
@@ -1516,17 +1610,30 @@ def _path_search(em, y, words, start_words, end_words, arrive, no_span, banned=f
         if t in arrive:
             ends = np.maximum(delta[end_letter], delta[end_blank])
             end_state = np.where(delta[end_letter] >= delta[end_blank], end_letter, end_blank)
-            cand = np.where(back, ends[None, :], -np.inf)
-            for i, k in banned_at.get(arrive[t], ()):
-                cand[i, k] = -np.inf
+            if allowed is None:
+                cand = np.where(back, ends[None, :], -np.inf)
+                for i, k in banned_at.get(arrive[t], ()):
+                    cand[i, k] = -np.inf
+            else:
+                cand = np.full((W, W), -np.inf)
+                for i, k in allowed_at.get(arrive[t], ()):
+                    if k is None:
+                        cand[i] = np.where(back[i], ends, -np.inf)
+                    elif back[i, k]:
+                        cand[i, k] = ends[k]
             k = cand.argmax(axis=1)
             value = cand[np.arange(W), k] - RETURN_JUMP_COST
+            for i, amount in bonus_at.get(t, ()):
+                value[i] += amount
             better = value > best[start_letter]
             if better.any():
                 targets = start_letter[better]
                 best[targets] = value[better]
                 arg[targets] = 3
                 jump_from[t] = dict(zip(targets.tolist(), end_state[k[better]].tolist()))
+        for w, amount in (enter or {}).get(t, ()):
+            if arg[start_letter[w]] != 0:
+                best[start_letter[w]] += amount
         if t in no_span:
             best = np.where(between, best, -np.inf)
         bp[t] = arg
@@ -1547,7 +1654,7 @@ def _path_search(em, y, words, start_words, end_words, arrive, no_span, banned=f
     return path, jumps
 
 
-CLEAR_WIDEN = 6  # frames (0.12s)
+CLEAR_WIDEN = int(round(CLEAR_WIDEN_SEC / FRAME_SEC))
 
 
 def _path_occurrences(path, jumps, em, y, tok_word, consonant):
@@ -1581,9 +1688,19 @@ def _path_occurrences(path, jumps, em, y, tok_word, consonant):
     return occ
 
 
-def _verify_jumps(occ, order):
+def _verify_jumps(occ, order, heard=()):
+    def from_as_heard(w, last):
+        # Whisper misses words often enough that a later word of the same
+        # ayah is still it; a word of the next ayah is not.
+        return w <= last or order[w]["ayah"] == order[last]["ayah"]
+
     """[{"frame", "ok", "margin"}] per jump back on the path (see the RETURN_*
-    comment); margin < 0 fails, and says by how much."""
+    comment); margin < 0 fails, and says by how much. heard: [(first frame,
+    last frame, word, from)] where Whisper heard him go back to that word
+    from word `from` or another of its ayah (see TRACK_*) -- a jump from the
+    next ayah is not the one Whisper heard: the search put that ayah's
+    first word into a madd and jumped back from it (98:2-3, Husary and
+    Mishary)."""
     firsts = {}
     for o in occ:
         firsts.setdefault(o["w"], o)
@@ -1599,27 +1716,40 @@ def _verify_jumps(occ, order):
                 if o2["w"] in seen:
                     pairs.append((o2["clear"], seen[o2["w"]]["clear"]))
                     letters += len(order[o2["w"]]["ids"])
-            if len(pairs) < RETURN_MIN_WORDS or letters < RETURN_MIN_LETTERS:
-                score, ratio, detail = -1.0, 0.0, f"{len(pairs)} words"
+            short = len(pairs) < RETURN_MIN_WORDS or letters < RETURN_MIN_LETTERS
+            if not pairs:
+                score, ratio, detail = -1.0, 0.0, "0 words"
             else:
                 again, before = zip(*pairs)
                 ratio = float(np.mean([min(a, b) / max(a, b, 1e-6) for a, b in pairs]))
                 score = ratio + min(np.mean(again), np.mean(before)) - need
                 detail = (f"{len(pairs)} words, clear {np.mean(again):.2f}/{np.mean(before):.2f} (need {need:.2f}), "
-                          f"ratio {ratio:.2f}")
-            ok = ratio >= RETURN_MIN_RATIO and score >= RETURN_ACCEPT
+                          f"ratio {ratio:.2f}, {letters} letters")
+            if pairs and any(w == o["w"] and lo <= o["f0"] <= hi and (not n or from_as_heard(occ[n - 1]["w"], last))
+                             for lo, hi, w, last in heard):
+                restart = bool(n) and occ[n - 1]["w"] == o["w"]
+                detail += ", heard" + (", restart" if restart else "")
+                ok = (ratio >= RETURN_HEARD_MIN_RATIO and score >= RETURN_HEARD_ACCEPT
+                      and (not restart or (o["f0"] - occ[n - 1]["f1"]) * FRAME_SEC >= RETURN_RESTART_GAP_SEC))
+                o["restart"] = ok and restart and len(pairs) == 1
+                score = score if ok else -1.0
+            else:
+                if short:
+                    score = -1.0
+                ok = ratio >= RETURN_MIN_RATIO and score >= RETURN_ACCEPT
             checks.append({"to": o["w"], "from": occ[n - 1]["w"] if n else o["w"], "frame": o["f0"], "ok": ok, "margin": float(score - RETURN_ACCEPT), "words": len(pairs),
                            "suspect": not ok and score >= RETURN_SUSPECT, "detail": detail})
         seen.setdefault(o["w"], o)
     return checks
 
 
-def _unexplained_speech(path, em, runs, hop, r0):
-    """Frames (on the searched region) where a stretch of speech between two
+def _unexplained_speech(path, em, runs, hop, r0, own=None):
+    """[(start, end)] frames (on the searched region) where a stretch of speech between two
     pauses, inside the reading, holds no letter of the path at all -- what a
     repeat the search couldn't verify, or anything else read there, looks
-    like."""
-    letter = np.flatnonzero(path % 2 == 1)
+    like. own: per frame, whether its letter counts as inside the reading
+    (default every letter; not the text after the selection)."""
+    letter = np.flatnonzero((path % 2 == 1) & (True if own is None else own))
     if len(letter) == 0:
         return []
     mass = 1.0 - np.exp(em[:, 0])
@@ -1632,11 +1762,114 @@ def _unexplained_speech(path, em, runs, hop, r0):
         logger.info(f"Unexplained speech {(r0 + a) * FRAME_SEC:.1f}-{(r0 + b) * FRAME_SEC:.1f}s: "
                     f"letter evidence {mass[a:b].sum():.2f}.")
         if mass[a:b].sum() >= UNEXPLAINED_MIN_MASS:
-            found.append(a)
+            found.append((a, b))
     return found
 
 
-def _reading_path(emission, units, env):
+def _following_units(surah_id, words_by_ayah, units):
+    """Units (not aligned, not target) of the text after the selection, when
+    nothing after it was aligned as context -- see RETURN_FOLLOW_*."""
+    aligned = [u for u in units if u["ids"] and "f0" in u]
+    if not aligned or not aligned[-1]["target"]:
+        return []
+    targets = [u for u in aligned if u["target"]]
+    seconds = max(1.0, (targets[-1]["f1"] - targets[0]["f0"]) * FRAME_SEC)
+    want = int(np.clip(np.ceil(len(targets) / seconds * RETURN_SLACK_SEC * RETURN_FOLLOW_PACE),
+                       RETURN_FOLLOW_MIN_WORDS, RETURN_FOLLOW_MAX_WORDS))
+    follow, ayah = [], aligned[-1]["ayah"] + 1
+    while ayah in words_by_ayah and len(follow) < want:
+        follow += [u for u in _build_units(surah_id, words_by_ayah, [ayah], set()) if u["ids"]]
+        ayah += 1
+    return follow[:want]
+
+
+def _from_word_check(order):
+    """from_as_heard (see _verify_jumps) for the search's veto."""
+    return lambda w, last: w <= last or order[w]["ayah"] == order[last]["ayah"]
+
+
+def _plain_word(u, words_by_ayah):
+    """A unit's word in plain spelling (_norm_words), to compare with
+    Whisper's."""
+    tokens = words_by_ayah[u["ayah"]]["tokens"]
+    real = [i for i, t in enumerate(tokens) if not _is_mark_token(t)]
+    clean = _norm_words(" ".join(words_by_ayah[u["ayah"]]["clean"]))
+    own = _norm_words(u["w"])
+    return clean[real.index(u["index"])] if len(clean) == len(real) else (own[0] if own else "")
+
+
+def _whisper_track(wav, a, b, text):
+    """[(text index, start, end)] in time order: the words of `text` (plain
+    spellings) Whisper hears in [a, b] seconds -- in whatever order he read
+    them, repeats included (see TRACK_*)."""
+    model = _get_verify_model()
+    a, b = max(0.0, a), min(len(wav) / SAMPLE_RATE, b)
+    hits = []  # (text index, start, end, window)
+    for n, ws in enumerate(np.arange(a, max(a, b - TRACK_WINDOW_SEC + TRACK_HOP_SEC) + 1e-6, TRACK_HOP_SEC)):
+        we = min(b, ws + TRACK_WINDOW_SEC)
+        job_control.check_cancelled()
+        segments, _ = model.transcribe(
+            wav[int(ws * SAMPLE_RATE):int(we * SAMPLE_RATE)], language="ar", beam_size=5,
+            word_timestamps=True, condition_on_previous_text=False, vad_filter=False,
+        )
+        words = [(t, ws + w.start, ws + w.end) for seg in segments for w in seg.words or []
+                 if TRACK_EDGE_SEC * (ws > a) <= w.start <= we - ws - TRACK_END_SEC * (we < b)
+                 for t in _norm_words(w.word)]
+        like = [{x for x, t in enumerate(text) if t and _similar(h, t) >= TRACK_MIN_SIM} for h, _, _ in words]
+
+        def run(h, x):  # heard words matching the text in order through (h, x)
+            lo = hi = 0
+            while h - lo - 1 >= 0 and x - lo - 1 in like[h - lo - 1]:
+                lo += 1
+            while h + hi + 1 < len(words) and x + hi + 1 in like[h + hi + 1]:
+                hi += 1
+            return lo + hi + 1
+
+        for h, xs in enumerate(like):
+            runs = {x: run(h, x) for x in xs}
+            best = max(runs.values(), default=1)
+            places = [x for x, r in runs.items() if r == best]
+            if best >= 2 and len(places) == 1:
+                hits.append((places[0], words[h][1], words[h][2], n))
+    heard = []
+    for x, s0, e0, n in sorted(hits, key=lambda h: h[1]):
+        same = next((g for g in heard if g["x"] == x and abs(np.median(g["s"]) - s0) < TRACK_SAME_SEC), None)
+        if same is None:
+            heard.append({"x": x, "s": [s0], "e": [e0], "n": {n}})
+        else:
+            same["s"].append(s0)
+            same["e"].append(e0)
+            same["n"].add(n)
+    return sorted(((g["x"], float(np.median(g["s"])), float(np.median(g["e"]))) for g in heard
+                   if len(g["n"]) >= TRACK_MIN_SUPPORT), key=lambda h: h[1])
+
+
+def _track_returns(heard):
+    """[(seconds, text index, words, from)]: where Whisper's track
+    (_whisper_track) has him go back to a word he read TRACK_AGAIN_SEC+
+    before -- or say the same word again -- and read on from it; words:
+    [(text index, seconds)] Whisper heard of that part in both readings;
+    from: the last word Whisper heard before he went back."""
+    found = []
+    for j in range(1, len(heard) - 1):
+        x, s0, _ = heard[j]
+        if x > heard[j - 1][0] or heard[j + 1][0] != x + 1:
+            continue
+        before = [k for k in range(j) if heard[k][0] == x and heard[k][1] < s0 - TRACK_AGAIN_SEC]
+        if not before or any(x == x0 and abs(s0 - t0) < 1.0 for t0, x0, _, _ in found):
+            continue
+        last = heard[j - 1][0]
+        first = [(h[0], h[1]) for h in heard[before[-1]:j] if x <= h[0] <= last]
+        again = [(x, s0)]
+        for h in heard[j + 1:]:
+            if h[0] != again[-1][0] + 1:
+                break
+            again.append((h[0], h[1]))
+        found.append((s0, x, first + again, last))
+    return found
+
+
+def _reading_path(emission, units, env, follow=(), wav=None, words_by_ayah=None):
     """The order the reciter actually read the target in, when he went back
     and read part of it again (see the RETURN_* comment). Returns (readings,
     suspects). readings -- [{"ayah", "from", "to", "jump", "words": [(token
@@ -1644,15 +1877,22 @@ def _reading_path(emission, units, env):
     each a run of consecutive words of one ayah ("jump": it starts by going
     back), or None when he didn't go back -- moves every unit's
     f0/f1/conf/spans onto its FIRST reading. suspects -- [seconds] where a
-    repeat seemed to start but couldn't be verified."""
-    order = [u for u in units if u["ids"] and "f0" in u]
-    if not any(u["target"] for u in order):
-        return None, []
+    repeat seemed to start but couldn't be verified. Also returns the
+    stretches of speech it left unexplained (see _unexplained_speech), in
+    seconds, for Whisper to listen to. follow: units of the
+    text after the selection when none was aligned as context (see
+    _following_units). wav, words_by_ayah: for Whisper's track (TRACK_*);
+    without them the alignment model's search alone."""
+    aligned = [u for u in units if u["ids"] and "f0" in u]
+    if not any(u["target"] for u in aligned):
+        return None, [], []
     _, dictionary, _ = _get_mms()
     lead = RETURN_LEAD_SEC
-    tail = RETURN_CONTEXT_SLACK_SEC if not order[-1]["target"] else RETURN_SLACK_SEC
-    r0 = max(0, order[0]["f0"] - int(lead / FRAME_SEC))
-    r1 = min(emission.shape[0], order[-1]["f1"] + int(tail / FRAME_SEC) + 1)
+    tail = RETURN_CONTEXT_SLACK_SEC if not aligned[-1]["target"] else RETURN_SLACK_SEC
+    r0 = max(0, aligned[0]["f0"] - int(lead / FRAME_SEC))
+    r1 = min(emission.shape[0], aligned[-1]["f1"] + int(tail / FRAME_SEC) + 1)
+    order = aligned + [u for u in follow if u["ids"]] if aligned[-1]["target"] else aligned
+    following = len(aligned)  # order[following:] is the text after the selection
     y, words, tok_word = [], [], []
     for n, u in enumerate(order):
         words.append((len(y), len(y) + len(u["ids"]) - 1, u["ayah"]))
@@ -1661,7 +1901,7 @@ def _reading_path(emission, units, env):
     y = np.array(y)
     if (r1 - r0) * (2 * len(y) + 1) > RETURN_MAX_CELLS:
         logger.warning("Reading path skipped: the selection is too long to search.")
-        return None, []
+        return None, [], []
     em = emission[r0:r1].numpy().astype(np.float64)
     # A long vowel written with waw/yaa is often heard as the consonant
     # ("يَتْلُوا۟": the model hears y-t-l-w, the spelling says yatlu).
@@ -1685,16 +1925,54 @@ def _reading_path(emission, units, env):
     last_target = max(n for n, u in enumerate(order) if u["target"])
     start_words = list(range(first_target + 1))  # may start inside the context
     end_words = list(range(last_target, len(order)))
-    banned, suspects = set(), []
-    for round_no in range(RETURN_ROUNDS):
-        job_control.check_cancelled()
-        path, jumps = _path_search(em, y, words, start_words, np.array(end_words), arrive, no_span, banned)
+    # A jump only goes back to a word of the selection: nothing of the
+    # context or the text after it is shown, and a jump back into the
+    # previous ayah let the search read the selection's first words over
+    # that ayah's audio and "go back" (Sudais and Ghamdi, 98:1-2 in a
+    # whole-surah recording).
+    landable = [bool(u["target"]) and n < following for n, u in enumerate(order)]
+    key = lambda c: (arrive[c["frame"]], c["to"], c["from"])  # noqa: E731
+    banned, verified, suspects = set(), set(), []
+
+    # Where Whisper hears him go back (see TRACK_*), in frames of the region.
+    hints, heard, track = [], [], []
+    if wav is not None and words_by_ayah is not None:
+        track = _whisper_track(wav, r0 * FRAME_SEC, r1 * FRAME_SEC, [_plain_word(u, words_by_ayah) for u in order])
+        logger.info("Whisper's track: " + " ".join(f"{order[x]['ayah']}:{order[x]['index']}@{s0:.1f}" for x, s0, _ in track))
+        for s0, x, both, last in _track_returns(track):
+            if x < following:
+                at = int(s0 / FRAME_SEC) - r0
+                hints.append((s0, x, both))
+                heard.append((at - int(TRACK_LAND_BEFORE / FRAME_SEC), at + int(TRACK_LAND_AFTER / FRAME_SEC), x, last))
+        logger.info("Whisper hears him go back: " + (", ".join(
+            f"to {order[x]['ayah']}:{order[x]['index']} at {s0:.1f}s" for s0, x, _ in hints) or "nowhere") + ".")
+
+    _from_as_heard = _from_word_check(order)
+
+    def search(round_name, **limits):
+        path, jumps = _path_search(em, y, words, start_words, np.array(end_words), arrive, no_span,
+                                   landable=landable, **limits)
         occ = _path_occurrences(path, jumps, em, y, tok_word, consonant)
-        checks = _verify_jumps(occ, order)
-        failed = [c for c in checks if not c["ok"]]
-        logger.info(f"Reading path round {round_no + 1}: " + (", ".join(
+        checks = _verify_jumps(occ, order, heard)
+        for c in checks:
+            t = (r0 + c["frame"]) * FRAME_SEC
+            if any(w == c["to"] and lo <= c["frame"] <= hi and not _from_as_heard(c["from"], last)
+                   for lo, hi, w, last in heard):
+                c.update(ok=False, suspect=False, margin=-1.0, detail=c["detail"] + ", Whisper heard him go back from an earlier ayah")
+            if c["ok"] and "heard" not in c["detail"] and any(
+                    xa >= c["to"] and 0 < xb - xa <= 2 and 0 < sb - sa <= TRACK_ON_SEC and sa - 0.1 <= t <= sb + 0.1
+                    for (xa, sa, _), (xb, sb, _) in zip(track, track[1:])):
+                c.update(ok=False, suspect=False, margin=-1.0, detail=c["detail"] + ", Whisper heard him read on")
+        logger.info(f"Reading path {round_name}: " + (", ".join(
             f"{'ok' if c['ok'] else 'rejected'} jump at {(r0 + c['frame']) * FRAME_SEC:.1f}s ({c['margin']:+.2f}: {c['detail']})"
             for c in checks) or "no jump back") + ".")
+        return path, jumps, occ, checks
+
+    for round_no in range(RETURN_ROUNDS):
+        job_control.check_cancelled()
+        path, jumps, occ, checks = search(f"round {round_no + 1}", banned=banned)
+        verified |= {key(c) for c in checks if c["ok"]}
+        failed = [c for c in checks if not c["ok"]]
         if not failed:
             break
         # Too short to be a repeat at all: all banned at once; otherwise
@@ -1705,19 +1983,85 @@ def _reading_path(emission, units, env):
             # (Closing the whole pause lost 79:29 in the user's fajr upload:
             # the search first offered a one-word repeat there, and the true
             # two-word one at the same pause was never tried.)
-            banned.add((arrive[c["frame"]], c["to"], c["from"]))
+            banned.add(key(c))
             if c["suspect"]:
                 suspects.append((r0 + c["frame"]) * FRAME_SEC)
     else:
-        logger.warning("Reading path: no verified result after the last round; keeping the linear one.")
-        return None, suspects
-    suspects += [(r0 + f) * FRAME_SEC for f in _unexplained_speech(path, em, runs, hop, r0)]
+        # The rounds ran out with unverified jumps still on offer. The jumps
+        # verified on the way stand all the same: searched again with only
+        # those allowed (dropping any that no longer verify in that path).
+        # Reading everything once instead lost both of the true repeats in
+        # the user's Maher upload of 71:10-15 -- verified in every round --
+        # while each round offered another jump into the speech after 15.
+        logger.warning("Reading path: rounds ran out; keeping only the jumps verified on the way.")
+        while True:
+            job_control.check_cancelled()
+            path, jumps, occ, checks = search("with verified jumps only", allowed=verified)
+            failed = {key(c) for c in checks if not c["ok"]}
+            if not failed:
+                break
+            verified -= failed
+    # Returns Whisper heard that the search didn't take: offered one by one,
+    # along with the jumps taken so far, and kept when all of them verify.
+    # Each one along with the jumps offered before it that were kept --
+    # without their pull a later trial dropped an earlier return (Minshawi's
+    # "مُخْلِصِينَ لَهُ ٱلدِّينَ" read twice in 98:5) -- and kept only when it
+    # loses none of the jumps taken so far.
+    near = int(TRACK_SAME_SEC / FRAME_SEC)
+    kept_bonus, kept_enter = {}, {}
+    for (s0, x, both), (lo, hi, _, _) in zip(hints, heard):
+        # Already read again about there by a jump into the same ayah (it
+        # may land a word earlier; Whisper's times are good to half a second
+        # or so). One landing in the ayah before isn't it: Al-Kurdi
+        # restarting 79:31 came out as a jump to 79:30's last word.
+        landed, satisfied = None, False
+        for n, o in enumerate(occ):
+            if o["jump"]:
+                landed = o["w"]
+            if (o["w"] == x and lo - near <= o["f0"] <= hi + near and any(p["w"] == x for p in occ[:n])
+                    and landed is not None and landed <= x and order[landed]["ayah"] == order[x]["ayah"]):
+                satisfied = True
+        if satisfied:
+            continue
+        # The pause ending nearest to when Whisper heard the word.
+        ends = [(abs(int(j / hop) - r0 - (int(s0 / FRAME_SEC) - r0)), p, int(j / hop) - r0)
+                for p, (_, j, _) in enumerate(runs) if lo <= int(j / hop) - r0 <= hi and int(j / hop) - r0 in arrive]
+        if not ends:
+            logger.info(f"Reading path: no pause to go back to {order[x]['ayah']}:{order[x]['index']} at {s0:.1f}s.")
+            continue
+        _, pause, end = min(ends)
+        bonus, enter = {**kept_bonus, (end, x): TRACK_BONUS}, {f: list(v) for f, v in kept_enter.items()}
+        for xw, sw in both:
+            at = int(sw / FRAME_SEC) - r0
+            for f in range(at - int(TRACK_ENTER_SEC / FRAME_SEC), at + int(TRACK_ENTER_SEC / FRAME_SEC) + 1):
+                if 0 < f < len(em):
+                    enter.setdefault(f, []).append((xw, TRACK_ENTER_BONUS))
+        trial = search(f"offered the jump back to {order[x]['ayah']}:{order[x]['index']} at {s0:.1f}s",
+                       allowed={key(c) for c in checks} | {(pause, x, None)}, bonus=bonus, enter=enter)
+        keeps = all(any(c2["to"] == c["to"] and abs(c2["frame"] - c["frame"]) <= near for c2 in trial[3])
+                    for c in checks if not lo - near <= c["frame"] <= hi + near)
+        if keeps and all(c["ok"] for c in trial[3]) and any(c["to"] == x and lo <= c["frame"] <= hi for c in trial[3]):
+            path, jumps, occ, checks = trial
+            kept_bonus, kept_enter = bonus, enter
+    own = np.array(tok_word)[np.maximum(path - 1, 0) // 2] < following
+    unexplained = [((r0 + a) * FRAME_SEC, (r0 + b) * FRAME_SEC) for a, b in _unexplained_speech(path, em, runs, hop, r0, own)]
+    suspects += [a for a, _ in unexplained]
     if not jumps:
-        return None, suspects
+        return None, suspects, unexplained
+    # A restart (see RETURN_RESTART_*) is one reading of the word, from the
+    # first time he says it to the end of the second.
+    kept = []
+    for o in occ:
+        if o.get("restart") and kept and kept[-1]["w"] == o["w"]:
+            kept[-1]["f1"] = o["f1"]
+            kept[-1]["spans"] = kept[-1]["spans"] + o["spans"]
+            continue
+        kept.append(o)
+    occ = kept
 
     seen = set()
     for o in occ:
-        if o["w"] not in seen:
+        if o["w"] not in seen and o["w"] < following:
             seen.add(o["w"])
             u = order[o["w"]]
             f0, f1 = r0 + o["f0"], r0 + o["f1"]
@@ -1750,10 +2094,11 @@ def _reading_path(emission, units, env):
         cur["to"] = u["index"]
         cur["words"].append((u["index"], start, max(end if found else nxt, tok_end)))
     if not any(r["jump"] for r in readings):
-        return None, suspects
+        # Only restarts: the units moved (their times need resolving again).
+        return None, suspects, unexplained
     logger.info("Reading path: " + ", ".join(
         f"{'↩' if r['jump'] else ''}{r['ayah']}:{r['from']}-{r['to']}@{r['words'][0][1]:.1f}s" for r in readings) + ".")
-    return readings, suspects
+    return readings, suspects, unexplained
 
 
 # ========== STRETCHES THE ALIGNMENT MODEL CAN'T HEAR ==========
@@ -1878,29 +2223,37 @@ def _prefer_twins_inside(pairs, plain, k0, k1):
     return out
 
 
-def _hear_deaf_stretches(wav, emission, env, units, readings, words_by_ayah):
+def _hear_deaf_stretches(wav, emission, env, units, readings, words_by_ayah, unexplained=()):
     """Where the alignment model can't hear the recitation (see DEAF_*),
     lets Whisper listen: words it hears there that the reading path times
     elsewhere or not at all are retimed, and a run of RETURN_MIN_WORDS+
     consecutive words the path reads again outside the stretch is another
     reading of them (79:32 read twice in the user's fajr upload; the first
-    time inside such a stretch). Returns (readings, unheard, changed): the
-    reading path in _reading_path's shape, [(start, end)] stretches where
-    Whisper heard words of the text that fit nowhere, and whether units moved (their times need
-    resolving again). Moves units onto their first reading as _reading_path
-    does; marks the words Whisper timed "deaf_checked"."""
+    time inside such a stretch). The same in `unexplained`, speech the path
+    holds no letter of (see _unexplained_speech): Al-Ajmi's first reading
+    of 17:71's "فَأُو۟لَٰٓئِكَ يَقْرَءُونَ كِتَٰبَهُمْ" -- the second one half
+    unheard, so the search found no repeat and put the words there, leaving
+    the first reading out (the text showed 5 s late). Returns (readings,
+    unheard, changed, explained): the reading path in _reading_path's
+    shape, [(start, end)] unheard stretches where Whisper heard words of the
+    text that fit nowhere, whether units moved (their times need resolving
+    again), and the starts of the `unexplained` stretches Whisper placed
+    text in. Moves units onto their first reading as _reading_path does;
+    marks the words Whisper timed "deaf_checked"."""
     targets = [u for u in units if u["target"] and "f0" in u]
     if not targets:
-        return readings, [], False
+        return readings, [], False, []
     pos_of = {(u["ayah"], u["index"]): n for n, u in enumerate(targets)}
     if readings:
         occ = [[pos_of[(r["ayah"], idx)], s, e] for r in readings for idx, s, e in r["words"] if (r["ayah"], idx) in pos_of]
     else:
         occ = [[n, u["start"], u["end"]] for n, u in enumerate(targets)]
     occ.sort(key=lambda o: o[1])
-    stretches = _deaf_stretches(emission, env, occ[0][1], occ[-1][2])
+    stretches = [(a, b, False) for a, b in _deaf_stretches(emission, env, occ[0][1], occ[-1][2])]
+    stretches += [(a, b, True) for a, b in unexplained if not any(a < d1 and d0 < b for d0, d1, _ in stretches)]
+    stretches.sort()
     if not stretches:
-        return readings, [], False
+        return readings, [], False, []
 
     # The plain spelling of every target word, to compare with Whisper's.
     plain = []
@@ -1911,8 +2264,8 @@ def _hear_deaf_stretches(wav, emission, env, units, readings, words_by_ayah):
         own = _norm_words(u["w"])
         plain.append(clean[real.index(u["index"])] if len(clean) == len(real) else (own[0] if own else ""))
 
-    changed, unheard, timed = False, [], set()
-    for a, b in stretches:
+    changed, unheard, timed, explained = False, [], set(), []
+    for a, b, spoken in stretches:
         before = [o for o in occ if o[2] <= a + 0.2]
         after = [o for o in occ if o[1] >= b - 0.2]
         k0 = before[-1][0] if before else -1
@@ -1921,7 +2274,8 @@ def _hear_deaf_stretches(wav, emission, env, units, readings, words_by_ayah):
         pairs = [((None, s0, e0), lo + x) for x, s0, e0 in _heard_by_whisper(wav, a, b, plain[lo:hi])]
         pairs = _prefer_twins_inside(pairs, plain, k0, k1)
         matched = ", ".join("%d:%d@%.1fs" % (targets[p]["ayah"], targets[p]["index"], h[1]) for h, p in pairs)
-        logger.info(f"Unheard stretch {a:.1f}-{b:.1f}s: Whisper heard {matched or 'nothing of the text'}.")
+        logger.info(f"{'Unexplained' if spoken else 'Unheard'} stretch {a:.1f}-{b:.1f}s: "
+                    f"Whisper heard {matched or 'nothing of the text'}.")
         # Words the path reads once, across the stretch: their times.
         inside = [(h, p) for h, p in pairs if k0 < p < k1]
         # Runs of consecutive words the path reads elsewhere: another reading.
@@ -1937,22 +2291,31 @@ def _hear_deaf_stretches(wav, emission, env, units, readings, words_by_ayah):
         if not inside and not extra:
             # Words of the text heard there that fit nowhere: worth a look.
             # (Nothing of the text heard at all is a long madd, as in every
-            # clean recording.)
-            if pairs:
+            # clean recording.) Unexplained speech stays flagged as it was.
+            if pairs and not spoken:
                 unheard.append((a, b))
             continue
+        if spoken:
+            explained.append(a)
         for h, p in inside:
             here = [o for o in occ if o[0] == p and o[2] > a and o[1] < b]
-            if here:
-                here[0][1], here[0][2] = h[1], max(h[2], h[1] + FRAME_SEC)
-                timed.add(p)
+            if not here:
+                continue
+            # Never out of the text's order: Whisper heard 98:5's "إِلَّا"
+            # before "أُمِرُوٓا۟" (Minshawi), which made a jump back.
+            before_it = [o[1] for o in occ if o[0] == p - 1 and o[1] < here[0][1]]
+            after_it = [o[1] for o in occ if o[0] == p + 1 and o[1] > here[0][1]]
+            if (before_it and h[1] <= max(before_it)) or (after_it and h[1] >= min(after_it)):
+                continue
+            here[0][1], here[0][2] = h[1], max(h[2], h[1] + FRAME_SEC)
+            timed.add(p)
         for run in extra:
             for h, p in run:
                 occ.append([p, h[1], max(h[2], h[1] + FRAME_SEC)])
                 timed.add(p)
         changed = True
     if not changed:
-        return readings, unheard, False
+        return readings, unheard, False, explained
 
     occ.sort(key=lambda o: o[1])
     for o, nxt in zip(occ, occ[1:]):
@@ -1977,7 +2340,114 @@ def _hear_deaf_stretches(wav, emission, env, units, readings, words_by_ayah):
         targets[p]["deaf_checked"] = True
     logger.info("Reading path after the unheard stretches: " + ", ".join(
         f"{'↩' if r['jump'] else ''}{r['ayah']}:{r['from']}-{r['to']}@{r['words'][0][1]:.1f}s" for r in new_readings) + ".")
-    return (new_readings if any(r["jump"] for r in new_readings) else None), unheard, True
+    return (new_readings if any(r["jump"] for r in new_readings) else None), unheard, True, explained
+
+
+# ========== A WORD SAID TWICE ==========
+# One word said, a breath, and said again as he reads on: neither ear can
+# take that as a repeat -- one word alone is no different from a long madd
+# to the alignment model, and Whisper writes the word once -- so the
+# alignment puts the word on its second saying and the first goes to the
+# word before (the ayah or part it starts showed late, by the breath and
+# the word: 1-3 s). So it is looked for directly: a word that starts right
+# after a pause, with a breath group of RESTART_GROUP_MIN_SEC to
+# RESTART_GROUP_MAX_SEC (and at most RESTART_GROUP_MAX_RATIO times the
+# word) between that pause and the one before it in which no other word
+# starts (nor right at its start). If every consonant of the word
+# (RESTART_MIN_CONSONANTS+) peaks there, in order, at RESTART_MIN_PEAK+,
+# their mean peak at least RESTART_MIN_REL of what it is where the word is
+# read, that breath group is the word said the first time: the word lasts
+# from there. The group is searched from RESTART_LEAD_SEC before the pause
+# ends: a soft first consonant (Husary's ف) is quiet enough to count as
+# pause. Not when the word before is the same word ("دَكًّۭا دَكًّۭا").
+RESTART_GROUP_MIN_SEC = 0.25
+RESTART_GROUP_MAX_SEC = 2.5
+RESTART_GROUP_MAX_RATIO = 2.5
+RESTART_MIN_CONSONANTS = 2
+RESTART_MIN_PEAK = 0.25
+RESTART_MIN_REL = 0.6
+RESTART_LEAD_SEC = 0.25
+
+
+def _consonant_peaks(em, ids, f0, f1, consonant):
+    """Peak posterior of each consonant of `ids` in frames [f0, f1), each
+    searched from where the one before it peaked (in order)."""
+    peaks, at = [], f0
+    for c in ids:
+        if not consonant[c]:
+            continue
+        if at >= f1:
+            peaks.append(0.0)
+            continue
+        seg = em[at:f1, c]
+        k = int(np.argmax(seg))
+        peaks.append(float(np.exp(seg[k])))
+        at += k
+    return peaks
+
+
+def _restarted_words(emission, env, units, readings):
+    """Finds words said twice in a row (see RESTART_*) and starts them at
+    their first saying -- in the units (their first reading) and in
+    `readings`. Returns whether anything moved."""
+    _, dictionary, _ = _get_mms()
+    em = emission.numpy()
+    consonant = np.ones(em.shape[1], dtype=bool)
+    consonant[[0] + [dictionary[c] for c in "aiueo"]] = False
+    targets = [u for u in units if u["target"] and "f0" in u and u["ids"]]
+    unit_of = {(u["ayah"], u["index"]): u for u in targets}
+    if readings:
+        occ = [[(r["ayah"], idx), st, en, r, k] for r in readings for k, (idx, st, en) in enumerate(r["words"])
+               if (r["ayah"], idx) in unit_of]
+    else:
+        occ = [[(u["ayah"], u["index"]), u["start"], u["end"], None, None] for u in targets]
+    occ.sort(key=lambda o: o[1])
+    pauses = [(i * ENV_HOP_SEC, j * ENV_HOP_SEC) for i, j, _ in _pause_runs(env, 0, len(env))]
+    moved = False
+    for n, (key, st, en, r, k) in enumerate(occ):
+        u = unit_of[key]
+        after = [q for q, (p0, p1) in enumerate(pauses) if abs(p1 - st) <= 0.15]
+        if not after or after[0] == 0:
+            continue
+        g0, g1 = pauses[after[0] - 1][1], pauses[after[0]][0]
+        own = max(en - st, FRAME_SEC)
+        if not RESTART_GROUP_MIN_SEC <= g1 - g0 <= min(RESTART_GROUP_MAX_SEC, RESTART_GROUP_MAX_RATIO * own):
+            continue
+        if any(g0 - 0.1 <= o[1] < g1 for o in occ):
+            continue
+        if n and unit_of[occ[n - 1][0]]["ids"] == u["ids"]:
+            continue
+        if sum(consonant[c] for c in u["ids"]) < RESTART_MIN_CONSONANTS:
+            continue
+        first = _consonant_peaks(em, u["ids"], max(0, int((g0 - RESTART_LEAD_SEC) / FRAME_SEC)),
+                                 int(g1 / FRAME_SEC) + 1, consonant)
+        second = _consonant_peaks(em, u["ids"], max(0, int((st - RESTART_LEAD_SEC) / FRAME_SEC)),
+                                  int(en / FRAME_SEC) + 1, consonant)
+        ok = min(first) >= RESTART_MIN_PEAK and np.mean(first) >= RESTART_MIN_REL * np.mean(second)
+        logger.info(f"Said twice? {u['ayah']}:{u['index']} at {st:.1f}s, breath group {g0:.1f}-{g1:.1f}s: "
+                    f"peaks {np.mean(first):.2f} (min {min(first):.2f}) vs {np.mean(second):.2f} -> {'yes' if ok else 'no'}.")
+        if not ok:
+            continue
+        if r is not None:
+            idx, _, e = r["words"][k]
+            r["words"][k] = (idx, g0, e)
+        if u["f0"] * FRAME_SEC >= g1 - 0.1:  # its first reading
+            u["f0"] = int(g0 / FRAME_SEC)
+            u["spans"] = [(u["f0"], u["f1"])]
+        # The word before had the first saying: it ends where the pause
+        # before it starts.
+        if n:
+            stop = pauses[after[0] - 1][0]
+            pk, pst, pen, pr, pk2 = occ[n - 1]
+            pu = unit_of[pk]
+            if pr is not None and pen > stop:
+                pidx, ps, _ = pr["words"][pk2]
+                pr["words"][pk2] = (pidx, ps, max(ps + FRAME_SEC, stop))
+            if pu["f1"] * FRAME_SEC > stop and pu["f0"] * FRAME_SEC < stop:
+                pu["f1"] = max(pu["f0"], int(stop / FRAME_SEC) - 1)
+                pu["spans"] = [(pu["f0"], pu["f1"])]
+        moved = True
+    return moved
 
 
 def _weak_word_reason(units):
