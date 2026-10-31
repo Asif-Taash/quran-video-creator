@@ -60,7 +60,7 @@ logger = logging.getLogger(__name__)
 # Bumped whenever output semantics change, so cached clips written by an
 # older engine (or by extract_precise_clip.py, which never wrote this field)
 # are never reused.
-ENGINE_VERSION = "ctc-v13"
+ENGINE_VERSION = "ctc-v14"
 
 SAMPLE_RATE = 16000
 FRAME_SAMPLES = 320  # wav2vec2 emission stride -> 20ms per frame
@@ -1418,7 +1418,7 @@ def _extract_from_long_audio(source_path, surah_id, start_ayah, end_ayah, pad_se
     readings, unheard, moved, explained = _hear_deaf_stretches(wav, emission, env, units, readings, words_by_ayah,
                                                                 unexplained)
     suspects = [t for t in suspects if t not in explained]
-    moved |= _restarted_words(emission, env, units, readings)
+    moved |= _restarted_words(emission, env, units, readings, wav)
     if moved:
         ayah_info = _resolve_times(units, env, 0.0, len(wav) / SAMPLE_RATE)
     reasons, mean_conf = _assess(
@@ -2089,6 +2089,16 @@ def _reading_path(emission, units, env, follow=(), wav=None, words_by_ayah=None)
         end, found = _snap_offset(env, tok_end, nxt, max_fwd=4.0, min_quiet=0.15)
         cur = readings[-1] if readings else None
         if cur is None or jump or cur["ayah"] != u["ayah"]:
+            # A reading starts where his voice does, as an ayah does in the
+            # linear alignment (_resolve_times): on a soft first letter (وَ,
+            # أَ) the CTC frame comes up to half a second late.
+            lo = (r0 + occ[n - 1]["f1"] + 1) * FRAME_SEC if n else r0 * FRAME_SEC
+            if cur is not None:
+                lo = max(lo, min(cur["words"][-1][2], start))
+            start, _ = _snap_onset(env, start, min(lo, start))
+            if cur is not None:
+                idx, s, e = cur["words"][-1]
+                cur["words"][-1] = (idx, s, min(e, start))
             cur = {"ayah": u["ayah"], "from": u["index"], "to": u["index"], "jump": jump, "words": []}
             readings.append(cur)
         cur["to"] = u["index"]
@@ -2367,6 +2377,75 @@ RESTART_MIN_CONSONANTS = 2
 RESTART_MIN_PEAK = 0.25
 RESTART_MIN_REL = 0.6
 RESTART_LEAD_SEC = 0.25
+# Some voices the alignment model hears faintly on a word said alone
+# between two breaths (its consonants barely peak there, though the same
+# word read on peaks plainly). For those the reciter's own words are the
+# templates: the breath group is the word said the first time when it
+# sounds like the start of the word -- by DTW of MFCCs -- closer, by
+# RESTART_SELF_RATIO, than like any part of each of his other words in the
+# recording (RESTART_SELF_MIN_WORDS+ of them). It compares his voice with
+# his voice, so it holds for any voice and any microphone. A breath group
+# can also be the end of the word before (a long vowel after a stop, as in
+# "hat-taa"), which may sound like the start of the next word: so the word
+# before must be all there before the pause in front of the group -- each
+# of its consonants that peaks at all (RESTART_MIN_PEAK) peaking there at
+# least RESTART_SELF_PREV_FIT times as high as it does up to the group's
+# end. (Over the eval's candidates that check alone told the end of the
+# word before from the word said twice: 0.0 vs 1.0.)
+RESTART_SELF_RATIO = 0.9
+RESTART_SELF_PREV_FIT = 0.5
+RESTART_SELF_MIN_WORDS = 4
+RESTART_SELF_MIN_WORD_SEC = 0.15
+RESTART_SELF_ANCHOR_SEC = 0.05
+MFCC_HOP_SEC = 0.01
+
+
+def _mfcc(wav):
+    """Unit-length MFCC vectors every MFCC_HOP_SEC (no energy term, mean
+    over the recording removed): a loud and a soft saying of a word match."""
+    import torch
+    import torchaudio.compliance.kaldi as kaldi
+    feats = kaldi.mfcc(torch.from_numpy(np.ascontiguousarray(wav, dtype=np.float32))[None] * 32768.0,
+                       sample_frequency=SAMPLE_RATE, num_ceps=13, frame_shift=MFCC_HOP_SEC * 1000,
+                       frame_length=25.0, dither=0.0).numpy()[:, 1:]
+    feats = feats - feats.mean(axis=0)
+    return feats / np.maximum(np.linalg.norm(feats, axis=1, keepdims=True), 1e-6)
+
+
+def _match_cost(a, b, anchor=None):
+    """Mean cosine distance of the best alignment of all of `a` with a
+    stretch of `b` at least half as long (b advancing 0-2 frames per frame
+    of a); the stretch starts in b's first `anchor` frames when given."""
+    n, m = len(a), len(b)
+    if n == 0 or m == 0:
+        return np.inf
+    cost = 1.0 - a @ b.T
+    acc = np.full(m, np.inf)
+    first = np.arange(m)
+    if anchor is None:
+        acc[:] = cost[0]
+    else:
+        acc[:anchor] = cost[0, :anchor]
+    for i in range(1, n):
+        stay, one, two = acc, np.r_[np.inf, acc[:-1]], np.r_[np.inf, np.inf, acc[:-2]]
+        f_one, f_two = np.r_[0, first[:-1]], np.r_[0, 0, first[:-2]]
+        best = np.minimum(np.minimum(stay, one), two)
+        first = np.where(best == one, f_one, np.where(best == two, f_two, first))
+        acc = best + cost[i]
+    long_enough = np.arange(m) - first + 1 >= n / 2
+    return float(np.min(np.where(long_enough, acc, np.inf)) / n)
+
+
+def _sounds_like(mfcc, g0, g1, start, others):
+    """(cost of the stretch [g0, g1) s against what is said from `start` s,
+    its cheapest cost against the `others` [(start, end) s], how many)."""
+    hop = MFCC_HOP_SEC
+    seg = lambda s, e: mfcc[int(s / hop):max(int(s / hop) + 1, int(e / hop))]  # noqa: E731
+    group = seg(g0, g1)
+    own = _match_cost(group, seg(start, start + 2.2 * (g1 - g0)),
+                      anchor=max(1, int(round(RESTART_SELF_ANCHOR_SEC / hop))))
+    costs = [_match_cost(group, seg(s, e)) for s, e in others]
+    return own, min(costs, default=np.inf), len(costs)
 
 
 def _consonant_peaks(em, ids, f0, f1, consonant):
@@ -2386,10 +2465,11 @@ def _consonant_peaks(em, ids, f0, f1, consonant):
     return peaks
 
 
-def _restarted_words(emission, env, units, readings):
+def _restarted_words(emission, env, units, readings, wav=None):
     """Finds words said twice in a row (see RESTART_*) and starts them at
     their first saying -- in the units (their first reading) and in
-    `readings`. Returns whether anything moved."""
+    `readings`. Returns whether anything moved. Without `wav` only the
+    alignment model's ear is asked (not RESTART_SELF_*)."""
     _, dictionary, _ = _get_mms()
     em = emission.numpy()
     consonant = np.ones(em.shape[1], dtype=bool)
@@ -2404,6 +2484,7 @@ def _restarted_words(emission, env, units, readings):
     occ.sort(key=lambda o: o[1])
     pauses = [(i * ENV_HOP_SEC, j * ENV_HOP_SEC) for i, j, _ in _pause_runs(env, 0, len(env))]
     moved = False
+    mfcc = None
     for n, (key, st, en, r, k) in enumerate(occ):
         u = unit_of[key]
         after = [q for q, (p0, p1) in enumerate(pauses) if abs(p1 - st) <= 0.15]
@@ -2424,8 +2505,33 @@ def _restarted_words(emission, env, units, readings):
         second = _consonant_peaks(em, u["ids"], max(0, int((st - RESTART_LEAD_SEC) / FRAME_SEC)),
                                   int(en / FRAME_SEC) + 1, consonant)
         ok = min(first) >= RESTART_MIN_PEAK and np.mean(first) >= RESTART_MIN_REL * np.mean(second)
+        heard = f"peaks {np.mean(first):.2f} (min {min(first):.2f}) vs {np.mean(second):.2f}"
+        if not ok and wav is not None:
+            if mfcc is None:
+                mfcc = _mfcc(wav)
+            others = []
+            for v in units:
+                if "start" not in v or "f0" not in v or v["ids"] == u["ids"]:
+                    continue
+                s, e = v["start"], v["end"]
+                if e > g0 - 0.05 and s < g1 + 0.05:  # the group is not its own template
+                    s, e = (s, g0 - 0.05) if s < g0 - 0.05 else (g1 + 0.05, e)
+                if e - s >= RESTART_SELF_MIN_WORD_SEC:
+                    others.append((s, e))
+            alike, other, count = _sounds_like(mfcc, g0, g1, st, others)
+            ok = count >= RESTART_SELF_MIN_WORDS and alike <= RESTART_SELF_RATIO * other
+            heard += f", sounds like it {alike:.3f} vs {other:.3f} for the closest of {count} other words"
+            if ok and n:
+                pu = unit_of[occ[n - 1][0]]
+                f0 = max(0, int((occ[n - 1][1] - RESTART_LEAD_SEC) / FRAME_SEC))
+                stop = pauses[after[0] - 1][0]
+                before = _consonant_peaks(em, pu["ids"], f0, int(stop / FRAME_SEC) + 1, consonant)
+                whole = _consonant_peaks(em, pu["ids"], f0, int(g1 / FRAME_SEC) + 1, consonant)
+                fit = min((b / w for b, w in zip(before, whole) if w >= RESTART_MIN_PEAK), default=1.0)
+                ok = fit >= RESTART_SELF_PREV_FIT
+                heard += f", the word before {fit:.2f} said before the pause"
         logger.info(f"Said twice? {u['ayah']}:{u['index']} at {st:.1f}s, breath group {g0:.1f}-{g1:.1f}s: "
-                    f"peaks {np.mean(first):.2f} (min {min(first):.2f}) vs {np.mean(second):.2f} -> {'yes' if ok else 'no'}.")
+                    f"{heard} -> {'yes' if ok else 'no'}.")
         if not ok:
             continue
         if r is not None:

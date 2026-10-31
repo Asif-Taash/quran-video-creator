@@ -39,6 +39,14 @@ after the selection, verified jumps kept, one-word restarts) 55/97 word-level,
 82/97 on screen, 9 silently wrong, 15/15 controls, no case worse on screen.
 Still missed: long one-word restarts neither ear hears (Ajmi, some 98:8
 "جزاؤهم"), fajr79_back_after_next.
+From here the first saying of a one-word restart is played at another speed
+and quieter (RESTART_SPEED, RESTART_GAIN_DB), so it is no longer a copy of
+the second. On that set, both on the GPU: ctc-v13 82/97 on screen, 10
+silently wrong; ctc-v14 (readings start where the voice does, one-word
+restarts matched against the reciter's own words) 59/97 word-level, 88/97 on
+screen, 6 silently wrong, 15/15 controls, no case worse. Held out: ctc-v13
+12/36 on screen, 21 silently wrong; ctc-v14 20/36, 13, controls 6/6, no
+case worse.
 The HELDOUT_RECITERS_79 cases are never tuned on: run them only to measure.
 """
 import argparse
@@ -259,7 +267,23 @@ def _faded(piece):
     return out
 
 
-def _splice(name, surah, plan):
+# A word said twice is never said the same way twice: the first saying of
+# a one-word restart is played RESTART_SPEED times faster (pitch with it,
+# like a tape) and RESTART_GAIN_DB quieter, else it is a copy of the
+# second and matches it far too well.
+RESTART_SPEED = (0.94, 1.06)
+RESTART_GAIN_DB = -2.0
+
+
+def _varied(seg, speed):
+    import torch
+    import torchaudio.functional as F
+    out = F.resample(torch.from_numpy(np.ascontiguousarray(seg, dtype=np.float32)),
+                     orig_freq=int(round(100 * speed)), new_freq=100).numpy()
+    return (out * 10 ** (RESTART_GAIN_DB / 20)).astype(seg.dtype)
+
+
+def _splice(name, surah, plan, speed=1.0):
     wav, pos, _, _ = _source(name, surah)
     words = qa.fetch_surah_words(surah)
     real = lambda a, i, j: [k for k in range(i, j + 1) if (a, k) in pos]  # noqa: E731
@@ -268,7 +292,7 @@ def _splice(name, surah, plan):
     t = 0.3
     truth = []
     prev = None  # (ayah, last token) of the previous piece
-    for ayah, i, j in plan:
+    for p, (ayah, i, j) in enumerate(plan):
         ks = real(ayah, i, j)
         start, end = pos[(ayah, ks[0])][0], pos[(ayah, ks[-1])][1]
         sequential = prev is not None and (
@@ -286,11 +310,15 @@ def _splice(name, surah, plan):
                 pieces.append(_faded(pause))
                 t += len(pause) / SR
         seg = wav[int(start * SR):int(end * SR)]
-        if prev is not None and not sequential:
+        restart = i == j and p + 1 < len(plan) and plan[p + 1][:2] == (ayah, i)
+        rate = speed if restart else 1.0
+        if rate != 1.0:
+            seg = _varied(seg, rate)
+        if (prev is not None and not sequential) or restart:
             seg = _faded(seg)
         for k in ks:
             ws, we = pos[(ayah, k)]
-            truth.append((ayah, k, t + ws - start, t + we - start))
+            truth.append((ayah, k, t + (ws - start) / rate, t + (we - start) / rate))
         pieces.append(seg)
         t += len(seg) / SR
         prev = (ayah, ks[-1])
@@ -319,7 +347,10 @@ def _run(wav, surah, a0, a1, prev_ctx, next_ctx, tag):
     readings, unheard, moved, explained = qa._hear_deaf_stretches(wav, emission, env, units, readings, words, unexplained)
     suspects = [t for t in suspects if t not in explained]
     if hasattr(qa, "_restarted_words"):
-        moved |= qa._restarted_words(emission, env, units, readings)
+        try:
+            moved |= qa._restarted_words(emission, env, units, readings, wav)
+        except TypeError:  # before RESTART_SELF_*
+            moved |= qa._restarted_words(emission, env, units, readings)
     if moved:
         qa._resolve_times(units, env, 0.0, len(wav) / SR)
     return units, readings, suspects + [a for a, _ in unheard]
@@ -416,7 +447,7 @@ def main():
     for name, (src, surah, mode, plan) in CASES.items():
         if args.only and not any(name.startswith(p) for p in args.only):
             continue
-        wav, truth = _splice(src, surah, plan)
+        wav, truth = _splice(src, surah, plan, RESTART_SPEED[sum(map(ord, name)) % 2])
         n = len(qa.fetch_surah_words(surah))
         if mode == "surah":
             a0, a1 = plan[0][0] + 1, max(a for a, _, _ in plan) - 1
