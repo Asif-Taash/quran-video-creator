@@ -278,6 +278,17 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
   const [endVerse, setEndVerse] = useState<number | null>(null);
   const [bgImage, setBgImage] = useState<File | null>(null);
   const [bgPreview, setBgPreview] = useState<string | null>(null);
+  // A photo background too small for the video is swapped for a sharper,
+  // upscaled copy once the backend has made it (api/backgrounds/enhance);
+  // the user can switch back to their original. A newer pick/removal bumps
+  // the token, so a late result never replaces a background it wasn't for.
+  const [bgEnhance, setBgEnhance] = useState<{
+    original: File;
+    enhanced: File | null;
+    status: "working" | "done";
+    useEnhanced: boolean;
+  } | null>(null);
+  const bgEnhanceTokenRef = useRef(0);
   // Video background -- mutually exclusive with bgImage (selecting one clears
   // the other, see handleImageUpload/handleVideoUpload below). Mirrors
   // bgImage/bgPreview's whole lifecycle (optimistic blob preview, upload,
@@ -1879,6 +1890,10 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
         if (data.background?.url) {
           const blob = await (await fetch(data.background.url)).blob();
           const file = new File([blob], "draft-bg.jpg", { type: blob.type });
+          // As saved -- already the sharper copy, or the original the user
+          // chose over it.
+          bgEnhanceTokenRef.current++;
+          setBgEnhance(null);
           setBgImage(file);
           setBgPreview(URL.createObjectURL(file));
         }
@@ -1976,6 +1991,8 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     if (bgPreview) URL.revokeObjectURL(bgPreview);
     setBgImage(null);
     setBgPreview(null);
+    bgEnhanceTokenRef.current++;
+    setBgEnhance(null);
     if (bgVideoPreview) URL.revokeObjectURL(bgVideoPreview);
     setBgVideo(null);
     setBgVideoPreview(null);
@@ -2119,13 +2136,61 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
       setBgVideoPreview(null);
       setBgImage(file);
       setBgPreview(URL.createObjectURL(file));
+      void enhanceBgImage(file);
     } else {
       setBgImage(null);
       setBgPreview(null);
       setBgVideo(file);
       setBgVideoPreview(URL.createObjectURL(file));
+      bgEnhanceTokenRef.current++;
+      setBgEnhance(null);
     }
     setRenderState("idle");
+  };
+
+  // Shows a photo as the background without touching bgEnhance (the original
+  // and its sharper copy swap through here). Functional update: called after
+  // an await, when bgPreview in this closure may be stale.
+  const showBgImage = (file: File) => {
+    const url = URL.createObjectURL(file);
+    setBgPreview((prev) => {
+      if (prev && prev !== url) URL.revokeObjectURL(prev);
+      return url;
+    });
+    setBgImage(file);
+    setRenderState("idle");
+  };
+
+  const enhanceBgImage = async (file: File) => {
+    const token = ++bgEnhanceTokenRef.current;
+    setBgEnhance({ original: file, enhanced: null, status: "working", useEnhanced: false });
+    let enhanced: File | null = null;
+    try {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      const res = await fetch("/api/backgrounds/enhance", { method: "POST", body: form });
+      if (res.status === 200) {
+        const blob = await res.blob();
+        enhanced = new File([blob], `${file.name.replace(/\.[^.]*$/, "") || "background"}-hd.jpg`, { type: "image/jpeg" });
+      }
+    } catch {
+      enhanced = null;
+    }
+    if (token !== bgEnhanceTokenRef.current) return;
+    if (!enhanced) {
+      // Already sharp enough, or the upscaler is unavailable: the photo stays.
+      setBgEnhance(null);
+      return;
+    }
+    showBgImage(enhanced);
+    setBgEnhance({ original: file, enhanced, status: "done", useEnhanced: true });
+  };
+
+  const toggleBgEnhanced = () => {
+    if (!bgEnhance?.enhanced) return;
+    const useEnhanced = !bgEnhance.useEnhanced;
+    showBgImage(useEnhanced ? bgEnhance.enhanced : bgEnhance.original);
+    setBgEnhance({ ...bgEnhance, useEnhanced });
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2139,6 +2204,8 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
     }
     setBgImage(null);
     setBgPreview(null);
+    bgEnhanceTokenRef.current++;
+    setBgEnhance(null);
     setRenderState("idle");
   };
 
@@ -2524,21 +2591,24 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
       lastSegHasManualTiming = manualIds.has(allSegments[allSegments.length - 1].id);
     }
 
-    // Seed the first/last segment's own boundary with the default trim
-    // window (see defaultTrimFromTimings) -- the same one handlePrepareAudio
-    // applied to the preview, so opening the panel doesn't move it.
-    // Only when neither already carries a manually-saved boundary (see
-    // firstSegHasManualTiming/lastSegHasManualTiming above) -- otherwise
-    // this would silently discard a trim the user already chose and saved.
+    // Seed the first/last segment's own boundary with the audio's current
+    // trim -- they ARE its trim handles (see handleSaveTimingEditor), so
+    // opening the panel doesn't move it. A cut applied with "قص الصوت الآن"
+    // and never saved lives only in audioTrimStart/End: seeding from the
+    // default trim or an older saved boundary instead showed the old cut
+    // again on reopening, and the next cut or save put it back (2026-10-31).
+    // Freshly prepared audio already carries the default trim window there
+    // (see handlePrepareAudio); with no trim at all, the default window is
+    // seeded as before, only where nothing was saved.
     const defaultTrim = defaultTrimFromTimings(preparedJsonData);
-    if (allSegments.length > 0 && defaultTrim) {
-      if (!firstSegHasManualTiming) {
-        allSegments[0].startSec = defaultTrim.start;
-      }
-      if (!lastSegHasManualTiming) {
-        const last = allSegments[allSegments.length - 1];
-        last.endSec = Math.max(last.startSec, defaultTrim.end);
-      }
+    const hasTrim = audioTrimStart > 0 || audioTrimEnd > 0;
+    if (allSegments.length > 0) {
+      const first = allSegments[0];
+      const last = allSegments[allSegments.length - 1];
+      const start = hasTrim ? audioTrimStart : !firstSegHasManualTiming ? defaultTrim?.start : undefined;
+      const end = hasTrim && audioTrimEnd > 0 ? audioTrimEnd : !lastSegHasManualTiming ? defaultTrim?.end : undefined;
+      if (start !== undefined && start < first.endSec) first.startSec = Math.max(0, start);
+      if (end !== undefined) last.endSec = Math.max(last.startSec, end);
     }
 
     // Every startSec/endSec above was computed relative to the TRUE
@@ -3039,6 +3109,10 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
                     removeImage={removeImage}
                     removeVideo={removeVideo}
                     onBackgroundFile={applyBackgroundFile}
+                    bgEnhanceState={
+                      bgEnhance && (bgEnhance.status === "working" ? "working" : bgEnhance.useEnhanced ? "enhanced" : "original")
+                    }
+                    onToggleBgEnhanced={toggleBgEnhanced}
                     backgroundDim={backgroundDim}
                     onBackgroundDimChange={setBackgroundDim}
                     backgroundBlur={backgroundBlur}
@@ -3047,6 +3121,7 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
                     onBackgroundZoomChange={setBackgroundZoom}
                   />
                 }
+                backgroundKind={bgVideoPreview ? "video" : bgPreview ? "image" : "none"}
               />
 
               {/* Inline unified audio-trim/timing panel -- CapCut-style:
@@ -3054,9 +3129,9 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
                   modal, so the user can fix an audio/timing mismatch while
                   still seeing (and hearing) the preview. Its own first/last
                   segment boundaries double as the audio trim handles (see
-                  SegmentTimingEditor.tsx's buildRegions); its toggle button
-                  now lives right next to the download button in
-                  Step5Generate above. */}
+                  SegmentTimingEditor.tsx's buildRegions); its toggle is
+                  the last folding section's header in Step5Generate, right
+                  above. */}
               {showTimingEditor && preparedAudioUrl && (() => {
                 const segments = buildTimingEditorSegments();
                 if (!segments || segments.length === 0) return null;

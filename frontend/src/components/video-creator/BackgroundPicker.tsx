@@ -5,6 +5,7 @@ import { CheckIcon, MagnifyingGlassIcon, PhotoIcon, VideoCameraIcon, XMarkIcon }
 import Spinner from "@/components/ui/Spinner";
 import { BACKGROUND_BLUR_MAX, BACKGROUND_DIM_MAX, type AspectRatio } from "@/remotion/types";
 import { useLanguage, useT } from "@/lib/LanguageContext";
+import { BACKGROUND_TOPICS } from "@/lib/backgroundTopics";
 
 // The optional background section under the video preview (see
 // Step5Generate.tsx): the video is created first with a black background,
@@ -33,34 +34,19 @@ type StockItem = {
 
 type MediaType = "video" | "photo";
 
-// Quick suggestions under the search box. The library only ever shows
-// natural scenery (no people, buildings, vehicles or animals -- enforced
-// server-side by an image check, see lib/natureCheck.ts), so these stay
-// within it. Each click searches one of several wordings at random (and
-// with a fresh random seed), so a suggestion never shows the same set twice.
-const SUGGESTIONS: { queries: string[]; ar: string; tr: string; en: string }[] = [
-  { queries: ["night sky stars", "starry night sky", "stars night", "moon night sky"], ar: "سماء ليلية", tr: "Gece Gökyüzü", en: "Night Sky" },
-  { queries: ["clouds sky", "cloudscape", "dramatic clouds", "white clouds blue sky", "clouds timelapse"], ar: "غيوم", tr: "Bulutlar", en: "Clouds" },
-  { queries: ["ocean waves", "sea waves", "calm sea", "ocean water", "sea horizon"], ar: "بحر", tr: "Deniz", en: "Sea" },
-  { queries: ["rain", "rain drops", "rainy weather", "rain storm"], ar: "مطر", tr: "Yağmur", en: "Rain" },
-  { queries: ["sunset sky", "sunset clouds", "sunrise sky", "golden hour sky", "dusk sky"], ar: "غروب", tr: "Gün Batımı", en: "Sunset" },
-  { queries: ["desert sand dunes", "sand dunes", "desert landscape", "sahara desert"], ar: "صحراء", tr: "Çöl", en: "Desert" },
-  { queries: ["mountains fog", "mountain landscape", "mountain peaks", "misty mountains", "mountains clouds"], ar: "جبال", tr: "Dağlar", en: "Mountains" },
-  { queries: ["forest mist", "forest trees", "green forest", "forest fog", "forest sunlight"], ar: "غابات", tr: "Orman", en: "Forest" },
-  { queries: ["river", "river stream", "mountain river", "river water", "creek"], ar: "أنهار", tr: "Nehirler", en: "Rivers" },
-  { queries: ["milky way galaxy", "milky way", "galaxy stars", "nebula space"], ar: "مجرّة", tr: "Galaksi", en: "Galaxy" },
-  { queries: ["waterfall", "waterfall nature", "cascade water", "waterfall forest"], ar: "شلالات", tr: "Şelale", en: "Waterfall" },
-  { queries: ["snow winter landscape", "snowy forest", "snowfall", "winter snow mountains"], ar: "ثلوج", tr: "Kar", en: "Snow" },
-];
+// The quick topics under the search box (lib/backgroundTopics.ts) search as
+// "topic:<id>": the server walks all of a topic's wordings. The library only
+// ever shows natural scenery (no people, buildings, vehicles or animals --
+// enforced server-side by an image check, see lib/natureCheck.ts).
+const TOPIC_PREFIX = "topic:";
 
-const pickOne = <T,>(list: T[]): T => list[Math.floor(Math.random() * list.length)];
 const newSeed = () => 1 + Math.floor(Math.random() * 2147483000);
 
 // Results this browser has already been shown, so a new search puts unseen
 // ones first. Browser-only convenience: missing or blocked storage just
 // means no preference.
 const SEEN_STORAGE_KEY = "kurannuru:bgSeen";
-const SEEN_MAX = 1000;
+const SEEN_MAX = 5000;
 
 function readSeen(): string[] {
   try {
@@ -80,6 +66,38 @@ function rememberSeen(keys: string[]) {
     // storage unavailable -- nothing to remember
   }
 }
+
+// Backgrounds this browser has already put in a video. A search shows them
+// only after everything else -- the good ones the user had used kept coming
+// back first (the user, 2026-11-01). Same storage caveats as the seen list.
+const USED_STORAGE_KEY = "kurannuru:bgUsed";
+const USED_MAX = 2000;
+
+function readUsed(): string[] {
+  try {
+    const raw = localStorage.getItem(USED_STORAGE_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberUsed(key: string) {
+  try {
+    const merged = [...readUsed().filter((k) => k !== key), key].slice(-USED_MAX);
+    localStorage.setItem(USED_STORAGE_KEY, JSON.stringify(merged));
+  } catch {
+    // storage unavailable -- nothing to remember
+  }
+}
+
+// More results load on their own once the list is scrolled to within this
+// distance of its end -- no "load more" button (the user, 2026-11-01).
+const AUTO_LOAD_MARGIN_PX = 1200;
+// Loads in a row that brought nothing new before the automatic loading
+// stops and a button takes over (so it can't loop on an exhausted search).
+const MAX_EMPTY_LOADS = 3;
 
 const TILE_ASPECT: Record<AspectRatio, string> = {
   portrait: "aspect-[9/16]",
@@ -158,6 +176,11 @@ interface BackgroundPickerProps {
   removeImage: () => void;
   removeVideo: () => void;
   onBackgroundFile: (file: File, kind: "image" | "video") => void;
+  // A photo too small for the video gets a sharper, upscaled copy (see
+  // VideoCreatorForm's enhanceBgImage): being made, applied, or set aside
+  // for the original. null: nothing to say.
+  bgEnhanceState: "working" | "enhanced" | "original" | null;
+  onToggleBgEnhanced: () => void;
   backgroundDim: number;
   onBackgroundDimChange: (v: number) => void;
   backgroundBlur: number;
@@ -177,6 +200,8 @@ export default function BackgroundPicker({
   removeImage,
   removeVideo,
   onBackgroundFile,
+  bgEnhanceState,
+  onToggleBgEnhanced,
   backgroundDim,
   onBackgroundDimChange,
   backgroundBlur,
@@ -212,9 +237,20 @@ export default function BackgroundPicker({
   // must not then re-search the label.
   const [searchedText, setSearchedText] = useState("");
   const [items, setItems] = useState<StockItem[]>([]);
+  // This search's results already used in a video (see USED_STORAGE_KEY):
+  // held back until everything else has been shown.
+  const [usedItems, setUsedItems] = useState<StockItem[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  // The last load failed: no automatic retry, the button takes over.
+  const [loadFailed, setLoadFailed] = useState(false);
+  // MAX_EMPTY_LOADS reached: same.
+  const [autoLoadStopped, setAutoLoadStopped] = useState(false);
+  const emptyLoadsRef = useRef(0);
+  // How many results there were when the running "more" load started.
+  const countAtLoadRef = useRef<number | null>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
   const [libraryError, setLibraryError] = useState<string | null>(null);
   // The last search asked for something outside natural scenery.
   const [notNature, setNotNature] = useState(false);
@@ -225,10 +261,12 @@ export default function BackgroundPicker({
   // Videos only: longest first instead of the providers' own ranking
   // (which already puts seamless loops first, see lib/stockBackgrounds.ts).
   const [longestFirst, setLongestFirst] = useState(false);
+  const usedKeys = new Set(usedItems.map((i) => i.key));
+  const listed = hasMore ? items : [...items, ...usedItems.filter((u) => !items.some((i) => i.key === u.key))];
   const shownItems =
     mediaType === "video" && longestFirst
-      ? [...items].sort((a, b) => (b.durationSec ?? 0) - (a.durationSec ?? 0))
-      : items;
+      ? [...listed].sort((a, b) => (b.durationSec ?? 0) - (a.durationSec ?? 0))
+      : listed;
 
   const lengthBadge = (item: StockItem): { text: string; good: boolean } | null => {
     if (item.type !== "video" || typeof item.durationSec !== "number" || item.durationSec <= 0) return null;
@@ -256,20 +294,27 @@ export default function BackgroundPicker({
       const requestId = ++requestIdRef.current;
       setIsSearching(true);
       setLibraryError(null);
+      setLoadFailed(false);
       if (pageToLoad === 1) {
         seedRef.current = newSeed();
         setItems([]);
+        setUsedItems([]);
         setNotNature(false);
+        setAutoLoadStopped(false);
+        emptyLoadsRef.current = 0;
+        countAtLoadRef.current = null;
       }
       try {
+        const topicId = query.startsWith(TOPIC_PREFIX) ? query.slice(TOPIC_PREFIX.length) : null;
         const params = new URLSearchParams({
-          q: query,
+          q: topicId ? "" : query,
           type,
           orientation: aspectRatio,
           page: String(pageToLoad),
           lang: language,
           seed: String(seedRef.current),
         });
+        if (topicId) params.set("topic", topicId);
         const res = await fetch(`/api/backgrounds/search?${params}`);
         const data = await res.json();
         if (requestId !== requestIdRef.current) return;
@@ -281,9 +326,17 @@ export default function BackgroundPicker({
         setNotNature(Boolean(data.notNature));
         setProviders(data.providers ?? []);
         const shownBefore = new Set(readSeen());
+        const used = new Set(readUsed());
         const fresh: StockItem[] = data.items;
-        const ordered = [...fresh.filter((i) => !shownBefore.has(i.key)), ...fresh.filter((i) => shownBefore.has(i.key))];
+        const notUsed = fresh.filter((i) => !used.has(i.key));
+        const ordered = [...notUsed.filter((i) => !shownBefore.has(i.key)), ...notUsed.filter((i) => shownBefore.has(i.key))];
         rememberSeen(fresh.map((i) => i.key));
+        setUsedItems((prev) => {
+          const held = fresh.filter((i) => used.has(i.key));
+          if (pageToLoad === 1) return held;
+          const keys = new Set(prev.map((i) => i.key));
+          return [...prev, ...held.filter((i) => !keys.has(i.key))];
+        });
         setItems((prev) => {
           if (pageToLoad === 1) return ordered;
           const seen = new Set(prev.map((i) => i.key));
@@ -294,6 +347,7 @@ export default function BackgroundPicker({
         setPage(typeof data.lastPage === "number" ? data.lastPage : pageToLoad);
       } catch {
         if (requestId !== requestIdRef.current) return;
+        setLoadFailed(true);
         setLibraryError(tx("تعذر تحميل الخلفيات، حاول مرة أخرى.", "Arka planlar yüklenemedi, tekrar deneyin.", "Couldn't load backgrounds, please try again."));
       } finally {
         if (requestId === requestIdRef.current) setIsSearching(false);
@@ -305,6 +359,33 @@ export default function BackgroundPicker({
   useEffect(() => {
     if (activeQuery) runSearch(activeQuery, mediaType, 1);
   }, [activeQuery, mediaType, runSearch]);
+
+  const loadMore = useCallback(() => {
+    countAtLoadRef.current = items.length + usedItems.length;
+    runSearch(activeQuery, mediaType, page + 1);
+  }, [items.length, usedItems.length, runSearch, activeQuery, mediaType, page]);
+
+  // Counts the loads in a row that brought nothing new (MAX_EMPTY_LOADS).
+  useEffect(() => {
+    if (isSearching || countAtLoadRef.current === null) return;
+    const grew = items.length + usedItems.length > countAtLoadRef.current;
+    countAtLoadRef.current = null;
+    emptyLoadsRef.current = grew ? 0 : emptyLoadsRef.current + 1;
+    if (emptyLoadsRef.current >= MAX_EMPTY_LOADS) setAutoLoadStopped(true);
+  }, [isSearching, items.length, usedItems.length]);
+
+  // More results load as the list is scrolled near its end -- and right
+  // after every load too, while the list is still short of it.
+  const loadMoreIfNearEnd = useCallback(() => {
+    const el = resultsRef.current;
+    if (!el || !activeQuery || !hasMore || isSearching || loadFailed || autoLoadStopped) return;
+    // Folded away with its section: nothing on screen to fill.
+    if (el.clientHeight === 0) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < AUTO_LOAD_MARGIN_PX) loadMore();
+  }, [activeQuery, hasMore, isSearching, loadFailed, autoLoadStopped, loadMore]);
+  useEffect(() => {
+    loadMoreIfNearEnd();
+  }, [loadMoreIfNearEnd]);
 
   // Search as the user types, once they pause.
   useEffect(() => {
@@ -363,6 +444,7 @@ export default function BackgroundPicker({
       });
       onBackgroundFile(file, isVideo ? "video" : "image");
       setPickedKey(item.key);
+      rememberUsed(item.key);
     } catch {
       setLibraryError(tx("تعذر تنزيل هذه الخلفية، جرّب خلفية أخرى.", "Bu arka plan indirilemedi, başka birini deneyin.", "Couldn't download this background, try another one."));
     } finally {
@@ -399,6 +481,29 @@ export default function BackgroundPicker({
               ? tx("الخلفية ظاهرة في الفيديو بالأعلى.", "Arka plan yukarıdaki videoda görünüyor.", "The background shows in the video above.")
               : tx("حالياً الخلفية سوداء.", "Şu an arka plan siyah.", "The background is currently black.")}
           </p>
+          {bgPreview && bgEnhanceState && (
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              {bgEnhanceState === "working" ? (
+                <>
+                  <Spinner size="sm" />
+                  {tx("جارٍ تحسين جودة الصورة…", "Görselin kalitesi iyileştiriliyor…", "Improving the photo's quality…")}
+                </>
+              ) : (
+                <>
+                  <span>
+                    {bgEnhanceState === "enhanced"
+                      ? tx("حسّنّا جودة الصورة تلقائياً.", "Görselin kalitesi otomatik olarak iyileştirildi.", "The photo's quality was improved automatically.")
+                      : tx("تُستخدم الصورة الأصلية.", "Orijinal görsel kullanılıyor.", "Using the original photo.")}
+                  </span>
+                  <button type="button" onClick={onToggleBgEnhanced} className="font-medium text-primary hover:underline">
+                    {bgEnhanceState === "enhanced"
+                      ? tx("استخدم الأصلية", "Orijinali kullan", "Use the original")
+                      : tx("استخدم المحسّنة", "İyileştirilmişi kullan", "Use the improved one")}
+                  </button>
+                </>
+              )}
+            </p>
+          )}
         </div>
         {hasBackground && (
           <div className="flex items-center gap-2">
@@ -466,21 +571,21 @@ export default function BackgroundPicker({
           </p>
 
           <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-            {SUGGESTIONS.map((c) => {
+            {BACKGROUND_TOPICS.map((c) => {
               const label = tx(c.ar, c.tr, c.en);
+              const q = `${TOPIC_PREFIX}${c.id}`;
               return (
                 <button
-                  key={c.en}
+                  key={c.id}
                   type="button"
                   onClick={() => {
                     setSearchText(label);
                     setSearchedText(label);
-                    const q = pickOne(c.queries);
                     if (q === activeQuery) runSearch(q, mediaType, 1);
                     else setActiveQuery(q);
                   }}
                   className={`flex-shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                    c.queries.includes(activeQuery)
+                    q === activeQuery
                       ? "border-primary bg-primary/15 text-primary"
                       : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"
                   }`}
@@ -495,7 +600,7 @@ export default function BackgroundPicker({
           {libraryError && (
             <p className="rounded-xl border border-accent-red/30 bg-accent-red-bg/60 p-3 text-sm text-accent-red">{libraryError}</p>
           )}
-          {activeQuery && mediaType === "video" && items.length > 1 && (
+          {activeQuery && mediaType === "video" && listed.length > 1 && (
             <div className="flex justify-end">
               <button
                 type="button"
@@ -512,8 +617,8 @@ export default function BackgroundPicker({
             </div>
           )}
           {activeQuery && (
-            <div className="max-h-[80vh] overflow-y-auto rounded-xl p-1">
-              {items.length === 0 && isSearching ? (
+            <div ref={resultsRef} onScroll={loadMoreIfNearEnd} className="max-h-[80vh] overflow-y-auto rounded-xl p-1">
+              {listed.length === 0 && (isSearching || (hasMore && !loadFailed && !autoLoadStopped)) ? (
                 <div className="flex h-48 items-center justify-center gap-2 text-sm text-muted-foreground">
                   <Spinner size="sm" />
                   {tx(
@@ -522,7 +627,7 @@ export default function BackgroundPicker({
                     "Searching and checking the images contain no people or buildings..."
                   )}
                 </div>
-              ) : items.length === 0 && !libraryError ? (
+              ) : listed.length === 0 && !libraryError ? (
                 <p className="py-12 text-center text-sm text-muted-foreground">
                   {notNature
                     ? tx(
@@ -582,6 +687,11 @@ export default function BackgroundPicker({
                         <span className="pointer-events-none absolute inset-x-0 top-0 truncate bg-gradient-to-b from-black/70 to-transparent px-2 pb-4 pt-1.5 text-start text-[11px] text-white/90 opacity-0 transition-opacity group-hover/tile:opacity-100">
                           {item.author}
                         </span>
+                        {usedKeys.has(item.key) && (
+                          <span className="absolute end-2 top-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">
+                            {tx("استُخدمت سابقاً", "Daha önce kullanıldı", "Used before")}
+                          </span>
+                        )}
                         {isPicked && (
                           <span className="absolute start-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-primary text-white shadow-lg">
                             <CheckIcon className="h-4 w-4" />
@@ -597,22 +707,30 @@ export default function BackgroundPicker({
                   })}
                 </div>
               )}
-              {items.length > 0 && hasMore && (
+              {listed.length > 0 && hasMore && isSearching && (
+                <div className="flex items-center justify-center gap-2 py-5 text-xs text-muted-foreground">
+                  <Spinner size="sm" />
+                  {tx("جارٍ تحميل المزيد…", "Daha fazlası yükleniyor…", "Loading more…")}
+                </div>
+              )}
+              {hasMore && !isSearching && (loadFailed || autoLoadStopped) && (
                 <div className="flex justify-center pt-4">
                   <button
                     type="button"
-                    onClick={() => runSearch(activeQuery, mediaType, page + 1)}
-                    disabled={isSearching}
-                    className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-5 py-2.5 text-sm font-medium text-foreground transition-colors hover:border-primary/40 disabled:opacity-60"
+                    onClick={() => {
+                      emptyLoadsRef.current = 0;
+                      setAutoLoadStopped(false);
+                      loadMore();
+                    }}
+                    className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-5 py-2.5 text-sm font-medium text-foreground transition-colors hover:border-primary/40"
                   >
-                    {isSearching && <Spinner size="sm" />}
                     {tx("عرض المزيد", "Daha fazla", "Load more")}
                   </button>
                 </div>
               )}
             </div>
           )}
-          {activeQuery && items.length > 0 && (
+          {activeQuery && listed.length > 0 && (
             <p className="text-center text-[11px] text-muted-foreground">
               {tx("الصور والفيديوهات من", "Fotoğraf ve videolar:", "Photos and videos from")}{" "}
               {providerLinks.reduce<React.ReactNode[]>((acc, link, i) => (i === 0 ? [link] : [...acc, " · ", link]), [])}

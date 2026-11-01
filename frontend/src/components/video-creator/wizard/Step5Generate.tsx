@@ -1,10 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowDownTrayIcon, AdjustmentsHorizontalIcon, ClipboardDocumentIcon, CheckIcon, SignalIcon } from "@heroicons/react/24/outline";
+import {
+  ArrowDownTrayIcon,
+  AdjustmentsHorizontalIcon,
+  ChevronDownIcon,
+  ClipboardDocumentIcon,
+  CheckIcon,
+  LanguageIcon,
+  PhotoIcon,
+} from "@heroicons/react/24/outline";
 import Spinner from "@/components/ui/Spinner";
 import type { RenderProgress, RenderState } from "../VideoCreatorForm";
-import { QUALITY_TIER_OPTIONS, WORD_HIGHLIGHT_COLORS, type AspectRatio, type QualityTier, type QuranVideoProps } from "@/remotion/types";
+import { WORD_HIGHLIGHT_COLORS, type AspectRatio, type QualityTier, type QuranVideoProps } from "@/remotion/types";
 import VideoPreviewPlayer from "../VideoPreviewPlayer";
 
 import { useT } from "@/lib/LanguageContext";
@@ -47,10 +55,9 @@ interface Step5Props {
   // canvas size regardless of this value.
   quality: QualityTier;
   onQualityChange: (quality: QualityTier) => void;
-  // The unified audio-trim/timing panel's open state and toggle -- rendered
-  // as a compact icon button right beside the download button (CapCut-style
-  // "edit" affordance next to the primary export action), instead of a
-  // separate row further down the page.
+  // The unified audio-trim/timing panel's open state and toggle -- the last
+  // folding section's header under the video (the panel itself is drawn by
+  // VideoCreatorForm right after this component, i.e. under that header).
   showTimingEditor: boolean;
   onToggleTimingEditor: () => void;
   // Live, fully independent font-size/width controls for the Arabic verse
@@ -85,9 +92,11 @@ interface Step5Props {
   isPreparingAudio: boolean;
   audioProgressStage: string | null;
   hasSelection: boolean;
-  // The optional background section (BackgroundPicker), shown right under
-  // the video once it exists.
+  // The optional background section (BackgroundPicker), one of the folding
+  // sections under the video once it exists; backgroundKind is what its
+  // header says is applied while it's folded.
   backgroundPanel?: React.ReactNode;
+  backgroundKind: "none" | "image" | "video";
 }
 
 const ASPECT_RATIO_OPTIONS: { value: AspectRatio; shape: string; labelAr: string; labelTr: string; labelEn: string }[] = [
@@ -131,57 +140,78 @@ function AspectRatioPicker({
   );
 }
 
-// Popover CONTENT only (the trigger button + positioning live in
-// Step5Generate below, right next to the download button) -- no outer
-// border/background here since the popover card around it already
-// provides that.
+// Three plain choices instead of every tier from 144p to 4K -- nobody needs
+// the rest, and the export time each costs is said right on it. Same
+// button style as AspectRatioPicker above.
+const QUALITY_CHOICES: { value: QualityTier; name: [string, string, string]; note: [string, string, string] }[] = [
+  { value: "720p", name: ["عادية", "Normal", "Standard"], note: ["720p · أسرع", "720p · daha hızlı", "720p · faster"] },
+  { value: "1080p", name: ["عالية", "Yüksek", "High"], note: ["1080p", "1080p", "1080p"] },
+  { value: "2160p", name: ["فائقة", "Ultra", "Ultra"], note: ["4K · أبطأ", "4K · daha yavaş", "4K · slower"] },
+];
+
 function QualityPicker({
+  isArabic,
   quality,
   onQualityChange,
 }: {
+  isArabic: boolean;
   quality: QualityTier;
   onQualityChange: (quality: QualityTier) => void;
 }) {
   const tx = useT();
-  const index = Math.max(
-    0,
-    QUALITY_TIER_OPTIONS.findIndex((option) => option.value === quality)
-  );
-  const activeOption = QUALITY_TIER_OPTIONS[index];
-  const percent = (index / (QUALITY_TIER_OPTIONS.length - 1)) * 100;
-
   return (
-    <div>
-      <div className="mb-3 flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground">
-          {tx("جودة الفيديو", "Video Kalitesi", "Video Quality")}
-        </span>
-        <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-          {activeOption.label}
-        </span>
-      </div>
-      <input
-        type="range"
-        dir="ltr"
-        min={0}
-        max={QUALITY_TIER_OPTIONS.length - 1}
-        step={1}
-        value={index}
-        onChange={(e) => onQualityChange(QUALITY_TIER_OPTIONS[Number(e.target.value)].value)}
-        style={{ background: `linear-gradient(to right, var(--primary) ${percent}%, var(--border) ${percent}%)` }}
-        className="h-1.5 w-full cursor-pointer appearance-none rounded-full outline-none
-          [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none
-          [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary
-          [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:transition-transform
-          [&::-webkit-slider-thumb]:hover:scale-110
-          [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full
-          [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:shadow-md"
-      />
-      <div className="mt-1.5 flex justify-between text-[10px] text-muted-foreground">
-        <span>{QUALITY_TIER_OPTIONS[0].label}</span>
-        <span>{QUALITY_TIER_OPTIONS[QUALITY_TIER_OPTIONS.length - 1].label}</span>
-      </div>
+    <div className="flex items-center gap-2" dir={isArabic ? "rtl" : "ltr"}>
+      {QUALITY_CHOICES.map((choice) => {
+        const active = quality === choice.value;
+        return (
+          <button
+            key={choice.value}
+            type="button"
+            onClick={() => onQualityChange(choice.value)}
+            aria-pressed={active}
+            className={`flex flex-1 flex-col items-center gap-0.5 rounded-lg border py-2 transition-colors ${
+              active
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border bg-background text-muted-foreground hover:bg-surface"
+            }`}
+          >
+            <span className="text-xs font-semibold">{tx(...choice.name)}</span>
+            <span className="text-[10px]">{tx(...choice.note)}</span>
+          </button>
+        );
+      })}
     </div>
+  );
+}
+
+// A folding section's header row under the video (see Step5Generate).
+function SectionHeader({
+  icon,
+  title,
+  summary,
+  open,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  summary?: string;
+  open: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={open}
+      className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-start transition-colors ${
+        open ? "border-primary/40 bg-primary/5" : "border-border bg-surface hover:bg-primary/5"
+      }`}
+    >
+      <span className="flex-shrink-0 text-primary">{icon}</span>
+      <span className="flex-1 text-sm font-semibold text-foreground">{title}</span>
+      {summary && <span className="text-xs text-muted-foreground">{summary}</span>}
+      <ChevronDownIcon className={`h-4 w-4 flex-shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+    </button>
   );
 }
 
@@ -264,15 +294,18 @@ export default function Step5Generate({
   audioProgressStage,
   hasSelection,
   backgroundPanel,
+  backgroundKind,
 }: Step5Props) {
   const tx = useT();
   // Brief "copied" checkmark swap on the title's copy button -- reverts on
   // its own after a couple seconds, no need to track anything past that.
   const [titleCopied, setTitleCopied] = useState(false);
-  // Quality popover's own open state -- purely local UI, same reasoning as
-  // titleCopied above (VideoCreatorForm only needs to know the selected
-  // `quality` value itself, never whether this menu happens to be open).
-  const [showQualityPanel, setShowQualityPanel] = useState(false);
+  // Which folding section under the video is open (one at a time). The
+  // audio/timing one is the timing panel itself (showTimingEditor): opening
+  // it folds these, but opening one of these never closes it -- that would
+  // throw away timing edits not saved yet.
+  const [openSection, setOpenSection] = useState<"background" | "text" | null>(null);
+  const toggleSection = (section: "background" | "text") => setOpenSection((open) => (open === section ? null : section));
 
   const handleCopyTitle = async () => {
     if (!suggestedTitle) return;
@@ -362,7 +395,82 @@ export default function Step5Generate({
         )
       )}
 
-      {previewProps && backgroundPanel}
+      {/* Download right under the video -- the page's main action used to
+          sit below every setting, so the user had to scroll past the whole
+          background library to reach it. The button renders AND downloads
+          the file (see executeVideoRender in VideoCreatorForm.tsx). */}
+      {previewProps && <QualityPicker isArabic={isArabic} quality={quality} onQualityChange={onQualityChange} />}
+      <button
+        type="button"
+        onClick={handleGenerateVideo}
+        disabled={!canGenerate}
+        className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-primary to-primary-dark py-3 font-bold text-white shadow-lg transition-all hover:shadow-primary/25 disabled:opacity-50"
+      >
+        {renderState === "rendering" ? <Spinner size="md" className="border-white/30 border-t-white" /> : <ArrowDownTrayIcon className="h-6 w-6" />}
+        {renderState === "rendering"
+          ? renderProgress?.stage === "rendering"
+            ? `${tx("جاري إنشاء الفيديو", "Video oluşturuluyor", "Creating the video")} ${Math.round(renderProgress.progress * 100)}%`
+            : renderProgress?.stage === "saving"
+              ? tx("جاري تجهيز التنزيل...", "İndirme hazırlanıyor...", "Preparing the download...")
+              : tx("جاري التحضير...", "Hazırlanıyor...", "Preparing...")
+          : !preparedAudioUrl
+            ? tx("يجب تجهيز الصوت أولاً", "Önce Sesi Hazırlayın", "Prepare the Audio First")
+            : tx("تنزيل الفيديو", "Videoyu İndir", "Download Video")}
+      </button>
+
+      {renderState === "rendering" && renderProgress?.stage === "rendering" && (
+        <div className="flex flex-col gap-1" dir={isArabic ? "rtl" : "ltr"}>
+          <div className="h-1.5 overflow-hidden rounded-full bg-border">
+            <div
+              className="h-full rounded-full bg-primary transition-[width] duration-700"
+              style={{ width: `${Math.round(renderProgress.progress * 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {renderState === "error" && (
+        <p className="animate-fade-in rounded-xl border border-accent-red/30 bg-accent-red-bg/60 p-3 text-sm text-accent-red">
+          {tx("حدث خطأ أثناء إنشاء الفيديو: ", "Video oluşturulurken hata oluştu: ", "Error while creating the video: ")}
+          {renderError}
+        </p>
+      )}
+
+      {previewError && (
+        <p className="rounded-xl border border-accent-red/30 bg-accent-red-bg/60 p-3 text-sm text-accent-red">
+          {previewError}
+        </p>
+      )}
+
+      {/* Reflects the SAVED gallery video quietly keeping itself in sync
+          with every edit in the background (see VideoCreatorForm's
+          triggerBackgroundRender) -- entirely separate from the "تنزيل
+          الفيديو" button above, which stays untouched by this. Silent for a
+          logged-out visitor (nothing is being saved for them) and while
+          idle (nothing complete enough to save yet). */}
+      {isLoggedIn && backgroundSaveStatus !== "idle" && (
+        <div
+          className="flex items-center gap-2 text-xs text-muted-foreground"
+          dir={isArabic ? "rtl" : "ltr"}
+        >
+          {backgroundSaveStatus === "saving" && (
+            <>
+              <Spinner size="sm" />
+              {tx("جارٍ حفظ التعديلات في المعرض...", "Değişiklikler galeriye kaydediliyor...", "Saving changes to the gallery...")}
+            </>
+          )}
+          {backgroundSaveStatus === "saved" && (
+            <span className="text-primary">
+              {tx("✓ تم حفظ التعديلات في المعرض", "✓ Değişiklikler galeriye kaydedildi", "✓ Changes saved to the gallery")}
+            </span>
+          )}
+          {backgroundSaveStatus === "error" && (
+            <span className="text-accent-red">
+              {tx("تعذر حفظ التعديلات في المعرض", "Değişiklikler galeriye kaydedilemedi", "Couldn't save changes to the gallery")}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* A ready-to-paste video title (e.g. for YouTube) -- see
           VideoCreatorForm's suggestedTitle for the exact format, which now
@@ -400,197 +508,106 @@ export default function Step5Generate({
         </div>
       )}
 
-      {/* Sets ONE text size for every ayah/translation segment in the whole
-          video at once (see VideoCreatorForm's applyBulkTextScale) -- the
-          per-segment size control (a corner-drag handle right on the
-          preview, see VideoPreviewPlayer) still works independently on top
-          of this for a one-off exception. */}
-      {previewProps && (
-        <div
-          className="flex flex-col gap-4 rounded-xl border border-border bg-surface px-4 py-3"
-          dir={isArabic ? "rtl" : "ltr"}
-        >
-          <TextSizeSlider
-            label={tx("حجم نص الآية", "Ayet Yazı Boyutu", "Ayah Text Size")}
-            value={arabicTextScale}
-            onChange={onBulkArabicTextScaleChange}
-          />
-          <TextSizeSlider
-            label={tx("حجم نص الترجمة", "Çeviri Yazı Boyutu", "Translation Text Size")}
-            value={translationTextScale}
-            onChange={onBulkTranslationTextScaleChange}
-          />
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-3">
-            <label className="flex cursor-pointer items-center gap-3">
-              <input
-                type="checkbox"
-                checked={wordHighlight}
-                onChange={(e) => onWordHighlightChange(e.target.checked)}
-                className="peer sr-only"
-              />
-              <span
-                aria-hidden
-                className="relative h-5 w-9 flex-shrink-0 rounded-full bg-border transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:left-[18px] peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40"
-              />
-              <span className="text-xs font-medium text-muted-foreground">
-                {tx("تلوين الكلمة أثناء التلاوة", "Okunan kelimeyi renklendir", "Highlight the word being recited")}
-              </span>
-            </label>
-            {wordHighlight && (
-              <div className="flex items-center gap-2">
-                {WORD_HIGHLIGHT_COLORS.map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    onClick={() => onWordHighlightColorChange(color)}
-                    aria-label={color}
-                    aria-pressed={wordHighlightColor === color}
-                    className={`h-6 w-6 rounded-full ring-offset-2 ring-offset-surface transition-transform hover:scale-110 ${
-                      wordHighlightColor === color ? "ring-2 ring-foreground/70" : ""
-                    }`}
-                    style={{ backgroundColor: color }}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {previewError && (
-        <p className="rounded-xl border border-accent-red/30 bg-accent-red-bg/60 p-3 text-sm text-accent-red">
-          {previewError}
-        </p>
-      )}
-
-      {/* Reflects the SAVED gallery video quietly keeping itself in sync
-          with every edit in the background (see VideoCreatorForm's
-          triggerBackgroundRender) -- entirely separate from the "تنزيل
-          الفيديو" button below, which stays untouched by this. Silent for a
-          logged-out visitor (nothing is being saved for them) and while
-          idle (nothing complete enough to save yet). */}
-      {isLoggedIn && backgroundSaveStatus !== "idle" && (
-        <div
-          className="flex items-center gap-2 text-xs text-muted-foreground"
-          dir={isArabic ? "rtl" : "ltr"}
-        >
-          {backgroundSaveStatus === "saving" && (
+      {/* Every setting folds under one header -- the page opens on just the
+          video, the download button and these titles. The background
+          picker stays mounted while folded (hidden), so its search and
+          results survive folding. The audio/timing header comes last: the
+          timing panel it opens is drawn right under this component (see
+          VideoCreatorForm), i.e. right under its header. */}
+      {(previewProps || preparedAudioUrl) && (
+        <div className="space-y-2" dir={isArabic ? "rtl" : "ltr"}>
+          {previewProps && (
             <>
-              <Spinner size="sm" />
-              {tx("جارٍ حفظ التعديلات في المعرض...", "Değişiklikler galeriye kaydediliyor...", "Saving changes to the gallery...")}
+              <SectionHeader
+                icon={<PhotoIcon className="h-5 w-5" />}
+                title={tx("الخلفية", "Arka Plan", "Background")}
+                summary={
+                  backgroundKind === "image"
+                    ? tx("صورة", "Görsel", "Photo")
+                    : backgroundKind === "video"
+                      ? tx("فيديو", "Video", "Video")
+                      : tx("سوداء", "Siyah", "Black")
+                }
+                open={openSection === "background"}
+                onClick={() => toggleSection("background")}
+              />
+              {backgroundPanel && <div className={openSection === "background" ? "" : "hidden"}>{backgroundPanel}</div>}
+
+              <SectionHeader
+                icon={<LanguageIcon className="h-5 w-5" />}
+                title={tx("النص", "Yazı", "Text")}
+                open={openSection === "text"}
+                onClick={() => toggleSection("text")}
+              />
+              {/* Sets ONE text size for every ayah/translation segment in
+                  the whole video at once (see VideoCreatorForm's
+                  applyBulkTextScale) -- the per-segment size control (a
+                  corner-drag handle right on the preview, see
+                  VideoPreviewPlayer) still works independently on top of
+                  this for a one-off exception. */}
+              {openSection === "text" && (
+                <div className="flex flex-col gap-4 rounded-xl border border-border bg-surface px-4 py-3">
+                  <TextSizeSlider
+                    label={tx("حجم نص الآية", "Ayet Yazı Boyutu", "Ayah Text Size")}
+                    value={arabicTextScale}
+                    onChange={onBulkArabicTextScaleChange}
+                  />
+                  <TextSizeSlider
+                    label={tx("حجم نص الترجمة", "Çeviri Yazı Boyutu", "Translation Text Size")}
+                    value={translationTextScale}
+                    onChange={onBulkTranslationTextScaleChange}
+                  />
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-3">
+                    <label className="flex cursor-pointer items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={wordHighlight}
+                        onChange={(e) => onWordHighlightChange(e.target.checked)}
+                        className="peer sr-only"
+                      />
+                      <span
+                        aria-hidden
+                        className="relative h-5 w-9 flex-shrink-0 rounded-full bg-border transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:left-[18px] peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40"
+                      />
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {tx("تلوين الكلمة أثناء التلاوة", "Okunan kelimeyi renklendir", "Highlight the word being recited")}
+                      </span>
+                    </label>
+                    {wordHighlight && (
+                      <div className="flex items-center gap-2">
+                        {WORD_HIGHLIGHT_COLORS.map((color) => (
+                          <button
+                            key={color}
+                            type="button"
+                            onClick={() => onWordHighlightColorChange(color)}
+                            aria-label={color}
+                            aria-pressed={wordHighlightColor === color}
+                            className={`h-6 w-6 rounded-full ring-offset-2 ring-offset-surface transition-transform hover:scale-110 ${
+                              wordHighlightColor === color ? "ring-2 ring-foreground/70" : ""
+                            }`}
+                            style={{ backgroundColor: color }}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </>
           )}
-          {backgroundSaveStatus === "saved" && (
-            <span className="text-primary">
-              {tx("✓ تم حفظ التعديلات في المعرض", "✓ Değişiklikler galeriye kaydedildi", "✓ Changes saved to the gallery")}
-            </span>
-          )}
-          {backgroundSaveStatus === "error" && (
-            <span className="text-accent-red">
-              {tx("تعذر حفظ التعديلات في المعرض", "Değişiklikler galeriye kaydedilemedi", "Couldn't save changes to the gallery")}
-            </span>
-          )}
-        </div>
-      )}
 
-      {/* The download button does both: renders the video, then
-          auto-downloads it the moment it's ready (see executeVideoRender in
-          VideoCreatorForm.tsx) -- no separate "generate" step followed by a
-          second "download" click. The edit button opens the unified
-          audio-trim/timing panel. On phones it's a full-width labeled button
-          stacked below the primary action -- a bare icon-only square relies
-          on the `title` hover tooltip to explain itself, which never appears
-          on a touch screen, so on mobile it read as an unlabeled mystery
-          button. From sm: up (where hover exists) it collapses back to a
-          compact square icon beside the primary action. */}
-      <div className="flex flex-col sm:flex-row items-stretch gap-2">
-        <button
-          type="button"
-          onClick={handleGenerateVideo}
-          disabled={!canGenerate}
-          className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-primary to-primary-dark py-3 font-bold text-white shadow-lg transition-all hover:shadow-primary/25 disabled:opacity-50"
-        >
-          {renderState === "rendering" ? <Spinner size="md" className="border-white/30 border-t-white" /> : <ArrowDownTrayIcon className="h-6 w-6" />}
-          {renderState === "rendering"
-            ? renderProgress?.stage === "rendering"
-              ? `${tx("جاري إنشاء الفيديو", "Video oluşturuluyor", "Creating the video")} ${Math.round(renderProgress.progress * 100)}%`
-              : renderProgress?.stage === "saving"
-                ? tx("جاري تجهيز التنزيل...", "İndirme hazırlanıyor...", "Preparing the download...")
-                : tx("جاري التحضير...", "Hazırlanıyor...", "Preparing...")
-            : !preparedAudioUrl
-              ? tx("يجب تجهيز الصوت أولاً", "Önce Sesi Hazırlayın", "Prepare the Audio First")
-              : tx("تنزيل الفيديو", "Videoyu İndir", "Download Video")}
-        </button>
-        {preparedAudioUrl && (
-          <button
-            type="button"
-            onClick={onToggleTimingEditor}
-            title={tx("تعديل الصوت والتوقيت والتقسيم", "Ses, zamanlama ve bölümlemeyi düzenle", "Edit audio, timing and segmentation")}
-            className={`flex flex-shrink-0 items-center justify-center gap-2 h-[52px] px-4 sm:w-[52px] sm:px-0 rounded-lg border transition-colors ${
-              showTimingEditor
-                ? "border-primary bg-primary text-white shadow-lg shadow-primary/25"
-                : "border-border bg-background text-primary hover:bg-primary/10"
-            }`}
-          >
-            <AdjustmentsHorizontalIcon className="h-6 w-6 flex-shrink-0" />
-            <span className="text-sm font-semibold sm:hidden">
-              {tx("تعديل الصوت والتوقيت والتقسيم", "Ses, Zamanlama ve Bölümleme", "Audio, Timing and Segmentation")}
-            </span>
-          </button>
-        )}
-        {/* Appears once the interface video itself exists (previewProps) --
-            a resolution setting has nothing to configure before there's a
-            video to apply it to. Opens a popover instead of always sitting
-            visible under the aspect ratio picker, matching the compact
-            icon-button treatment of the edit/timing button right beside it. */}
-        {previewProps && (
-          <div className="relative flex-shrink-0">
-            <button
-              type="button"
-              onClick={() => setShowQualityPanel((v) => !v)}
-              title={tx("جودة الفيديو", "Video kalitesi", "Video quality")}
-              className={`flex flex-shrink-0 items-center justify-center gap-2 h-[52px] px-4 sm:w-[52px] sm:px-0 rounded-lg border transition-colors ${
-                showQualityPanel
-                  ? "border-primary bg-primary text-white shadow-lg shadow-primary/25"
-                  : "border-border bg-background text-primary hover:bg-primary/10"
-              }`}
-            >
-              <SignalIcon className="h-6 w-6 flex-shrink-0" />
-              <span className="text-sm font-semibold sm:hidden">
-                {tx("جودة الفيديو", "Video Kalitesi", "Video Quality")}
-              </span>
-            </button>
-            {showQualityPanel && (
-              <>
-                {/* Full-screen invisible backdrop beneath the panel -- closes
-                    it on any outside click/tap without wiring up a ref +
-                    document listener. */}
-                <div className="fixed inset-0 z-10" onClick={() => setShowQualityPanel(false)} />
-                <div className="animate-fade-in absolute bottom-full right-0 z-20 mb-2 w-72 rounded-lg border border-border bg-background p-4 shadow-xl">
-                  <QualityPicker quality={quality} onQualityChange={onQualityChange} />
-                </div>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-
-      {renderState === "rendering" && renderProgress?.stage === "rendering" && (
-        <div className="flex flex-col gap-1" dir={isArabic ? "rtl" : "ltr"}>
-          <div className="h-1.5 overflow-hidden rounded-full bg-border">
-            <div
-              className="h-full rounded-full bg-primary transition-[width] duration-700"
-              style={{ width: `${Math.round(renderProgress.progress * 100)}%` }}
+          {preparedAudioUrl && (
+            <SectionHeader
+              icon={<AdjustmentsHorizontalIcon className="h-5 w-5" />}
+              title={tx("الصوت والتوقيت", "Ses ve Zamanlama", "Audio and Timing")}
+              open={showTimingEditor}
+              onClick={() => {
+                if (!showTimingEditor) setOpenSection(null);
+                onToggleTimingEditor();
+              }}
             />
-          </div>
+          )}
         </div>
-      )}
-
-      {renderState === "error" && (
-        <p className="animate-fade-in rounded-xl border border-accent-red/30 bg-accent-red-bg/60 p-3 text-sm text-accent-red">
-          {tx("حدث خطأ أثناء إنشاء الفيديو: ", "Video oluşturulurken hata oluştu: ", "Error while creating the video: ")}
-          {renderError}
-        </p>
       )}
     </div>
   );

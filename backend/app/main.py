@@ -38,7 +38,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.routers import surahs, ayahs, extraction, ai, vision, segmentation
+from app.routers import surahs, ayahs, extraction, ai, vision, segmentation, enhance
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(surahs.router, prefix="/api/surahs", tags=["Surahs"])
@@ -47,6 +47,7 @@ app.include_router(extraction.router, prefix="/api/extraction", tags=["Extractio
 app.include_router(ai.router, prefix="/api/ai", tags=["AI"])
 app.include_router(vision.router, prefix="/api/vision", tags=["Vision"])
 app.include_router(segmentation.router, prefix="/api/segmentation", tags=["Segmentation"])
+app.include_router(enhance.router, prefix="/api/enhance", tags=["Enhance"])
 
 
 @app.get("/", tags=["Root"])

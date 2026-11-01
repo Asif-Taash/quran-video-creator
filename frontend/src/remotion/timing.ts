@@ -227,8 +227,16 @@ interface FlatItem {
 function normalizeMappingTimes(items: FlatItem[]): void {
   const saved = items.map(({ mapping }) => ({ start: mapping.start_ms, end: mapping.end_ms }));
   const n = items.length;
-  // The selection's outer edges are the audio trim points, not text boundaries.
-  if (n > 0 && items[0].span) delete items[0].mapping.start_ms;
+  // The selection's outer edges are the audio trim points, not text
+  // boundaries -- except a first start the user put before the reciter's
+  // first word: the aligner can place an opening like الٓمٓ over a second
+  // late, and the text then shows from the user's point, as the timing
+  // editor does (2026-10-31). The default trim is never far enough before
+  // the words to show differently: the first chunk fades in from the
+  // video's first frame either way (QuranVideo.tsx).
+  const firstMovedEarlier =
+    n > 0 && !!items[0].span && typeof saved[0].start === "number" && saved[0].start < items[0].span.start - BOUNDARY_SNAP_MS;
+  if (n > 0 && items[0].span && !firstMovedEarlier) delete items[0].mapping.start_ms;
   if (n > 0 && items[n - 1].span) delete items[n - 1].mapping.end_ms;
 
   for (let k = 1; k < n; k++) {

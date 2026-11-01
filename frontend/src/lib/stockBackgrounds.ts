@@ -144,7 +144,7 @@ export function isAllowed(description: string, language: StockSearchLanguage): b
 // ---- tiny response cache ----------------------------------------------------
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const CACHE_MAX_ENTRIES = 300;
+const CACHE_MAX_ENTRIES = 600;
 const responseCache = new Map<string, { at: number; data: unknown }>();
 
 async function cachedJson(url: string, headers: Record<string, string>): Promise<any> {
@@ -332,79 +332,137 @@ function pixabayOrientation(orientation: StockOrientation): string {
 // Pixabay's API only ever exposes a query's first 500 results.
 const PIXABAY_MAX_RESULTS = 500;
 
-async function searchPixabay(query: string, type: StockMediaType, orientation: StockOrientation, logicalPage: number, perPage: number, language: StockSearchLanguage, seed: number): Promise<ProviderPage> {
+// One Pixabay result list: a wording, ranked one way, optionally only its
+// Editor's Choice results (the ones Pixabay's editors awarded -- the best of
+// the pool, a few hundred per topic).
+type PixabayListing = { query: string; order: "popular" | "latest"; editorsChoice: boolean };
+
+// Pages of a listing it turns out not to have, skipped past within one
+// request before it gives up (see searchPixabay).
+const PIXABAY_MAX_SKIPS = 8;
+
+// Every page of every listing a search walks, in order: page 1 of every
+// listing, then every page 2, ... -- each round shuffled by the seed, with
+// an Editor's Choice page leading every three. Pixabay serves at most 500
+// results per listing, and a search used to walk a single one, so a topic
+// ran dry within a few searches and its good results kept coming back (the
+// user, 2026-11-01); a 16-wording topic now reaches thousands. Related
+// wordings' Editor's Choice pools overlap heavily, hence mixed in rather
+// than first. Every listing is assumed full so the plan never shifts
+// mid-search; pages one doesn't have are skipped when fetched.
+function pixabayPlan(queries: string[], perPage: number, seed: number): { listing: PixabayListing; page: number }[] {
+  const pages = Math.max(1, Math.ceil(PIXABAY_MAX_RESULTS / perPage));
+  const editors: PixabayListing[] = queries.map((query) => ({ query, order: "popular", editorsChoice: true }));
+  const rest: PixabayListing[] = queries.flatMap((query) =>
+    (["popular", "latest"] as const).map((order) => ({ query, order, editorsChoice: false }))
+  );
+  const plan: { listing: PixabayListing; page: number }[] = [];
+  for (let page = 1; page <= pages; page++) {
+    const e = seededShuffle(editors, seed + page);
+    const r = seededShuffle(rest, (seed ^ 0x5bd1e995) + page);
+    while (e.length > 0 || r.length > 0) {
+      const next = [e.shift(), r.shift(), r.shift()].filter((l): l is PixabayListing => !!l);
+      plan.push(...next.map((listing) => ({ listing, page })));
+    }
+  }
+  return plan;
+}
+
+// One page of a listing, or null when the listing doesn't have it.
+async function pixabayListingPage(listing: PixabayListing, type: StockMediaType, orientation: StockOrientation, perPage: number, language: StockSearchLanguage, page: number): Promise<StockItem[] | null> {
   const base = type === "photo" ? "https://pixabay.com/api/" : "https://pixabay.com/api/videos/";
-  // Popular and newest-first rank the same pool differently -- the seed picks
-  // one, for even more variety between searches.
-  const order = mulberry32(seed ^ 0x5bd1e995)() < 0.5 ? "popular" : "latest";
-  const paramsFor = (page: number) => {
+  const paramsFor = (p: number) => {
     const params = new URLSearchParams({
       key: process.env.PIXABAY_API_KEY ?? "",
-      q: query,
+      q: listing.query,
       lang: language,
       safesearch: "true",
       // Natural scenery only -- see BLOCKED_EN above.
       category: "nature",
-      order,
-      page: String(page),
+      order: listing.order,
+      page: String(p),
       per_page: String(Math.max(3, perPage)),
     });
+    if (listing.editorsChoice) params.set("editors_choice", "true");
     if (type === "photo") {
       params.set("image_type", "photo");
       params.set("orientation", pixabayOrientation(orientation));
     }
     return params;
   };
-  const countKey = `pixabay|${type}|${orientation}|${language}|${perPage}|${order}|${query}`;
+  const countKey = `pixabay|${type}|${orientation}|${language}|${perPage}|${listing.order}|${listing.editorsChoice ? "ec" : "all"}|${listing.query}`;
   if (!pageCountCache.has(countKey)) {
     const first = await cachedJson(`${base}?${paramsFor(1)}`, {});
     const total = Math.min(PIXABAY_MAX_RESULTS, first.totalHits ?? 0);
-    pageCountCache.set(countKey, Math.max(1, Math.floor(total / perPage) || 1));
+    pageCountCache.set(countKey, Math.ceil(total / perPage));
   }
-  const pageCount = pageCountCache.get(countKey)!;
-  const page = randomPage(pageCount, logicalPage, seed);
-  if (page === null) return { items: [], hasMore: false };
-  const data = await cachedJson(`${base}?${paramsFor(page)}`, {});
-  const items =
-    type === "photo"
-      ? (data.hits ?? []).filter((h: any) => isAllowed(h.tags ?? "", language)).map(pixabayPhotoToItem)
-      : (data.hits ?? [])
-          .filter((h: any) => isAllowed(h.tags ?? "", language))
-          .map((h: any) => pixabayVideoToItem(h, language))
-          .filter((item: StockItem) => !!item.thumbUrl && !!item.previewVideoUrl);
-  return { items, hasMore: logicalPage < pageCount };
+  if (page > pageCountCache.get(countKey)!) return null;
+  let data: any;
+  try {
+    data = await cachedJson(`${base}?${paramsFor(page)}`, {});
+  } catch (err) {
+    // Pixabay answers a page past the listing's end with a 400.
+    if (page > 1 && err instanceof Error && err.message.startsWith("HTTP 400")) return null;
+    throw err;
+  }
+  return type === "photo"
+    ? (data.hits ?? []).filter((h: any) => isAllowed(h.tags ?? "", language)).map(pixabayPhotoToItem)
+    : (data.hits ?? [])
+        .filter((h: any) => isAllowed(h.tags ?? "", language))
+        .map((h: any) => pixabayVideoToItem(h, language))
+        .filter((item: StockItem) => !!item.thumbUrl && !!item.previewVideoUrl);
 }
 
-type ProviderPage = { items: StockItem[]; hasMore: boolean };
+async function searchPixabay(queries: string[], type: StockMediaType, orientation: StockOrientation, logicalPage: number, perPage: number, language: StockSearchLanguage, seed: number): Promise<ProviderPage> {
+  const plan = pixabayPlan(queries, perPage, seed);
+  let n = logicalPage;
+  for (; n <= plan.length && n < logicalPage + PIXABAY_MAX_SKIPS; n++) {
+    const { listing, page } = plan[n - 1];
+    const items = await pixabayListingPage(listing, type, orientation, perPage, language, page);
+    if (items) return { items, hasMore: n < plan.length, lastPage: n };
+  }
+  const lastPage = Math.min(n, plan.length);
+  return { items: [], hasMore: lastPage < plan.length, lastPage };
+}
+
+// lastPage: the last page of the search this one consumed (a provider may
+// skip past pages it turned out not to have).
+type ProviderPage = { items: StockItem[]; hasMore: boolean; lastPage?: number };
 
 // ---- public API -----------------------------------------------------------------
 
+// `queries`: every wording of the search (a topic's several, or the one the
+// user typed). Pixabay walks them all; Pexels, which serves deep pages of a
+// single wording, takes one per search.
 export async function searchStock(
-  query: string,
+  queries: string[],
   type: StockMediaType,
   orientation: StockOrientation,
   page: number,
   language: StockSearchLanguage = "en",
   seed = 1
-): Promise<{ items: StockItem[]; errors: string[]; hasMore: boolean }> {
+): Promise<{ items: StockItem[]; errors: string[]; hasMore: boolean; lastPage: number }> {
   const providers = configuredProviders();
   const perProvider = providers.length > 1 ? 18 : 36;
+  const pexelsQuery = queries[Math.floor(mulberry32(seed)() * queries.length)];
   const settled = await Promise.allSettled(
     providers.map((p) =>
       p === "pexels"
-        ? searchPexels(query, type, orientation, page, perProvider, language, seed)
-        : searchPixabay(query, type, orientation, page, perProvider, language, seed)
+        ? searchPexels(pexelsQuery, type, orientation, page, perProvider, language, seed)
+        : searchPixabay(queries, type, orientation, page, perProvider, language, seed)
     )
   );
   const lists: StockItem[][] = [];
   const errors: string[] = [];
   let hasMore = false;
+  let lastPage = page;
   settled.forEach((r, i) => {
     // Shuffled by the seed, seamless loops still first.
     if (r.status === "fulfilled") {
       const shuffled = seededShuffle(r.value.items, seed + page);
       lists.push([...shuffled.filter((v) => v.seamlessLoop), ...shuffled.filter((v) => !v.seamlessLoop)]);
       hasMore = hasMore || r.value.hasMore;
+      lastPage = Math.max(lastPage, r.value.lastPage ?? page);
     } else {
       errors.push(`${providers[i]}: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`);
     }
@@ -414,7 +472,7 @@ export async function searchStock(
   for (let i = 0; lists.some((l) => i < l.length); i++) {
     for (const l of lists) if (i < l.length) items.push(l[i]);
   }
-  return { items, errors, hasMore };
+  return { items, errors, hasMore, lastPage };
 }
 
 // Smallest video file that's still at least VIDEO_MIN_SHORT_SIDE, or the
