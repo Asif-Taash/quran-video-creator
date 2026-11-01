@@ -1596,8 +1596,17 @@ export default function VideoCreatorForm({ isLoggedIn }: { isLoggedIn: boolean }
   // disk independently of this component's state, so a stale file left over
   // from a prior segmentation would otherwise get applied to a new verse
   // range if the user regenerates without re-opening the timing step.
+  //
+  // Only when one of them really changed: Fast Refresh (dev) re-runs every
+  // effect after a code edit, and this reset then wiped the user's trim and
+  // segmentation, which autosave stored over their draft (2026-10-31).
+  const audioParamsRef = useRef<unknown[] | null>(null);
   useEffect(() => {
+    const params = [selectedSurah?.id ?? null, startVerse, endVerse, selectedReciter, customAudio, audioSourceMode];
+    const previous = audioParamsRef.current;
+    audioParamsRef.current = params;
     if (isHydratingRef.current) return;
+    if (previous && params.every((value, i) => Object.is(value, previous[i]))) return;
     audioParamsEpochRef.current += 1;
     // The old selection's preparation is abandoned: cancel it (browser
     // request + backend job) so the new selection's starts right away.
