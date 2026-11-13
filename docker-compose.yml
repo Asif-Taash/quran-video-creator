@@ -1,0 +1,129 @@
+# No database: the Quran text ships with the frontend, and projects are
+# saved as files (frontend/src/data/drafts + the render_assets volume).
+services:
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - CORS_ORIGINS=*
+    volumes:
+      - ./backend:/app
+    # Wipes disposable scratch space (merge intermediates) on every container
+    # start so it can never accumulate across restarts. Finished clips stay for
+    # 30 days: they are the cache that makes preparing the same ayahs again
+    # instant, and a new ENGINE_VERSION invalidates them. Saved drafts and the
+    # size-capped surah_cache are untouched since those are real user data /
+    # already self-limiting.
+    command: sh -c "rm -rf /app/data/temp_extraction/* 2>/dev/null; find /app/data/extracted_clips -type f -mtime +30 -delete 2>/dev/null; exec python dev_server.py"
+    # Log size cap: see the frontend's logging.
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    # Keeps the AI models from crowding out the desktop: at the limit the
+    # worker is killed and dev_server.py starts a new one. If the laptop itself
+    # runs out of memory, the kernel picks this over the desktop too.
+    oom_score_adj: 500
+    memswap_limit: 7G
+    deploy:
+      resources:
+        reservations:
+          # The GPU through CDI (nvidia.com/gpu=all), not `driver: nvidia`:
+          # with the old hook the GPU's device rules weren't registered with
+          # systemd, so every `systemctl daemon-reload` (any apt/snap
+          # update while the containers ran) silently took the GPU away and
+          # the backend went on at CPU speed until the container was
+          # recreated ("Failed to initialize NVML: Unknown Error"). The spec
+          # in /var/run/cdi is kept current by nvidia-cdi-refresh.
+          devices:
+            - driver: cdi
+              device_ids: ["nvidia.com/gpu=all"]
+              capabilities: [gpu]
+        limits:
+          cpus: '8'
+          memory: 7G
+    # unless-stopped, not on-failure: a laptop shutdown stops the worker
+    # cleanly (exit 0), and on-failure then left it down after the next boot
+    # while the frontend came back ("getaddrinfo ENOTFOUND backend", 2026-11-09).
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    init: true # This is the magic fix! It kills zombie Chromium processes automatically
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=/backend
+      - INTERNAL_API_URL=http://backend:8000
+      - WATCHPACK_POLLING=true # Ensure hot-reloading works on Windows/WSL
+      - LANG=tr_TR.UTF-8
+      - LC_ALL=tr_TR.UTF-8
+      - NODE_OPTIONS=--max-old-space-size=2048 # Force Node to clean memory earlier
+      - FREETYPE_PROPERTIES=cff:no-stem-darkening=1 autofitter:no-stem-darkening=1
+    shm_size: '2gb'
+    # Same idea as the backend. memswap_limit: the default allows 8G of swap on
+    # top of the memory limit, which is most of what the laptop has.
+    oom_score_adj: 500
+    memswap_limit: 8G
+    deploy:
+      resources:
+        reservations:
+          # The GPU through CDI (nvidia.com/gpu=all), not `driver: nvidia`:
+          # with the old hook the GPU's device rules weren't registered with
+          # systemd, so every `systemctl daemon-reload` (any apt/snap
+          # update while the containers ran) silently took the GPU away and
+          # the backend went on at CPU speed until the container was
+          # recreated ("Failed to initialize NVML: Unknown Error"). The spec
+          # in /var/run/cdi is kept current by nvidia-cdi-refresh.
+          devices:
+            - driver: cdi
+              device_ids: ["nvidia.com/gpu=all"]
+              capabilities: [gpu]
+        limits:
+          cpus: '8'
+          memory: 8G
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      # Named, not anonymous: every freshly created container got a new
+      # anonymous copy (1.2 GB + .next) and left the old one behind, 8 pairs
+      # (~11 GB) in two weeks. A named volume is reused instead. It is filled
+      # from the image only while empty, so after changing package.json and
+      # rebuilding, remove it (docker compose down, then
+      # docker volume rm quran-video-creator-main_frontend_node_modules).
+      - frontend_node_modules:/app/node_modules
+      - frontend_next:/app/.next
+      - render_assets:/app/public/render-assets
+      - type: tmpfs
+        target: /app/public/renders
+        tmpfs:
+          size: 512M
+    # Wipes disposable trimmed-audio/stock-bg scratch space on every
+    # container start so it can never accumulate across restarts -- saved
+    # drafts (render-assets/drafts, src/data/drafts) are untouched since
+    # those are real in-progress projects, not disposable output. The copies
+    # of backgrounds and recordings a preview or export uploaded (each
+    # project keeps its own in drafts/) go once unused for 3 days: they had
+    # no limit at all.
+    command: sh -c "rm -rf public/render-assets/trimmed-audio/* public/render-assets/stock-bg/* 2>/dev/null; find public/render-assets/backgrounds public/render-assets/custom-audio -type f -mtime +3 -delete 2>/dev/null; npm run dev"
+    # Docker keeps a container's log with no size limit by default, growing
+    # for as long as the container lives. Capped at 5 x 20 MB (weeks of use;
+    # "[Segmentation Apply] Parsed JSON" lines there are how a lost split is
+    # recovered). Takes effect when the container is recreated.
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    # Not on-failure: `next dev` exits 0 when next-server gets killed.
+    restart: unless-stopped
+
+volumes:
+  render_assets:
+  frontend_node_modules:
+  frontend_next:

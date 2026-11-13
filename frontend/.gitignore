@@ -1,0 +1,73 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# user-generated video-creator drafts (see /api/drafts)
+/src/data/drafts/
+/public/render-assets/drafts/
+
+
+# user-uploaded profile avatars (see /api/auth/profile)
+/public/avatars/
+
+# runtime-generated word-count cache (see src/lib/quranWordMap.ts) -- grows
+# as verses are actually used locally, not source data
+/src/data/quran-word-map-cache.json
+
+# the segmentation the current render reads (see /api/segmentation/apply) --
+# runtime state, not source data
+/src/data/temp_segmentation.json
+
+# backgrounds used in exported videos (lib/usedBackgrounds.ts)
+/src/data/used-backgrounds.json
+/src/data/used-backgrounds-pending/
+
+# Copyrighted: kept on this computer only, never published (README:
+# "Telif hakkı nedeniyle depoda olmayan dosyalar").
+# Turkish meals (Diyanet İşleri, Süleyman Ateş, Diyanet Vakfı)
+/src/data/translations/
+# King Fahd Complex (KFGQPC) fonts and the QCF glyph codes that go with them
+/public/fonts/2005/
+/public/fonts/2013/
+/public/fonts/uthmanic_hafs_v20.ttf
+/public/fonts/UthmanTN1 Ver10.otf
+/src/data/quran.json
+/src/data/quran-qcf-v1.json
