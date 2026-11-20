@@ -1336,7 +1336,10 @@ def _assess(units, ayah_info, start_ayah, end_ayah, wav, words_by_ayah, region_s
 
 def write_lossless_cut(source_path, clip_start, duration, fade_in, fade_out, out_path):
     """The clip _write_outputs writes -- the same cut, gain and fades -- as
-    FLAC instead of MP3, for the video itself (frontend lib/losslessAudio.ts).
+    FLAC instead of MP3, for the video itself: served by
+    /api/extraction/lossless, and used by the render when a draft's prepared
+    MP3 has one next to it (frontend api/video/render/route.ts). Nothing in
+    the frontend requests it yet: the Ajmi 2:136-137 fix was placed by hand.
 
     The MP3 clip went through three more lossy encodes before a video was
     done (this one, the render's trim, the export's AAC), each adding
@@ -1449,6 +1452,7 @@ def _write_outputs(source_path, source_duration, source_offset, units, ayah_info
         "engine": ENGINE_VERSION,
         "audio": AUDIO_VERSION,
         "source": meta["source"],
+        **({"hq": True} if meta.get("hq") else {}),
         "clipSourceStartSec": round(clip_start, 3),
         "ayahStartMs": max(0, rel_ms(lead)),
         "ayahEndMs": max(0, rel_ms(tail)),
@@ -3202,8 +3206,14 @@ def extract_clip(reciter_id, surah_id, start_ayah, end_ayah, pad_seconds=0.0, ba
         words_by_ayah = _with_basmala(words_by_ayah)
 
     full_audio = download_full_surah(reciter_id, surah_id, allow_backup=True)
-    if hq and not str(full_audio).endswith(HQ_CACHE_SUFFIX):
+    cut_from_hq = str(full_audio).endswith(HQ_CACHE_SUFFIX)
+    if hq and not cut_from_hq:
+        # The better copy couldn't be fetched: a clip already cut from
+        # mp3quran's file is as good as a new one.
         clip_name = plain_name
+        cached = _cached_clip(clip_name, pad_seconds)
+        if cached:
+            return cached
     backup = is_backup_recording(full_audio)
     approx = None
     if backup:
@@ -3221,7 +3231,10 @@ def extract_clip(reciter_id, surah_id, start_ayah, end_ayah, pad_seconds=0.0, ba
 
     return _extract_from_long_audio(
         full_audio, surah_id, first, end_ayah, pad_seconds, words_by_ayah, clip_name,
-        {"surah": surah_id, "reciter": reciter_id, "source": "backup" if backup else "mp3quran"},
+        # "hq": cut from RECITERS_HQ's copy -- what /api/extraction/lossless
+        # must cut from again for the same timing.
+        {"surah": surah_id, "reciter": reciter_id, "source": "backup" if backup else "mp3quran",
+         **({"hq": True} if cut_from_hq else {})},
         approx=approx, use_context=True,
     )
 

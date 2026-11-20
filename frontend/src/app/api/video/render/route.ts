@@ -935,7 +935,21 @@ export async function POST(req: Request) {
         // export's own encode is the only lossy one. Without it, nothing
         // changes below.
         const improvedAudioPath = preparedAudioLocalPath.replace(/\.[^./\\]+$/, "") + ".flac";
-        const improvedStat = await fs.stat(improvedAudioPath).catch(() => null);
+        let improvedStat = await fs.stat(improvedAudioPath).catch(() => null);
+        // Only a copy of this very clip: one left over from an earlier
+        // preparation of the same name (another engine or margin) would
+        // put audio under timing that isn't its own.
+        if (improvedStat?.isFile()) {
+          const probe = (file: string) =>
+            execFileAsync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", file])
+              .then(({ stdout }) => parseFloat(stdout.trim()))
+              .catch(() => NaN);
+          const [mp3Sec, flacSec] = await Promise.all([probe(preparedAudioLocalPath), probe(improvedAudioPath)]);
+          if (!(Math.abs(mp3Sec - flacSec) <= 0.15)) {
+            console.warn(`[Video Render] Ignoring ${path.basename(improvedAudioPath)}: ${flacSec}s vs the clip's ${mp3Sec}s.`);
+            improvedStat = null;
+          }
+        }
         const hasImprovedAudio = improvedStat?.isFile() === true;
         // Part of the trimmed file's name: a replaced copy is trimmed anew.
         const improvedTag = improvedStat ? `${improvedStat.size.toString(36)}${Math.round(improvedStat.mtimeMs).toString(36)}` : "";

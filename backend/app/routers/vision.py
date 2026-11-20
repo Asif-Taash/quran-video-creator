@@ -142,6 +142,24 @@ def _load_aesthetic(torch, device):
     return None
 
 
+_aesthetic_ok = None
+
+
+def _aesthetic_ready():
+    """The expected weights are on disk -- checked once, without loading any
+    model, so images are only re-scored when scoring can actually work."""
+    global _aesthetic_ok
+    if _aesthetic_ok is None:
+        import hashlib
+
+        try:
+            with open(AESTHETIC_PATH, "rb") as f:
+                _aesthetic_ok = hashlib.sha256(f.read()).hexdigest() == AESTHETIC_SHA256
+        except OSError:
+            _aesthetic_ok = False
+    return _aesthetic_ok
+
+
 def _aesthetic_scores(m, full_emb):
     """Scores for L2-normalised full-image CLIP embeddings [n, 768]."""
     if m["aesthetic"] is None:
@@ -370,7 +388,7 @@ def check_urls(req: CheckRequest):
             hit = cache.get(it.key)
             if hit and hit.get("v") == VISION_VERSION:
                 out[it.key] = {"ok": hit["ok"], "reason": hit.get("reason"), "hash": hit.get("h"), "aesthetic": hit.get("a")}
-                if hit["ok"] and (not hit.get("h") or ("a" not in hit and os.path.exists(AESTHETIC_PATH))):
+                if hit["ok"] and (not hit.get("h") or ("a" not in hit and _aesthetic_ready())):
                     unhashed.append(it)
             else:
                 todo.append(it)
@@ -381,21 +399,29 @@ def check_urls(req: CheckRequest):
     todo_images, unhashed_images = images[:len(todo)], images[len(todo):]
 
     found = [(it, im) for it, im in zip(unhashed, unhashed_images) if im is not None]
-    try:
-        scores = _score_only([im for _, im in found]) if found else []
-    except Exception:
-        logger.exception("Aesthetic scoring failed")
-        scores = [None] * len(found)
+    # Only images without a score load the models; a missing fingerprint
+    # alone needs none.
+    to_score = [(it, im) for it, im in found if "a" not in (cache.get(it.key) or {}) and _aesthetic_ready()]
+    scores = {}
+    if to_score:
+        try:
+            for (it, _), score in zip(to_score, _score_only([im for _, im in to_score])):
+                scores[it.key] = score
+        except Exception:
+            # Left unscored, so a later request tries again.
+            logger.exception("Aesthetic scoring failed")
     with _cache_lock:
-        for (it, im), score in zip(found, scores):
+        for it, im in found:
             entry = cache.get(it.key)
             h = (entry or {}).get("h") or fingerprint(im)
             out[it.key]["hash"] = h
-            out[it.key]["aesthetic"] = score
             if entry is not None:
                 entry["h"] = h
-                if score is not None:
-                    entry["a"] = score
+                # A None score (the head failed to load) is stored too: the
+                # image isn't fetched and scored again on every search.
+                if it.key in scores:
+                    entry["a"] = scores[it.key]
+                out[it.key]["aesthetic"] = entry.get("a")
         if found:
             _save_cache()
 

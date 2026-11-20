@@ -22,6 +22,11 @@ const MAX_PER_AUTHOR = 2;
 // Pages checked ahead of the user's scrolling (see the end of GET).
 const PREFETCH_PAGES = 3;
 const prefetching = new Set<string>();
+// Bumped by every new search (page 1) of a media type and orientation: a
+// prefetch run stops once a newer search has started, instead of several
+// runs (one per topic clicked) checking images on the GPU side by side
+// while the search on screen waits behind them.
+const searchGeneration = new Map<string, number>();
 let warnedNotConfigured = false;
 
 // What each search (its seed, picked by the client per search) has already
@@ -65,6 +70,11 @@ export async function GET(req: Request) {
   // Picked by the client per search, so every search shows a different
   // random slice of the results (see lib/stockBackgrounds.ts).
   const seed = Math.abs(Math.floor(Number(searchParams.get("seed")) || 1)) % 2147483647;
+  // Loaded ahead by the picker before the user has opened it (its first
+  // suggested topic): not recorded as shown -- the picker reports what is
+  // actually seen (api/backgrounds/shown) -- and nothing more is checked
+  // ahead of it.
+  const ahead = searchParams.get("ahead") === "1";
 
   if (!query && !topic) {
     return NextResponse.json({ error: "Query is required." }, { status: 400 });
@@ -119,6 +129,9 @@ export async function GET(req: Request) {
   // A new search (page 1) starts over; its later pages skip what it sent.
   const searchKey = `${seed}|${type}|${orientation}|${topic ? `topic:${topic.id}` : resolved.queries[0]}`;
   if (page === 1) sentBySearch.delete(searchKey);
+  const generationKey = `${type}|${orientation}`;
+  if (page === 1) searchGeneration.set(generationKey, (searchGeneration.get(generationKey) ?? 0) + 1);
+  const generation = searchGeneration.get(generationKey) ?? 0;
   const sent = sentKeys(searchKey);
   const perAuthor = new Map<string, number>();
   const capAuthors = (list: typeof items) =>
@@ -161,11 +174,12 @@ export async function GET(req: Request) {
   // Check the next pages in the background, so scrolling on is already
   // fast: results never shown before each need the image check, a few
   // seconds a page. One run per search at a time, one page after another.
-  if (more && !prefetching.has(searchKey)) {
+  if (more && !ahead && !prefetching.has(searchKey)) {
     prefetching.add(searchKey);
     void (async () => {
       let nextPage = lastPage + 1;
       for (let i = 0; i < PREFETCH_PAGES; i++) {
+        if (searchGeneration.get(generationKey) !== generation) break;
         const next = await searchStock(resolved.queries, type, orientation, nextPage, resolved.language, seed, relevant);
         await checkThumbnails(next.items.map((it) => ({ key: it.key, url: it.thumbUrl })));
         if (!next.hasMore) break;
@@ -176,6 +190,6 @@ export async function GET(req: Request) {
       .finally(() => prefetching.delete(searchKey));
   }
   natural.forEach((it) => sent.add(it.key));
-  void rememberShown(natural.map((it) => it.key));
+  if (!ahead) void rememberShown(natural.map((it) => it.key));
   return NextResponse.json({ items: natural, providers, hasMore: more, lastPage });
 }

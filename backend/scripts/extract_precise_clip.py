@@ -382,11 +382,13 @@ def _download_surah_file(url, cache_file, timeout, deadline_s, source):
         temp_out.unlink(missing_ok=True)
 
 
-def download_full_surah(reciter_id, surah_id, allow_backup=False):
+def download_full_surah(reciter_id, surah_id, allow_backup=False, prefer_hq=True):
     """Cached path of the reciter's whole-surah mp3 from mp3quran -- or, with
     allow_backup, from its RECITERS_BACKUP source when mp3quran can't be
     reached. Callers passing allow_backup must check is_backup_recording()
-    on the result before using any mp3quran timing for it."""
+    on the result before using any mp3quran timing for it. prefer_hq=False
+    skips RECITERS_HQ's copy (to cut again from the file an older clip was
+    cut from)."""
     # Use persistent cache directory instead of temp
     cache_file = SURAH_CACHE_DIR / f"{reciter_id}_{surah_id:03d}_full.mp3"
     backup_template = RECITERS_BACKUP.get(reciter_id) if allow_backup else None
@@ -402,7 +404,7 @@ def download_full_surah(reciter_id, surah_id, allow_backup=False):
         job_control.check_cancelled()
     result = None
     try:
-        if has_hq_copy(reciter_id, surah_id):
+        if prefer_hq and has_hq_copy(reciter_id, surah_id):
             hq_file = SURAH_CACHE_DIR / f"{reciter_id}_{surah_id:03d}{HQ_CACHE_SUFFIX}"
             if hq_file.exists():
                 logger.info(f"Full Surah {surah_id} for {reciter_id} found in cache (better-quality copy).")

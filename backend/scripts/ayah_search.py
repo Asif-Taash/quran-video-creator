@@ -57,6 +57,12 @@ SYNONYMS = {"tövbe": "tevbe", "tovbe": "tevbe"}
 
 _lock = threading.Lock()
 _state = None
+# The query model (about 1.1 GB on the CPU) is let go after this long
+# without a search; the index itself stays (under 60 MB). The laptop has
+# frozen on memory before (see dev_server.py / idle_recycle).
+MODEL_IDLE_SEC = 600
+_last_use = 0.0
+_unload_timer = None
 
 
 def _model(device):
@@ -147,7 +153,7 @@ def _load():
                 t0 = time.time()
                 texts = json.loads((DIR / "texts.json").read_text(encoding="utf-8"))
                 emb = {lang: np.load(DIR / f"emb_{lang}.npy").astype(np.float32) for lang in LANGS}
-                tok, model = _model("cpu")
+                tok, model = None, None
                 words = {lang: [set(re.findall(r"\w+", _fold(t))) for t in texts[lang]] for lang in LANGS}
                 short = np.array([len(t.split()) < SHORT_AYAH_WORDS for t in texts["ar"]])
                 _state = {"keys": texts["keys"], "emb": emb, "tok": tok, "model": model, "words": words, "short": short,
@@ -202,7 +208,8 @@ def search(query, limit=40, ui_language=None):
     text = query
     if ui_language == "tr" and not re.search(r"[\u0600-\u06ff]", query):
         text = f"Türkçe: {query}"
-    q = _embed(st["tok"], st["model"], ["query: " + text], "cpu")[0]
+    tok, model = _query_model()
+    q = _embed(tok, model, ["query: " + text], "cpu")[0]
     scores = np.mean(np.stack([st["emb"][lang] @ q for lang in LANGS]), axis=0)
     scores -= SHORT_AYAH_PENALTY * st["short"]
     words = [w for w in re.findall(r"\w+", _fold(query)) if len(w) >= 3]
@@ -216,6 +223,41 @@ def search(query, limit=40, ui_language=None):
         s, a = st["keys"][i].split(":")
         out.append((int(s), int(a), round(float(scores[i]), 4)))
     return out
+
+
+def _query_model():
+    """The tokenizer and model for queries, loaded on demand and dropped
+    again after MODEL_IDLE_SEC without a search."""
+    global _last_use, _unload_timer
+    st = _load()
+    with _lock:
+        if st["model"] is None:
+            t0 = time.time()
+            st["tok"], st["model"] = _model("cpu")
+            logger.info(f"Ayah search model loaded in {time.time() - t0:.1f}s.")
+        _last_use = time.time()
+        if _unload_timer is None:
+            _unload_timer = threading.Timer(MODEL_IDLE_SEC, _unload_if_idle)
+            _unload_timer.daemon = True
+            _unload_timer.start()
+        return st["tok"], st["model"]
+
+
+def _unload_if_idle():
+    global _unload_timer
+    with _lock:
+        idle = time.time() - _last_use
+        if idle >= MODEL_IDLE_SEC:
+            if _state is not None and _state["model"] is not None:
+                _state["tok"] = _state["model"] = None
+                import gc
+                gc.collect()
+                logger.info("Ayah search model unloaded after being idle.")
+            _unload_timer = None
+            return
+        _unload_timer = threading.Timer(MODEL_IDLE_SEC - idle + 1, _unload_if_idle)
+        _unload_timer.daemon = True
+        _unload_timer.start()
 
 
 def translation(surah, ayah, lang):

@@ -494,9 +494,11 @@ function buildWordWindows({
     const w = glyphCounts ? wordOfToken[g] : Math.min(g, lastWord);
     if (w === undefined || w < firstWord || w > lastWord || !wordTimings[w]) continue;
     const localToken = g - tokenStart;
-    const current = windows[windows.length - 1];
-    if (w === lastWindowWord && current) {
-      current.tokens.push(localToken);
+    if (w === lastWindowWord) {
+      // A later glyph of the same word joins that word's window; an unlit
+      // waqf mark has none, so all of its glyphs stay unlit (they used to
+      // join the window of the word before it).
+      windowOfWord.get(w)?.tokens.push(localToken);
       continue;
     }
     // A waqf/pause mark (ۚ ۖ ...) isn't recited either: it stays unlit

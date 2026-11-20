@@ -336,6 +336,36 @@ export default function BackgroundPicker({
     }
     return times ? { text: tx(`🔁 يتكرر ×${times}`, `🔁 ${times} kez tekrarlanır`, `🔁 Repeats ×${times}`), good: false } : null;
   };
+  // The search loaded ahead while the section is still folded (see the
+  // auto-load below): its results only count as seen -- here and on the
+  // server -- once the picker is actually on screen.
+  const aheadQueryRef = useRef<string | null>(null);
+  const pendingSeenRef = useRef<string[]>([]);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const visibleRef = useRef(false);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") {
+      visibleRef.current = true;
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      visibleRef.current = entries.some((e) => e.isIntersecting);
+      if (!visibleRef.current) return;
+      aheadQueryRef.current = null;
+      const keys = pendingSeenRef.current;
+      if (keys.length === 0) return;
+      pendingSeenRef.current = [];
+      rememberSeen(keys);
+      fetch("/api/backgrounds/shown", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ keys }),
+      }).catch(() => {});
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   const requestIdRef = useRef(0);
   // The current search's random seed; a new one for every new search,
   // kept for its "load more" pages.
@@ -367,6 +397,8 @@ export default function BackgroundPicker({
           seed: String(seedRef.current),
         });
         if (topicId) params.set("topic", topicId);
+        const ahead = pageToLoad === 1 && aheadQueryRef.current === query;
+        if (ahead) params.set("ahead", "1");
         const res = await fetch(`/api/backgrounds/search?${params}`);
         const data = await res.json();
         if (requestId !== requestIdRef.current) return;
@@ -382,7 +414,8 @@ export default function BackgroundPicker({
         const fresh: StockItem[] = data.items;
         const notUsed = fresh.filter((i) => !used.has(i.key));
         const ordered = [...notUsed.filter((i) => !shownBefore.has(i.key)), ...notUsed.filter((i) => shownBefore.has(i.key))];
-        rememberSeen(fresh.map((i) => i.key));
+        if (ahead) pendingSeenRef.current = fresh.map((i) => i.key);
+        else rememberSeen(fresh.map((i) => i.key));
         setUsedItems((prev) => {
           const held = fresh.filter((i) => used.has(i.key));
           if (pageToLoad === 1) return held;
@@ -424,6 +457,7 @@ export default function BackgroundPicker({
     const topic = BACKGROUND_TOPICS.find((t) => t.id === suggested[0]);
     if (!topic) return;
     const label = tx(topic.ar, topic.tr, topic.en);
+    aheadQueryRef.current = visibleRef.current ? null : `${TOPIC_PREFIX}${topic.id}`;
     setSearchText(label);
     setSearchedText(label);
     setActiveQuery(`${TOPIC_PREFIX}${topic.id}`);
@@ -537,7 +571,7 @@ export default function BackgroundPicker({
     "inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 py-2 text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:text-primary";
 
   return (
-    <div className="space-y-4 rounded-2xl border border-border bg-surface p-4" dir={isArabic ? "rtl" : "ltr"}>
+    <div ref={rootRef} className="space-y-4 rounded-2xl border border-border bg-surface p-4" dir={isArabic ? "rtl" : "ltr"}>
       {/* Header + current background */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>

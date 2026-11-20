@@ -132,13 +132,15 @@ def lossless_clip(
     source: str = Form("mp3quran"),
     fade_in: bool = Form(True),
     fade_out: bool = Form(True),
+    hq: bool = Form(False),
     audio_file: Optional[UploadFile] = File(None),
 ):
     """A prepared clip cut again from its recording without MP3 compression
     (quran_aligner.write_lossless_cut), for the video. `source` is the
     prepared JSON's: "mp3quran"/"backup" read the reciter's cached surah
     recording, "custom" the uploaded `audio_file` (the recording the clip
-    was prepared from)."""
+    was prepared from). `hq` is the prepared JSON's too: the clip was cut
+    from RECITERS_HQ's copy, which sits ~0.1 s apart from mp3quran's file."""
     from quran_aligner import write_lossless_cut
     from extract_precise_clip import BACKUP_CACHE_SUFFIX, SURAH_CACHE_DIR, download_full_surah, is_backup_recording
 
@@ -163,7 +165,7 @@ def lossless_clip(
             if not src.exists():
                 raise HTTPException(status_code=404, detail="The backup recording is no longer cached")
         elif source == "mp3quran":
-            src = Path(download_full_surah(reciter, surah, allow_backup=False))
+            src = Path(download_full_surah(reciter, surah, allow_backup=False, prefer_hq=hq))
             if is_backup_recording(src):
                 raise HTTPException(status_code=404, detail="The mp3quran recording is unavailable")
         else:
