@@ -1339,8 +1339,9 @@ def write_lossless_cut(source_path, clip_start, duration, fade_in, fade_out, out
     """The clip _write_outputs writes -- the same cut, gain and fades -- as
     FLAC instead of MP3, for the video itself: served by
     /api/extraction/lossless, and used by the render when a draft's prepared
-    MP3 has one next to it (frontend api/video/render/route.ts). Nothing in
-    the frontend requests it yet: the Ajmi 2:136-137 fix was placed by hand.
+    MP3 has one next to it (frontend api/video/render/route.ts). Every
+    export asks for one since 2026-11-20 (from the clip JSON's "cut"); a
+    hand-made copy next to the MP3 (the Ajmi 2:136-137 fix) comes first.
 
     The MP3 clip went through three more lossy encodes before a video was
     done (this one, the render's trim, the export's AAC), each adding
@@ -1399,9 +1400,11 @@ def _write_outputs(source_path, source_duration, source_offset, units, ayah_info
         logger.info(f"Raising {clip_name} by {gain:.2f} dB toward {TARGET_LUFS} LUFS.")
         filters.append(f"volume={gain:.2f}dB")
     fade = 0.15
-    if onset - clip_start > 2 * fade:
+    fade_in = onset - clip_start > 2 * fade
+    fade_out = clip_end - offset > 2 * fade
+    if fade_in:
         filters.append(f"afade=t=in:st=0:d={fade:.3f}")
-    if clip_end - offset > 2 * fade:
+    if fade_out:
         filters.append(f"afade=t=out:st={clip_duration - fade:.3f}:d={fade:.3f}")
     subprocess.run(
         ["ffmpeg", "-y", "-v", "error", "-i", str(source_path), "-vn", "-af", ",".join(filters),
@@ -1455,6 +1458,9 @@ def _write_outputs(source_path, source_duration, source_offset, units, ayah_info
         "source": meta["source"],
         **({"hq": True} if meta.get("hq") else {}),
         "clipSourceStartSec": round(clip_start, 3),
+        # How this clip was cut, so an export can cut it again losslessly
+        # from the same recording (write_lossless_cut, /api/extraction/lossless).
+        "cut": {"start": round(clip_start, 4), "end": round(clip_end, 4), "fadeIn": fade_in, "fadeOut": fade_out},
         "ayahStartMs": max(0, rel_ms(lead)),
         "ayahEndMs": max(0, rel_ms(tail)),
         "needsReview": bool(review_reasons),

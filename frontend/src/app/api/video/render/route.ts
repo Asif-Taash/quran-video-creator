@@ -468,6 +468,48 @@ async function pruneOldRenders() {
   );
 }
 
+// The prepared clip cut again from its recording as FLAC, for an export
+// (2026-11-20): backend /api/extraction/lossless repeats the clip JSON's
+// "cut" (quran_aligner._write_outputs) on the same file -- the reciter's
+// surah recording (the better copy when "hq"), or the user's own upload,
+// which an export request carries. Null whenever it can't be had (a clip
+// prepared before "cut" existed, the backend unreachable...): the export
+// then uses the MP3 clip as before.
+async function losslessClip(baseUrl: string, json: any, customAudio: File | null): Promise<string | null> {
+  const cut = json?.cut;
+  const source = json?.source;
+  if (!cut || typeof cut.start !== "number" || typeof cut.end !== "number" || !(cut.end > cut.start)) return null;
+  if (source !== "mp3quran" && source !== "backup" && source !== "custom") return null;
+  if (source === "custom" && !(customAudio && customAudio.size > 0)) return null;
+  try {
+    const form = new FormData();
+    form.append("surah", String(json.surah));
+    form.append("clip_start", String(cut.start));
+    form.append("duration", String(cut.end - cut.start));
+    form.append("reciter", source === "custom" ? "custom" : String(json.reciter));
+    form.append("source", source);
+    form.append("fade_in", cut.fadeIn ? "true" : "false");
+    form.append("fade_out", cut.fadeOut ? "true" : "false");
+    form.append("hq", json.hq ? "true" : "false");
+    if (source === "custom" && customAudio) form.append("audio_file", customAudio);
+    const res = await fetch(`${baseUrl}/api/extraction/lossless`, { method: "POST", body: form, signal: AbortSignal.timeout(180_000) });
+    if (!res.ok) {
+      console.warn(`[Video Render] Lossless clip unavailable (HTTP ${res.status}); using the MP3 clip.`);
+      return null;
+    }
+    const bytes = Buffer.from(await res.arrayBuffer());
+    if (bytes.length < 1024) return null;
+    const dir = path.join(process.cwd(), "public", "render-assets", "lossless");
+    await fs.mkdir(dir, { recursive: true });
+    const out = path.join(dir, `lossless-${crypto.createHash("sha1").update(bytes).digest("hex").slice(0, 16)}.flac`);
+    await fs.writeFile(out, bytes);
+    return out;
+  } catch (err) {
+    console.warn("[Video Render] Lossless clip failed; using the MP3 clip.", err);
+    return null;
+  }
+}
+
 export async function POST(req: Request) {
   // Array to keep track of files to delete after rendering
   const tempFilesToCleanup: string[] = [];
@@ -934,8 +976,22 @@ export async function POST(req: Request) {
         // quran_aligner.write_lossless_cut). It is trimmed to WAV, so the
         // export's own encode is the only lossy one. Without it, nothing
         // changes below.
-        const improvedAudioPath = preparedAudioLocalPath.replace(/\.[^./\\]+$/, "") + ".flac";
+        const handMadeFlac = preparedAudioLocalPath.replace(/\.[^./\\]+$/, "") + ".flac";
+        let improvedAudioPath = handMadeFlac;
         let improvedStat = await fs.stat(improvedAudioPath).catch(() => null);
+        // An export without one gets the same clip cut again losslessly from
+        // the recording it came from (2026-11-20, see losslessClip): the MP3
+        // clip had been encoded twice more before the video's own encode,
+        // and every encode roughened the high sounds -- for every video,
+        // the way Ajmi's «شِقَاقٍ» was. A preview keeps the MP3 (faster).
+        if (!improvedStat?.isFile() && mode !== "preview") {
+          const lossless = await losslessClip(baseUrl, wordTimingsData, customAudio);
+          if (lossless) {
+            improvedAudioPath = lossless;
+            improvedStat = await fs.stat(lossless).catch(() => null);
+            tempFilesToCleanup.push(lossless);
+          }
+        }
         // Only a copy of this very clip: one left over from an earlier
         // preparation of the same name (another engine or margin) would
         // put audio under timing that isn't its own.
@@ -951,6 +1007,9 @@ export async function POST(req: Request) {
           }
         }
         const hasImprovedAudio = improvedStat?.isFile() === true;
+        if (hasImprovedAudio && improvedAudioPath !== handMadeFlac) {
+          console.log(`[Video Render] Export audio cut losslessly from the original recording.`);
+        }
         // Part of the trimmed file's name: a replaced copy is trimmed anew.
         const improvedTag = improvedStat ? `${improvedStat.size.toString(36)}${Math.round(improvedStat.mtimeMs).toString(36)}` : "";
         if (trimStart > 0 || trimEnd > 0 || hasImprovedAudio) {
