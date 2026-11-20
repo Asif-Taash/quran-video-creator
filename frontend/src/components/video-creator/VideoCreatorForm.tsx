@@ -12,6 +12,7 @@ import quranQcfV1Data from "@/data/quran-qcf-v1.json";
 import { useTranslationContext } from "@/lib/TranslationContext";
 import { getTranslationOption } from "@/lib/translationOptions";
 import { surahEnglishName } from "@/lib/surahEnglishNames";
+import { buildPostCaption } from "@/lib/postCaption";
 import SegmentTimingEditor, { type AyahWordTiming, type SegmentTimingInput, type SegmentTimingResult } from "./SegmentTimingEditor";
 import {
   ARABIC_FONT_OPTIONS,
@@ -1535,6 +1536,52 @@ export default function VideoCreatorForm() {
     const reciterPart =
       audioSourceMode === "reciter" && selectedReciter ? ` | Okuyan: ${RECITER_DISPLAY_NAMES[selectedReciter] ?? selectedReciter}` : "";
     return `${surahName} Suresi${verseRange}${reciterPart}`;
+  })();
+
+  // The post text under the video (lib/postCaption.ts), in the video's
+  // language. The page only has the font's glyph codes, so the ayahs'
+  // readable Uthmani text is fetched once per range.
+  const captionKey = selectedSurah && startVerse && endVerse ? `${selectedSurah.id}:${startVerse}:${endVerse}` : "";
+  const [captionAyahs, setCaptionAyahs] = useState<{ key: string; ayahs: { n: number; text: string }[] } | null>(null);
+  useEffect(() => {
+    if (!captionKey) return;
+    const [surah, from, to] = captionKey.split(":");
+    let cancelled = false;
+    fetch(`/api/quran/ayahs?surah=${surah}&from=${from}&to=${to}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && Array.isArray(data?.ayahs)) setCaptionAyahs({ key: captionKey, ayahs: data.ayahs });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [captionKey]);
+  const postCaption = (() => {
+    if (!selectedSurah || !startVerse || !endVerse || !captionAyahs || captionAyahs.key !== captionKey) return null;
+    const surahId = selectedSurah.id;
+    // Only a translation's meaning goes in -- an Arabic tafsir is too long
+    // for a post.
+    const withMeaning = selectedTranslation.language === "tr" || selectedTranslation.language === "en";
+    const turkishName = surahTurkishNames.get(surahId);
+    return buildPostCaption({
+      language: selectedTranslation.language ?? translationLanguage,
+      surahId,
+      surahNameAr: fixMojibake(selectedSurah.name),
+      surahNameTr: turkishName ? fixMojibake(turkishName) : fixMojibake(selectedSurah.transliteration),
+      surahNameEn: surahEnglishName(surahId) ?? fixMojibake(selectedSurah.transliteration),
+      startVerse,
+      endVerse,
+      totalVerses: selectedSurah.total_verses,
+      basmala: startsWithBasmala,
+      reciterAr: reciterNameText.trim(),
+      reciterLatin: audioSourceMode === "reciter" && selectedReciter ? RECITER_DISPLAY_NAMES[selectedReciter] ?? "" : "",
+      ayahs: captionAyahs.ayahs.map((a) => ({
+        n: a.n,
+        arabic: a.text,
+        translation: withMeaning ? getTranslation(surahId, a.n, "") : "",
+      })),
+    });
   })();
 
   // What the preview shows: the saved segmentation, with the open timing
@@ -3537,6 +3584,7 @@ export default function VideoCreatorForm() {
                 isLoadingPreview={isLoadingPreview}
                 previewError={previewError}
                 suggestedTitle={suggestedTitle}
+                postCaption={postCaption}
                 renderProgress={renderProgress}
                 aspectRatio={aspectRatio}
                 onAspectRatioChange={setAspectRatio}

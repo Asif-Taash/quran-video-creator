@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { hasWordStartMatch } from "@/lib/arabicSearch";
+import { withoutBasmala } from "@/lib/uthmaniText";
 
-const BISMILLAH_UTHMANI = "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ ";
 const MAX_RESULTS = 20;
 
 interface UthmaniAyah {
@@ -35,9 +35,7 @@ function uthmaniText(surahNumber: number, ayahNumber: number): string | null {
   const surah = loadUthmaniSurahs().find((s) => s.number === surahNumber);
   const ayah = surah?.ayahs.find((a) => a.numberInSurah === ayahNumber);
   if (!ayah) return null;
-  return surahNumber > 1 && ayahNumber === 1 && ayah.text.startsWith(BISMILLAH_UTHMANI)
-    ? ayah.text.slice(BISMILLAH_UTHMANI.length)
-    : ayah.text;
+  return withoutBasmala(surahNumber, ayahNumber, ayah.text);
 }
 
 // mode=meaning (2026-11-20): ayahs ABOUT the query in any language --
@@ -88,14 +86,11 @@ export async function GET(request: Request) {
     // "الراحمين" from a real match, and has no hamza normalization at all.
     searchLoop: for (const surah of surahs) {
       for (const ayah of surah.ayahs) {
-        let text = ayah.text;
         // Every surah-opening ayah except Al-Fatihah's own has the Bismillah
         // prepended to its text — strip it so a query doesn't match purely
         // because of that shared boilerplate, and so the displayed text is
         // just the ayah itself.
-        if (surah.number > 1 && ayah.numberInSurah === 1 && text.startsWith(BISMILLAH_UTHMANI)) {
-          text = text.slice(BISMILLAH_UTHMANI.length);
-        }
+        const text = withoutBasmala(surah.number, ayah.numberInSurah, ayah.text);
         if (hasWordStartMatch(text, q)) {
           results.push({ verse_key: `${surah.number}:${ayah.numberInSurah}`, text });
           if (results.length >= MAX_RESULTS) break searchLoop;
