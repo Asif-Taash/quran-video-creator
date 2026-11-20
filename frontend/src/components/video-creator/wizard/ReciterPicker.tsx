@@ -7,6 +7,7 @@ import { StarIcon as StarOutlineIcon } from "@heroicons/react/24/outline";
 import Spinner from "@/components/ui/Spinner";
 import { useT } from "@/lib/LanguageContext";
 import { RECITERS, getReciter, reciterHasSurah, type ReciterInfo } from "@/lib/reciterNames";
+import { readFavoriteReciters, writeFavoriteReciters } from "@/lib/favoriteReciters";
 
 // The reciter list (2026-11-20): every built-in reciter plus the other Hafs
 // recordings on mp3quran, searchable, each with a listen button that plays
@@ -14,26 +15,8 @@ import { RECITERS, getReciter, reciterHasSurah, type ReciterInfo } from "@/lib/r
 // reciter is picked -- and a star that keeps favourites at the top. The user
 // used to prepare a reciter, dislike it, and go look for one on YouTube.
 
-const FAVORITES_KEY = "kurannuru:favReciters";
 // A recording without ayah timing plays its opening, as a voice sample.
 const SAMPLE_SECONDS = 30;
-
-function readFavorites(): string[] {
-  try {
-    const raw = JSON.parse(localStorage.getItem(FAVORITES_KEY) ?? "[]");
-    return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeFavorites(ids: string[]) {
-  try {
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(ids));
-  } catch {
-    // Private window or blocked storage: favourites last for this visit only.
-  }
-}
 
 // Arabic: no harakat/tatweel, one alef, ة=ه, ى=ي. Latin: Turkish letters and
 // "al-"/hyphens folded, so "alturki", "Al-Turki" and "turki" all match.
@@ -76,7 +59,7 @@ export default function ReciterPicker({ isArabic, value, onChange, surahId, star
   const stopAtRef = useRef<number | null>(null);
   const requestRef = useRef(0);
 
-  useEffect(() => setFavorites(readFavorites()), []);
+  useEffect(() => setFavorites(readFavoriteReciters()), []);
   // Open while no reciter is chosen; a reopened project (its reciter set
   // after mount) starts with the list closed.
   useEffect(() => {
@@ -197,7 +180,7 @@ export default function ReciterPicker({ isArabic, value, onChange, surahId, star
   const toggleFavorite = (id: string) => {
     setFavorites((prev) => {
       const next = prev.includes(id) ? prev.filter((x) => x !== id) : [id, ...prev];
-      writeFavorites(next);
+      writeFavoriteReciters(next);
       return next;
     });
   };

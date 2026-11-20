@@ -206,6 +206,10 @@ interface BackgroundPickerProps {
   surahId?: number | null;
   startVerse?: number | null;
   endVerse?: number | null;
+  // The ayah selection ("surah:start-end") just prepared afresh: while the
+  // video still has no background, the best result of the first suggested
+  // topic is put in by itself (2026-11-20) -- the user can change it.
+  autoApplyFor?: string | null;
 }
 
 export default function BackgroundPicker({
@@ -232,6 +236,7 @@ export default function BackgroundPicker({
   surahId = null,
   startVerse = null,
   endVerse = null,
+  autoApplyFor = null,
 }: BackgroundPickerProps) {
   const tx = useT();
   const { language } = useLanguage();
@@ -516,8 +521,10 @@ export default function BackgroundPicker({
     else setActiveQuery(q);
   };
 
-  const pickItem = async (item: StockItem) => {
-    if (pickingKey) return;
+  // auto: put in by the picker itself -- no messages; the caller tries the
+  // next result when this one is turned away.
+  const pickItem = async (item: StockItem, auto = false): Promise<"ok" | "rejected" | "failed"> => {
+    if (pickingKey) return "failed";
     setPickingKey(item.key);
     setLibraryError(null);
     try {
@@ -531,12 +538,14 @@ export default function BackgroundPicker({
         // The whole video was checked on pick: some frame shows people,
         // buildings, vehicles or animals. Drop it from the results.
         setItems((prev) => prev.filter((i) => i.key !== item.key));
-        setLibraryError(tx(
-          "هذا الفيديو يظهر فيه أشخاص أو مبانٍ أو مركبات في بعض لقطاته، لذلك حذفناه. اختر غيره.",
-          "Bu videonun bazı karelerinde insan, bina veya araç görünüyor, bu yüzden kaldırıldı. Başka birini seçin.",
-          "Some frames of this video show people, buildings or vehicles, so it was removed. Pick another one."
-        ));
-        return;
+        if (!auto) {
+          setLibraryError(tx(
+            "هذا الفيديو يظهر فيه أشخاص أو مبانٍ أو مركبات في بعض لقطاته، لذلك حذفناه. اختر غيره.",
+            "Bu videonun bazı karelerinde insan, bina veya araç görünüyor, bu yüzden kaldırıldı. Başka birini seçin.",
+            "Some frames of this video show people, buildings or vehicles, so it was removed. Pick another one."
+          ));
+        }
+        return "rejected";
       }
       if (!res.ok || !data.url) throw new Error(data.error || "Download failed");
       const blob = await (await fetch(data.url)).blob();
@@ -545,15 +554,55 @@ export default function BackgroundPicker({
       const file = new File([blob], `${item.provider}-${item.id}.${extension}`, {
         type: blob.type || (isVideo ? "video/mp4" : "image/jpeg"),
       });
+      // The user may have put in a background of their own meanwhile.
+      if (auto && hasBackgroundRef.current) return "failed";
       onBackgroundFile(file, isVideo ? "video" : "image");
       setPickedKey(item.key);
       rememberUsed(item.key);
+      return "ok";
     } catch {
-      setLibraryError(tx("تعذر تنزيل هذه الخلفية، جرّب خلفية أخرى.", "Bu arka plan indirilemedi, başka birini deneyin.", "Couldn't download this background, try another one."));
+      if (!auto) {
+        setLibraryError(tx("تعذر تنزيل هذه الخلفية، جرّب خلفية أخرى.", "Bu arka plan indirilemedi, başka birini deneyin.", "Couldn't download this background, try another one."));
+      }
+      return "failed";
     } finally {
       setPickingKey(null);
     }
   };
+
+  // The best result of the first suggested topic goes into the video by
+  // itself, once per fresh preparation (autoApplyFor), while the video has
+  // no background: the batch is already ranked most beautiful first. It is
+  // on screen in the video, so it counts as shown.
+  const hasBackgroundRef = useRef(hasBackground);
+  hasBackgroundRef.current = hasBackground;
+  const autoAppliedForRef = useRef("");
+  useEffect(() => {
+    if (!autoApplyFor || autoApplyFor !== selectionKey || autoAppliedForRef.current === autoApplyFor) return;
+    if (hasBackground) {
+      autoAppliedForRef.current = autoApplyFor;
+      return;
+    }
+    if (isSearching || pickingKey || items.length === 0 || activeQuery !== `${TOPIC_PREFIX}${suggested[0]}`) return;
+    autoAppliedForRef.current = autoApplyFor;
+    const candidates = items.slice(0, 4);
+    void (async () => {
+      for (const item of candidates) {
+        if (hasBackgroundRef.current) return;
+        const result = await pickItem(item, true);
+        if (result === "ok") {
+          fetch("/api/backgrounds/shown", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ keys: [item.key] }),
+          }).catch(() => {});
+          return;
+        }
+        if (result === "failed") return;
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoApplyFor, selectionKey, hasBackground, isSearching, pickingKey, items, activeQuery, suggested]);
 
   const providerLinks = (providers.length > 0 ? providers : ["pixabay"]).map((p) => (
     <a

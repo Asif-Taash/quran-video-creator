@@ -4,7 +4,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ArrowPathIcon, FolderOpenIcon } from "@heroicons/react/24/outline";
 import { useLanguage, useT } from "@/lib/LanguageContext";
 import { fixMojibake } from "@/lib/textEncoding";
-import { RECITER_DISPLAY_NAMES, RECITER_ARABIC_NAMES } from "@/lib/reciterNames";
+import { RECITER_DISPLAY_NAMES, RECITER_ARABIC_NAMES, getReciter, reciterHasSurah } from "@/lib/reciterNames";
+import { readFavoriteReciters } from "@/lib/favoriteReciters";
 import quranData from "@/data/quran.json";
 import quranQcfV1Data from "@/data/quran-qcf-v1.json";
 
@@ -689,6 +690,11 @@ export default function VideoCreatorForm() {
           setPreparedAudioUrl(data.audioUrl);
           setPreparedAudioLocalPath(data.localAudioPath);
           setPreparedJsonData(data.wordTimingsData);
+          // A fresh preparation: split the long ayahs and fill an empty
+          // background by themselves (see the effects after the
+          // auto-prepare one).
+          autoSplitPendingRef.current = true;
+          setAutoBackgroundFor(`${selectedSurah.id}:${startVerse}-${endVerse}`);
           // Where the reciter went back and read part of it again, those
           // repeats show too, timed to the audio (see lib/readingPath.ts).
           if (data.wordTimingsData?.readings) {
@@ -709,10 +715,10 @@ export default function VideoCreatorForm() {
           // the video immediately and opens either panel deliberately only
           // if something actually needs fixing (see the CapCut-style
           // sticky-column panels in the render below).
-          // Segmentation is no longer auto-triggered here -- it now only
-          // ever runs when the user explicitly presses the split button
-          // (onToggleSegmentation -> handleSegmentLongVerses in
-          // SegmentTimingEditor), never as a side effect of preparing audio.
+          // Long ayahs are split right after this (autoSplitPendingRef).
+          // It had been taken out when the split ran on a slow paid AI; the
+          // local aligner made it quick and the user pressed the split
+          // button on nearly every video (2026-11-20).
         } else {
           setAudioPrepError(data.error || tx("فشل تجهيز الصوت.", "Ses hazırlanamadı.", "Couldn't prepare the audio."));
         }
@@ -1698,6 +1704,19 @@ export default function VideoCreatorForm() {
   // button for retrying. A request still in flight for an older selection
   // doesn't hold this up: the invalidation effect cancels it and clears
   // isPreparingAudio (a dependency here), so this one starts right away.
+  // A new project starts with the user's first starred reciter (★ in the
+  // reciter list) that recorded this surah, so choosing the ayahs is all a
+  // video takes (2026-11-20). Never replaces a reciter already chosen, and
+  // does nothing without a starred one or with the user's own audio.
+  useEffect(() => {
+    if (isHydratingRef.current || selectedReciter || audioSourceMode !== "reciter") return;
+    if (!selectedSurah || startVerse === null || endVerse === null) return;
+    const favorite = readFavoriteReciters()
+      .map((id) => getReciter(id))
+      .find((r) => r && reciterHasSurah(r, selectedSurah.id));
+    if (favorite) setSelectedReciter(favorite.id);
+  }, [selectedSurah, startVerse, endVerse, selectedReciter, audioSourceMode, hydrationVersion]);
+
   const lastAutoPrepareEpochRef = useRef(-1);
   const hasAudioSource = audioSourceMode === "reciter" ? Boolean(selectedReciter) : Boolean(customAudio);
   useEffect(() => {
@@ -1714,6 +1733,30 @@ export default function VideoCreatorForm() {
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSurah, startVerse, endVerse, hasAudioSource, selectedReciter, customAudio, audioSourceMode, startsWithBasmala, preparedAudioUrl, isPreparingAudio, hydrationVersion]);
+
+  // Right after a fresh preparation the long ayahs are split, as the split
+  // button does -- once the translation's text is there. Not when the user
+  // split already (or chose no translation); the button removes it.
+  const autoSplitPendingRef = useRef(false);
+  // The ayah selection whose fresh preparation may fill an empty background
+  // by itself with the best-suited library image (BackgroundPicker).
+  const [autoBackgroundFor, setAutoBackgroundFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (!autoSplitPendingRef.current || !preparedJsonData || !preparedAudioUrl || isPreparingAudio) return;
+    if (selectedTranslation.id === "none") {
+      autoSplitPendingRef.current = false;
+      return;
+    }
+    if (!selectedVersesContent.some((v) => v.translation?.trim())) return;
+    autoSplitPendingRef.current = false;
+    const alreadySplit = pendingSegmentationData.some(
+      (entry) =>
+        Array.isArray(entry.mappings) &&
+        entry.mappings.filter((m: any) => !isHiddenPart(m) && typeof m.repeat_of_part !== "number").length > 1
+    );
+    if (!alreadySplit) void handleSegmentLongVerses();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
 
   // Persists the current builder state server-side (JSON + any uploaded
   // files) under a generated id, keyed on THIS browser via localStorage --
@@ -3492,6 +3535,7 @@ export default function VideoCreatorForm() {
                     surahId={selectedSurah?.id ?? null}
                     startVerse={startVerse}
                     endVerse={endVerse}
+                    autoApplyFor={autoBackgroundFor}
                   />
                 }
                 backgroundKind={bgVideoPreview ? "video" : bgPreview ? "image" : "none"}
