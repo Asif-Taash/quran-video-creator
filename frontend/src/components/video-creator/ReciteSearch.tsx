@@ -1,15 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ArrowPathIcon, MicrophoneIcon, StopIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { ArrowPathIcon, MicrophoneIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import Spinner from "@/components/ui/Spinner";
 import { useT } from "@/lib/LanguageContext";
 
-// Find ayahs by reciting them (2026-11-20): the 🎤 button records the
+// Find ayahs by reciting them (2026-11-20): the 🎤 button (an icon on the
+// right of the search box, which is passed in as children) records the
 // user reading a part of an ayah or several ayahs, the backend hears it
 // (backend/scripts/recite_search.py) and the closest places in the Quran
 // come back -- even with a mistake in the reading. One tap on a result
 // selects its ayahs.
 //
-// Recording stops on the stop button, or by itself once the reading has
+// Recording stops on a second tap, or by itself once the reading has
 // been followed by SILENCE_MS of quiet (a breath between ayahs is shorter),
 // or after MAX_MS.
 
@@ -36,9 +37,11 @@ type Phase =
 interface ReciteSearchProps {
   getSurahName: (surahNumber: number) => string;
   onSelect: (surahNumber: number, fromAyah: number, toAyah: number) => void;
+  // The search box the button sits beside.
+  children: React.ReactNode;
 }
 
-export default function ReciteSearch({ getSurahName, onSelect }: ReciteSearchProps) {
+export default function ReciteSearch({ getSurahName, onSelect, children }: ReciteSearchProps) {
   const tx = useT();
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [elapsed, setElapsed] = useState(0);
@@ -188,24 +191,33 @@ export default function ReciteSearch({ getSurahName, onSelect }: ReciteSearchPro
   const rangeLabel = (m: Match) =>
     `${getSurahName(m.surah)} ${m.from === m.to ? m.from : `${m.from}-${m.to}`}`;
 
+  const recording = phase.kind === "recording";
+  const micLabel = recording ? tx("إيقاف الاستماع", "Dinlemeyi durdur", "Stop listening") : tx("ابحث بصوتك", "Sesle ara", "Search by voice");
+
   return (
     <>
-      <button
-        type="button"
-        onClick={() => (phase.kind === "recording" ? stopRef.current?.(false) : start())}
-        disabled={phase.kind === "working"}
-        className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
-          phase.kind === "recording"
-            ? "border-accent-red bg-accent-red-bg/60 text-accent-red"
-            : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"
-        }`}
-      >
-        {phase.kind === "recording" ? <StopIcon className="h-4 w-4" /> : <MicrophoneIcon className="h-4 w-4" />}
-        {phase.kind === "recording" ? tx("إيقاف", "Durdur", "Stop") : tx("ابحث بصوتك", "Sesle ara", "Search by voice")}
-      </button>
+      {/* Always on the right of the box, whatever the page's direction. */}
+      <div className="flex items-center gap-2" dir="ltr">
+        <div className="min-w-0 flex-1">{children}</div>
+        <button
+          type="button"
+          onClick={() => (recording ? stopRef.current?.(false) : start())}
+          disabled={phase.kind === "working"}
+          title={micLabel}
+          aria-label={micLabel}
+          className={`relative flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl shadow-sm ring-1 ring-inset transition-colors disabled:opacity-60 ${
+            recording
+              ? "bg-accent-red text-white ring-accent-red"
+              : "bg-surface text-primary ring-border hover:bg-primary/10"
+          }`}
+        >
+          {recording && <span className="absolute inset-0 animate-ping rounded-xl bg-accent-red/40" />}
+          {phase.kind === "working" ? <Spinner size="sm" /> : <MicrophoneIcon className="relative h-6 w-6" />}
+        </button>
+      </div>
 
       {phase.kind !== "idle" && (
-        <div className="basis-full rounded-xl border border-border bg-surface p-3 text-sm" dir="rtl">
+        <div className="mt-2 rounded-xl border border-border bg-surface p-3 text-sm" dir="rtl">
           <div className="flex items-start gap-2">
             <div className="flex-1 min-w-0">
               {phase.kind === "recording" && (
@@ -224,9 +236,9 @@ export default function ReciteSearch({ getSurahName, onSelect }: ReciteSearchPro
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {tx(
-                      "اقرأ جزءاً من الآية أو الآية كاملة أو عدة آيات. يتوقف التسجيل وحده بعد انتهائك بثلاث ثوانٍ، أو اضغط «إيقاف».",
-                      "Ayetin bir kısmını, tamamını ya da birkaç ayeti okuyun. Bitirdikten 3 saniye sonra kayıt kendiliğinden durur, ya da «Durdur»a basın.",
-                      "Read part of an ayah, a whole ayah or several. Recording stops 3 seconds after you finish, or press Stop."
+                      "اقرأ جزءاً من الآية أو الآية كاملة أو عدة آيات. يتوقف التسجيل وحده بعد انتهائك بثلاث ثوانٍ، أو اضغط زر المايك مرة أخرى.",
+                      "Ayetin bir kısmını, tamamını ya da birkaç ayeti okuyun. Bitirdikten 3 saniye sonra kayıt kendiliğinden durur, ya da mikrofon düğmesine tekrar basın.",
+                      "Read part of an ayah, a whole ayah or several. Recording stops 3 seconds after you finish, or tap the microphone again."
                     )}
                   </p>
                 </div>

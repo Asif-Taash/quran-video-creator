@@ -231,40 +231,42 @@ export default function QuranSearch({ onSelectVerse, onSelectRange, getSurahName
 
   return (
     <div className="relative w-full" ref={containerRef}>
-      <div className="relative flex items-center">
-        <div className={`absolute inset-y-0 ${isArabic ? 'right-0 pr-3' : 'left-0 pl-3'} flex items-center pointer-events-none`}>
-          <MagnifyingGlassIcon className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+      <ReciteSearch getSurahName={getSurahName} onSelect={onSelectRange}>
+        <div className="relative flex items-center">
+          <div className={`absolute inset-y-0 ${isArabic ? 'right-0 pr-3' : 'left-0 pl-3'} flex items-center pointer-events-none`}>
+            <MagnifyingGlassIcon className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+          </div>
+          <input
+            type="text"
+            className={`block w-full rounded-xl border-0 py-3 ${isArabic ? 'pr-10 pl-10' : 'pl-10 pr-10'} text-foreground ring-1 ring-inset ring-border placeholder:text-muted-foreground focus:ring-2 focus:ring-inset focus:ring-primary sm:text-sm sm:leading-6 bg-surface shadow-sm`}
+            placeholder={
+              mode === "meaning"
+                ? tx("اكتب موضوعاً: الصبر، الجنة، الأم...", "Bir konu yazın: sabır, cennet, anne...", "Type a topic: patience, paradise, mother...")
+                : tx("ابحث عن آية أو كلمة في القرآن...", "Kur'an'da bir ayet veya kelime arayın...", "Search the Quran for an ayah or word...")
+            }
+            value={query}
+            onChange={(e) => {
+               setQuery(e.target.value);
+               if (e.target.value.trim().length > 1) {
+                  setIsOpen(true);
+               }
+            }}
+            dir={isArabic ? "rtl" : "ltr"}
+            onFocus={() => {
+              if (results.length > 0) setIsOpen(true);
+            }}
+          />
+          {query && (
+            <button
+              type="button"
+              className={`absolute inset-y-0 ${isArabic ? 'left-0 pl-3' : 'right-0 pr-3'} flex items-center`}
+              onClick={handleClear}
+            >
+              <XMarkIcon className="h-5 w-5 text-muted-foreground hover:text-foreground transition-colors" aria-hidden="true" />
+            </button>
+          )}
         </div>
-        <input
-          type="text"
-          className={`block w-full rounded-xl border-0 py-3 ${isArabic ? 'pr-10 pl-10' : 'pl-10 pr-10'} text-foreground ring-1 ring-inset ring-border placeholder:text-muted-foreground focus:ring-2 focus:ring-inset focus:ring-primary sm:text-sm sm:leading-6 bg-surface shadow-sm`}
-          placeholder={
-            mode === "meaning"
-              ? tx("اكتب موضوعاً: الصبر، الجنة، الأم...", "Bir konu yazın: sabır, cennet, anne...", "Type a topic: patience, paradise, mother...")
-              : tx("ابحث عن آية أو كلمة في القرآن...", "Kur'an'da bir ayet veya kelime arayın...", "Search the Quran for an ayah or word...")
-          }
-          value={query}
-          onChange={(e) => {
-             setQuery(e.target.value);
-             if (e.target.value.trim().length > 1) {
-                setIsOpen(true);
-             }
-          }}
-          dir={isArabic ? "rtl" : "ltr"}
-          onFocus={() => {
-            if (results.length > 0) setIsOpen(true);
-          }}
-        />
-        {query && (
-          <button
-            type="button"
-            className={`absolute inset-y-0 ${isArabic ? 'left-0 pl-3' : 'right-0 pr-3'} flex items-center`}
-            onClick={handleClear}
-          >
-            <XMarkIcon className="h-5 w-5 text-muted-foreground hover:text-foreground transition-colors" aria-hidden="true" />
-          </button>
-        )}
-      </div>
+      </ReciteSearch>
 
       <div className="mt-2 flex flex-wrap items-center gap-2" dir={isArabic ? "rtl" : "ltr"}>
         <div className="flex rounded-lg border border-border bg-background p-0.5 text-xs font-medium">
@@ -279,7 +281,6 @@ export default function QuranSearch({ onSelectVerse, onSelectRange, getSurahName
             </button>
           ))}
         </div>
-        <ReciteSearch getSurahName={getSurahName} onSelect={onSelectRange} />
       </div>
       {mode === "meaning" && (
         <div className="-mx-1 mt-2 flex gap-2 overflow-x-auto px-1 pb-1" dir={isArabic ? "rtl" : "ltr"}>
