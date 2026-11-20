@@ -341,6 +341,16 @@ export default function Step1SurahVerse({
               setRenderState("idle");
             }
           }}
+          onSelectRange={(surahId, fromAyah, toAyah) => {
+            const surah = surahs.find((s) => s.id === surahId);
+            if (surah) {
+              setSelectedSurah(surah);
+              setStartVerse(fromAyah);
+              setEndVerse(toAyah);
+              setRenderError("");
+              setRenderState("idle");
+            }
+          }}
         />
       </div>
 

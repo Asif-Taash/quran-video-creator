@@ -3,9 +3,12 @@ import { MagnifyingGlassIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { useLanguage, useT } from "@/lib/LanguageContext";
 import Spinner from "@/components/ui/Spinner";
 import { findWordStartMatches } from "@/lib/arabicSearch";
+import ReciteSearch from "./ReciteSearch";
 
 interface QuranSearchProps {
   onSelectVerse: (surahNumber: number, ayahNumber: number) => void;
+  // A range found by reciting it (ReciteSearch) -- one ayah or several.
+  onSelectRange: (surahNumber: number, fromAyah: number, toAyah: number) => void;
   getSurahName: (surahNumber: number) => string;
 }
 
@@ -40,7 +43,7 @@ const THEMES: { ar: string; tr: string; en: string }[] = [
   { ar: "الأنبياء", tr: "Peygamberler", en: "Prophets" },
 ];
 
-export default function QuranSearch({ onSelectVerse, getSurahName }: QuranSearchProps) {
+export default function QuranSearch({ onSelectVerse, onSelectRange, getSurahName }: QuranSearchProps) {
   const tx = useT();
   const { language } = useLanguage();
   const isArabic = language === "ar";
@@ -276,6 +279,7 @@ export default function QuranSearch({ onSelectVerse, getSurahName }: QuranSearch
             </button>
           ))}
         </div>
+        <ReciteSearch getSurahName={getSurahName} onSelect={onSelectRange} />
       </div>
       {mode === "meaning" && (
         <div className="-mx-1 mt-2 flex gap-2 overflow-x-auto px-1 pb-1" dir={isArabic ? "rtl" : "ltr"}>
