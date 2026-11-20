@@ -62,8 +62,9 @@ logger = logging.getLogger(__name__)
 
 # Bumped whenever output semantics change, so cached clips written by an
 # older engine (or by extract_precise_clip.py, which never wrote this field)
-# are never reused.
-ENGINE_VERSION = "ctc-v17"
+# are never reused. ctc-v18 (2026-11-20): clips from ayah 1 align the
+# basmala before it as context (see NO_BASMALA_SURAHS).
+ENGINE_VERSION = "ctc-v18"
 # Part of the clip cache key next to ENGINE_VERSION: what the written audio
 # is, which can change while the alignment doesn't.
 AUDIO_VERSION = "loud1"
@@ -1601,12 +1602,30 @@ def _locate_window(source_path, surah_id, words_by_ayah, start_ayah, end_ayah, d
     return c0 - 30.0, c1 + 30.0
 
 
+# A clip from ayah 1 without the basmala: the reciter nearly always recites
+# it right before ayah 1, and with nothing before ayah 1 in the text the
+# aligner let the ayah start inside "الرحيم" -- Abdul Basit's 112:1 (the
+# user's upload, 2026-11-15) at 5.34 s instead of 6.68 s, unflagged. So the
+# basmala is aligned as context before it (never part of the clip); where it
+# turns out not to be recited (its words under MEAN_MIN_CONF), the alignment
+# is done again without it.
+NO_BASMALA_SURAHS = (1, 9)
+
+
 def _extract_from_long_audio(source_path, surah_id, start_ayah, end_ayah, pad_seconds, words_by_ayah,
-                             clip_name, meta, approx=None, use_context=True):
+                             clip_name, meta, approx=None, use_context=True, basmala_context=None):
     """Shared by whole-surah reciter recordings and user uploads."""
+    if basmala_context is None:
+        basmala_context = (start_ayah == 1 and surah_id not in NO_BASMALA_SURAHS
+                           and BASMALA_AYAH not in words_by_ayah)
+    plain_words = words_by_ayah
+    if basmala_context:
+        words_by_ayah = _with_basmala(words_by_ayah)
     n_ayahs = max(words_by_ayah)  # not len(): a basmala is key 0
     duration = _probe_duration(source_path)
     prev_ctx = (start_ayah - 1, CONTEXT_WORDS) if use_context and start_ayah > 1 else None
+    if basmala_context:
+        prev_ctx = (BASMALA_AYAH, CONTEXT_WORDS)
     next_ctx = (end_ayah + 1, CONTEXT_WORDS) if use_context and end_ayah < n_ayahs else None
 
     if approx is not None:
@@ -1661,6 +1680,15 @@ def _extract_from_long_audio(source_path, surah_id, start_ayah, end_ayah, pad_se
                     f"(target_ok={target_ok}, context_ok={context_ok}, edges={touches_start}/{touches_end}).")
 
     _, t0, units, ayah_info, wav, emission = best
+    if basmala_context:
+        lead = [u for u in _aligned(units) if u["ayah"] == BASMALA_AYAH and not u["target"]]
+        lead_conf = _mean_conf(lead)
+        if lead_conf < MEAN_MIN_CONF:
+            logger.info(f"No basmala heard before ayah 1 (confidence {lead_conf:.2f}); aligning without it.")
+            return _extract_from_long_audio(source_path, surah_id, start_ayah, end_ayah, pad_seconds, plain_words,
+                                             clip_name, meta, approx=approx, use_context=use_context,
+                                             basmala_context=False)
+        logger.info(f"Basmala heard before ayah 1 (confidence {lead_conf:.2f}), kept as context.")
     job_control.check_cancelled()
     job_control.report("verify")
     # Where the reciter went back and read part of it again, the words move
