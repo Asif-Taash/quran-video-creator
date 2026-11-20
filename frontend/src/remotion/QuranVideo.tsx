@@ -20,6 +20,7 @@ import {
   BACKGROUND_BLUR_MAX,
   BACKGROUND_DIM_MAX,
   BACKGROUND_VIGNETTE_MAX,
+  BASMALA_VERSE_ID,
   DEFAULT_BACKGROUND_DIM,
   DEFAULT_WORD_HIGHLIGHT_COLOR,
   TRANSLATION_FONT_OPTIONS,
@@ -306,18 +307,39 @@ function formatInvertedPyramid(
 // The word being recited (see QuranVideoProps.wordHighlight): positions in
 // the verse text's space-separated glyph tokens -- the same tokens
 // formatArabicVerse builds its lines from -- to draw in `color`.
-type ArabicHighlight = { tokens: ReadonlySet<number>; color: string };
+// `fused`: a token that is a word with the ayah-number glyph glued on (see
+// deriveChunkWords' attachTrailing); only its first `chars` characters --
+// the word's own glyphs -- take the color, never the number.
+type ArabicHighlight = { tokens: ReadonlySet<number>; color: string; fused?: FusedToken };
+type FusedToken = { token: number; chars: number };
 
 // One line's text, with any highlighted tokens wrapped in a colored span.
 // Only the color changes, so the measured line widths stay valid.
 function renderArabicLine(line: string, firstTokenIdx: number, highlight?: ArabicHighlight): React.ReactNode {
   if (!highlight || highlight.tokens.size === 0) return line;
-  return line.split(" ").map((token, i) => (
-    <React.Fragment key={i}>
-      {i > 0 && " "}
-      {highlight.tokens.has(firstTokenIdx + i) ? <span style={{ color: highlight.color }}>{token}</span> : token}
-    </React.Fragment>
-  ));
+  const { fused } = highlight;
+  return line.split(" ").map((token, i) => {
+    const idx = firstTokenIdx + i;
+    let shown: React.ReactNode = token;
+    if (highlight.tokens.has(idx)) {
+      const glyphs = Array.from(token);
+      shown =
+        fused && fused.token === idx && fused.chars < glyphs.length ? (
+          <>
+            <span style={{ color: highlight.color }}>{glyphs.slice(0, fused.chars).join("")}</span>
+            {glyphs.slice(fused.chars).join("")}
+          </>
+        ) : (
+          <span style={{ color: highlight.color }}>{token}</span>
+        );
+    }
+    return (
+      <React.Fragment key={i}>
+        {i > 0 && " "}
+        {shown}
+      </React.Fragment>
+    );
+  });
 }
 
 function formatArabicVerse(
@@ -431,7 +453,8 @@ const sumOf = (values: number[]) => values.reduce((a, b) => a + b, 0);
 // range QuranVideo's deriveChunkWords slices (any trailing glyphs fused
 // onto its last token don't add tokens). glyphCounts maps tokens back to
 // real words (one entry per word in wordTimings); null means 1:1. Every
-// later reading of a word (wordRepeats) lights the same glyphs again.
+// later reading of a word (wordRepeats) lights the same glyphs again. Only
+// recited words light: never a pause mark or the ayah number.
 function buildWordWindows({
   wordTimings,
   wordRepeats,
@@ -439,6 +462,7 @@ function buildWordWindows({
   lastWord,
   tokenStart,
   tokenEnd,
+  ayahNumberToken,
   glyphCounts,
   chunkStartFrame,
   fps,
@@ -449,6 +473,11 @@ function buildWordWindows({
   lastWord: number;
   tokenStart: number;
   tokenEnd: number;
+  // The ayah-number glyph (the verse text's last token in both QCF
+  // scripts). It isn't recited, so it never lights up -- it used to light
+  // with the ayah's last word (the user, 2026-11-14: only the word being
+  // recited).
+  ayahNumberToken: number;
   glyphCounts: number[] | null;
   chunkStartFrame: number;
   fps: number;
@@ -461,6 +490,7 @@ function buildWordWindows({
   const windowOfWord = new Map<number, WordWindow>();
   let lastWindowWord = -1;
   for (let g = tokenStart; g < tokenEnd; g++) {
+    if (g === ayahNumberToken) continue;
     const w = glyphCounts ? wordOfToken[g] : Math.min(g, lastWord);
     if (w === undefined || w < firstWord || w > lastWord || !wordTimings[w]) continue;
     const localToken = g - tokenStart;
@@ -469,8 +499,9 @@ function buildWordWindows({
       current.tokens.push(localToken);
       continue;
     }
-    if (current && !ARABIC_LETTER_RE.test(wordTimings[w].w)) {
-      current.tokens.push(localToken);
+    // A waqf/pause mark (ۚ ۖ ...) isn't recited either: it stays unlit
+    // next to its word. It used to light with the word before it.
+    if (!ARABIC_LETTER_RE.test(wordTimings[w].w)) {
       lastWindowWord = w;
       continue;
     }
@@ -519,6 +550,7 @@ function VerseScene({
   hasTranslation = true,
   segmentKey,
   wordWindows,
+  wordHighlightFused,
   wordHighlightColor = DEFAULT_WORD_HIGHLIGHT_COLOR,
 }: {
   text: string;
@@ -581,12 +613,14 @@ function VerseScene({
   // Set only while word highlighting is on and this segment has aligned
   // word timing -- see QuranVideoProps.wordHighlight.
   wordWindows?: WordWindow[];
+  // The shown text's last token when the ayah number is glued onto it.
+  wordHighlightFused?: FusedToken;
   wordHighlightColor?: string;
 }) {
   const frame = useCurrentFrame();
   const highlightTokens = activeWordTokens(wordWindows, frame);
   const arabicHighlight: ArabicHighlight | undefined = highlightTokens
-    ? { tokens: highlightTokens, color: wordHighlightColor }
+    ? { tokens: highlightTokens, color: wordHighlightColor, fused: wordHighlightFused }
     : undefined;
   const opacity = chunkOpacity(frame, durationInFrames);
 
@@ -1477,6 +1511,7 @@ export function QuranVideo({
                 // (qcf1) script is only mapped where its glyph tokens line
                 // up with the new script's, which the counts describe.
                 let wordWindows: WordWindow[] | undefined;
+                let wordHighlightFused: FusedToken | undefined;
                 const highlightWords =
                   shownWords &&
                   (!globalAudioPath || isAudioExtracted) &&
@@ -1518,12 +1553,26 @@ export function QuranVideo({
                       lastWord: firstWord + wordCount - 1,
                       tokenStart,
                       tokenEnd,
+                      // The basmala's text has no ayah-number glyph.
+                      ayahNumberToken: verse.id === BASMALA_VERSE_ID ? -1 : allWords.length - 1,
                       glyphCounts,
                       // The text track runs textLeadFrames ahead of the
                       // audio; the highlight must stay on the audio's time.
                       chunkStartFrame: chunkStartFrame - textLeadFrames,
                       fps: 30,
                     });
+                    // deriveChunkWords glued every token past tokenEnd (the
+                    // ayah number -- in the old qcf1 script, which has no
+                    // per-word glyph counts, it is always left over) onto
+                    // the last shown token. Only that token's own glyphs
+                    // may light up with its word, never the number
+                    // (the user, 2026-11-14).
+                    if (tokenEnd < allWords.length && reachesAyahEnd(firstWord, wordCount)) {
+                      wordHighlightFused = {
+                        token: tokenEnd - 1 - tokenStart,
+                        chars: Array.from(allWords[tokenEnd - 1]).length,
+                      };
+                    }
                   }
                 }
 
@@ -1561,11 +1610,12 @@ export function QuranVideo({
                       translationWidthScale={mappingTranslationWidthScale}
                       translationFontFamily={resolvedTranslationFontFamily}
                       translationRtl={translationRtl}
-                      showNumber={mapping.isFirstOfAyah ?? idx === 0}
+                      showNumber={verse.id !== BASMALA_VERSE_ID && (mapping.isFirstOfAyah ?? idx === 0)}
                       segmentKey={segmentKey}
                       compact={!isPortrait}
                       hasTranslation={hasTranslation}
                       wordWindows={wordWindows}
+                      wordHighlightFused={wordHighlightFused}
                       wordHighlightColor={wordHighlightColor}
                     />
                   </Sequence>

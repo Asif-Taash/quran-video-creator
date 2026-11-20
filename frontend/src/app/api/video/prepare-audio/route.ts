@@ -48,6 +48,9 @@ export async function POST(req: Request) {
     const reciterId = formData.get("reciterId") as string || DEFAULT_RECITER_ID;
     const customAudio = formData.get("customAudio") as File | null;
     const padSeconds = Number(formData.get("padSeconds")) || 2.0;
+    // Start with the basmala before ayah 1 (see BASMALA_VERSE_ID): the
+    // backend times it from the recitation like an ayah.
+    const basmala = formData.get("basmala") === "true";
     // Passed through so the client can poll/cancel this extraction (see
     // ./job/route.ts and backend/scripts/job_control.py).
     const rawJobId = formData.get("jobId");
@@ -70,6 +73,7 @@ export async function POST(req: Request) {
       backendFormData.append("start", startVerse.toString());
       backendFormData.append("end", endVerse.toString());
       backendFormData.append("pad_seconds", padSeconds.toString());
+      if (basmala) backendFormData.append("basmala", "true");
       backendFormData.append("audio_file", customAudio);
       if (jobId) backendFormData.append("job_id", jobId);
 
@@ -109,6 +113,7 @@ export async function POST(req: Request) {
         reciter: shortReciterKey,
         pad_seconds: padSeconds,
         job_id: jobId,
+        basmala,
       }, {
         timeout: 1800000, // 30 minutes — large/whole-surah requests can legitimately take several minutes
         validateStatus: () => true

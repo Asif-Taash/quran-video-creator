@@ -1,0 +1,842 @@
+{
+ "abdulbasit": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "abdulbasit_mujawwad": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "abkar": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "ajmi": {
+  "kbps": 160,
+  "hz": 44100
+ },
+ "ali_jaber": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "ayyub": {
+  "kbps": 96,
+  "hz": 22050
+ },
+ "baleela": {
+  "kbps": 256,
+  "hz": 44100
+ },
+ "dukhain": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "fares_abbad": {
+  "kbps": 160,
+  "hz": 44100
+ },
+ "ghamdi": {
+  "kbps": 256,
+  "hz": 44100
+ },
+ "husary": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "jalil": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "juhani": {
+  "kbps": 128,
+  "hz": 48000
+ },
+ "maher": {
+  "kbps": 256,
+  "hz": 44100
+ },
+ "minshawi": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "minshawi_mujawwad": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "mishary": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mousa": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_abdulaziz_ahmad": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "mq_abdulaziz_asiri": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_abdulaziz_turki": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_abdulaziz_zahrani": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_abdulbadi_ghailan": {
+  "kbps": 256,
+  "hz": 44100
+ },
+ "mq_abdulbari_muhammad": {
+  "kbps": 96,
+  "hz": 22050
+ },
+ "mq_abdulbari_thubaiti": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_abdulelah_aoun": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_abdulghani_abdullah": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_abdulhadi_kanakeri": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_abdulkareem_hazmi": {
+  "kbps": 159,
+  "hz": 44100
+ },
+ "mq_abdullah_abdal": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_abdullah_basfar": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_abdullah_buaijan": {
+  "kbps": 96,
+  "hz": 22050
+ },
+ "mq_abdullah_bukhari": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "mq_abdullah_buraimi": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_abdullah_ghailan": {
+  "kbps": 96,
+  "hz": 44100
+ },
+ "mq_abdullah_kamel": {
+  "kbps": 48,
+  "hz": 32000
+ },
+ "mq_abdullah_kandari": {
+  "kbps": 256,
+  "hz": 44100
+ },
+ "mq_abdullah_khalaf": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_abdullah_khayyat": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_abdullah_matrood": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_abdullah_mishal": {
+  "kbps": 148,
+  "hz": 44100
+ },
+ "mq_abdullah_qarafi": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "mq_abdulmajeed_arkani": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "mq_abdulmohsen_harthi": {
+  "kbps": 96,
+  "hz": 44100
+ },
+ "mq_abdulmohsen_obaikan": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_abdulmohsen_qasim": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_abdulrahman_badr": {
+  "kbps": 320,
+  "hz": 44100
+ },
+ "mq_abdulrahman_majed": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_abdulrahman_oosi": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_abdulrahman_shahat": {
+  "kbps": 110,
+  "hz": 44100
+ },
+ "mq_abdulrahman_suwayid": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "mq_abdulrasheed_sufi_r3": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_abdulwadood_haneef": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_abdulwali_arkani": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_adel_kalbani": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_adel_rayyan": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_ahmad_amer": {
+  "kbps": 320,
+  "hz": 44100
+ },
+ "mq_ahmad_deeban": {
+  "kbps": 320,
+  "hz": 48000
+ },
+ "mq_ahmad_hawashi": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_ahmad_hudhaifi": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_ahmad_humaid": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_ahmad_masarawi": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_ahmad_naina": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_ahmad_saber": {
+  "kbps": 64,
+  "hz": 11025
+ },
+ "mq_ahmad_saud": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_ahmad_shaheen": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_ahmad_suwailem": {
+  "kbps": 320,
+  "hz": 44100
+ },
+ "mq_ahmad_tarabulsi_r2": {
+  "kbps": 256,
+  "hz": 44100
+ },
+ "mq_akram_alaqmi": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_ali_abuhashim": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_ali_hudhaifi": {
+  "kbps": 64,
+  "hz": 24000
+ },
+ "mq_ali_souissi": {
+  "kbps": 32,
+  "hz": 11025
+ },
+ "mq_alijon_hamdan": {
+  "kbps": 320,
+  "hz": 48000
+ },
+ "mq_anas_emadi": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_ashri_omran": {
+  "kbps": 56,
+  "hz": 24000
+ },
+ "mq_asim_luhaidan": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_badr_turki": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "mq_dawood_hamza": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_fahad_kandari": {
+  "kbps": 64,
+  "hz": 22050
+ },
+ "mq_faisal_hajri": {
+  "kbps": 320,
+  "hz": 48000
+ },
+ "mq_fawaz_kaabi": {
+  "kbps": 48,
+  "hz": 22050
+ },
+ "mq_fouad_khamiri": {
+  "kbps": 189,
+  "hz": 44100
+ },
+ "mq_haitham_jadani": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_hamad_daghriri": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_hani_rifai": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_haroon_baqai": {
+  "kbps": 111,
+  "hz": 44100
+ },
+ "mq_hashim_abudalal": {
+  "kbps": 320,
+  "hz": 44100
+ },
+ "mq_hassan_daghriri": {
+  "kbps": 128,
+  "hz": 48000
+ },
+ "mq_hassan_saleh": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_hatem_waer": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_hazza_balushi": {
+  "kbps": 160,
+  "hz": 44100
+ },
+ "mq_hussain_sheikh": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_ibrahim_akhdar": {
+  "kbps": 48,
+  "hz": 22050
+ },
+ "mq_ibrahim_asiri": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_ibrahim_dosari_r2": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_ibrahim_jibreen": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_ibrahim_jormy": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_ibrahim_saadan": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_ibrahim_shahri": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "mq_imad_hafez": {
+  "kbps": 48,
+  "hz": 22050
+ },
+ "mq_islam_sobhi": {
+  "kbps": 96,
+  "hz": 48000
+ },
+ "mq_issa_sanankoua": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_jamaan_osaimi": {
+  "kbps": 96,
+  "hz": 22050
+ },
+ "mq_jamal_abdullah": {
+  "kbps": 64,
+  "hz": 22050
+ },
+ "mq_junaid_abdullah": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_khalid_abdulkafi": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_khalid_ghamdi": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_khalid_mohammadi": {
+  "kbps": 96,
+  "hz": 24000
+ },
+ "mq_khalid_mohanna": {
+  "kbps": 48,
+  "hz": 22050
+ },
+ "mq_khalid_qahtani": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_khalid_sharekh": {
+  "kbps": 145,
+  "hz": 44100
+ },
+ "mq_khalid_shuraimi": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_khalid_wahaibi": {
+  "kbps": 84,
+  "hz": 44100
+ },
+ "mq_khalid_ziyadi": {
+  "kbps": 320,
+  "hz": 44100
+ },
+ "mq_khalifa_tunaiji": {
+  "kbps": 96,
+  "hz": 22050
+ },
+ "mq_lafi_oni": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_maher_muaiqly_r3": {
+  "kbps": 96,
+  "hz": 44100
+ },
+ "mq_maher_shakhashiro": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_mahmoud_abdulhakam": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_mahmoud_banna": {
+  "kbps": 128,
+  "hz": 48000
+ },
+ "mq_mahmoud_banna_r2": {
+  "kbps": 96,
+  "hz": 22050
+ },
+ "mq_mahmoud_harfoush": {
+  "kbps": 320,
+  "hz": 44100
+ },
+ "mq_mahmoud_husary_r2": {
+  "kbps": 96,
+  "hz": 24000
+ },
+ "mq_mahmoud_rifai": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_majed_anazi": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_majed_zamil": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_malallah_jaber": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_moeedh_harthi": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_muftah_saltani_r3": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "mq_muhammad_abdulkareem": {
+  "kbps": 96,
+  "hz": 44100
+ },
+ "mq_muhammad_ayyub_r2": {
+  "kbps": 128,
+  "hz": 48000
+ },
+ "mq_muhammad_barrak": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_muhammad_bukhait": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "mq_muhammad_burhaji": {
+  "kbps": 320,
+  "hz": 48000
+ },
+ "mq_muhammad_dibirov": {
+  "kbps": 320,
+  "hz": 48000
+ },
+ "mq_muhammad_faqih": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_muhammad_jibreel": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_muhammad_khalil": {
+  "kbps": 192,
+  "hz": 48000
+ },
+ "mq_muhammad_khan": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_muhammad_luhaidan": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_muhammad_minshawi_r4": {
+  "kbps": 192,
+  "hz": 48000
+ },
+ "mq_muhammad_monshed": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_muhammad_muhaisni": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "mq_muhammad_refaat": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_muhammad_shah": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_muhammad_shareef": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_muhammad_tablawi": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_muhammad_tablawi_r2": {
+  "kbps": 36,
+  "hz": 16000
+ },
+ "mq_muhammad_zubaidi": {
+  "kbps": 320,
+  "hz": 48000
+ },
+ "mq_mukhtar_haj": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_musa_bilal": {
+  "kbps": 256,
+  "hz": 44100
+ },
+ "mq_mustafa_azzawi": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_mustafa_ismail": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_mustafa_ismail_r2": {
+  "kbps": 96,
+  "hz": 22050
+ },
+ "mq_mustafa_lahouni": {
+  "kbps": 48,
+  "hz": 44100
+ },
+ "mq_nabil_rifai": {
+  "kbps": 160,
+  "hz": 44100
+ },
+ "mq_nadhir_maliki": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_nasser_asfour": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "mq_nasser_majed": {
+  "kbps": 320,
+  "hz": 44100
+ },
+ "mq_nasser_obaid": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_neama_hassan": {
+  "kbps": 96,
+  "hz": 44100
+ },
+ "mq_omar_duraiwiz": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "mq_othman_ansari": {
+  "kbps": 256,
+  "hz": 44100
+ },
+ "mq_peshawa_kurdi": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_ramadan_shakoor": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_rami_duais": {
+  "kbps": 320,
+  "hz": 44100
+ },
+ "mq_saad_muqrin": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_saber_abdulhakam": {
+  "kbps": 96,
+  "hz": 24000
+ },
+ "mq_saber_abdulhakam_r2": {
+  "kbps": 320,
+  "hz": 44100
+ },
+ "mq_saber_abdulhakam_r5": {
+  "kbps": 320,
+  "hz": 44100
+ },
+ "mq_sahl_yassin": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_salah_budair": {
+  "kbps": 320,
+  "hz": 48000
+ },
+ "mq_salah_bukhatir": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_salah_hashim": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_salah_musalli": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "mq_saleh_habdan": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "mq_saleh_quraishi": {
+  "kbps": 256,
+  "hz": 44100
+ },
+ "mq_saleh_sahood": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_saleh_shamrani": {
+  "kbps": 96,
+  "hz": 22050
+ },
+ "mq_saleh_talib": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_salman_otaibi": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_salman_siddiq": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_sami_dosari": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_sami_hassan": {
+  "kbps": 320,
+  "hz": 44100
+ },
+ "mq_sayed_hashemi": {
+  "kbps": 96,
+  "hz": 32000
+ },
+ "mq_sayed_ramadan": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_shaban_sayyad": {
+  "kbps": 134,
+  "hz": 48000
+ },
+ "mq_shirzad_taher": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_tawfeeq_sayegh": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_wadee_yamani": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_waleed_dulaimi": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_waleed_shamsan": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_yahya_hawwa": {
+  "kbps": 64,
+  "hz": 44100
+ },
+ "mq_yasser_faylakawi": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_yasser_qurashi": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_yasser_salama": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_yousef_ahmad": {
+  "kbps": 96,
+  "hz": 44100
+ },
+ "mq_yousef_aidarous": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "mq_yousef_shoaey": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_youssef_edghouch": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "mq_zain_ahmad": {
+  "kbps": 96,
+  "hz": 44100
+ },
+ "mq_zaki_daghistani": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "nufais": {
+  "kbps": 96,
+  "hz": 22050
+ },
+ "qatami": {
+  "kbps": 96,
+  "hz": 44100
+ },
+ "raad_alkurdi": {
+  "kbps": 192,
+  "hz": 44100
+ },
+ "salimi": {
+  "kbps": 256,
+  "hz": 44100
+ },
+ "shatri": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "shuraim": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "sudais": {
+  "kbps": 128,
+  "hz": 44100
+ },
+ "yasser": {
+  "kbps": 128,
+  "hz": 44100
+ }
+}

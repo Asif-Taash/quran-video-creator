@@ -20,6 +20,7 @@ import { surahEnglishName } from "@/lib/surahEnglishNames";
 import type { Surah, Verse, RenderState } from "../VideoCreatorForm";
 
 import { useLanguage, useT } from "@/lib/LanguageContext";
+import { BASMALA_VERSE_ID } from "@/lib/basmala";
 interface Step1Props {
   isArabic: boolean;
   surahs: Surah[];
@@ -35,7 +36,13 @@ interface Step1Props {
   handleAddNextVerse: () => void;
   handleRemoveLastVerse: () => void;
   versesArray: number[];
+  // The basmala first when the video starts with it (BASMALA_VERSE_ID).
   selectedVersesContent: (Verse & { translation?: string; textV1?: string; pageV1?: number })[];
+  // The selection starts at ayah 1 of a surah with a basmala, and whether
+  // the video starts with it (see lib/basmala.ts).
+  canStartWithBasmala: boolean;
+  startsWithBasmala: boolean;
+  onToggleBasmala: () => void;
   lowConfidenceAyahs: Set<number>;
   // Which Arabic verse script to use -- see ARABIC_FONT_OPTIONS in
   // types.ts. Applied instantly to the live preview client-side (see
@@ -88,6 +95,9 @@ export default function Step1SurahVerse({
   handleRemoveLastVerse,
   versesArray,
   selectedVersesContent,
+  canStartWithBasmala,
+  startsWithBasmala,
+  onToggleBasmala,
   lowConfidenceAyahs,
   arabicFont,
   onArabicFontChange,
@@ -340,7 +350,22 @@ export default function Step1SurahVerse({
             <h3 className="text-sm font-semibold text-foreground/80">
               {tx(`الآيات المختارة (${versesArray.length})`, `Seçili Ayetler (${versesArray.length})`, `Selected Ayahs (${versesArray.length})`)}
             </h3>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              {canStartWithBasmala && (
+                <button
+                  type="button"
+                  onClick={onToggleBasmala}
+                  className={
+                    startsWithBasmala
+                      ? "inline-flex items-center gap-1 rounded-lg bg-accent-red-bg/60 px-2.5 py-1 text-xs font-medium text-accent-red transition-all hover:bg-accent-red-bg"
+                      : "inline-flex items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary transition-all hover:bg-primary/20"
+                  }
+                >
+                  {startsWithBasmala
+                    ? `- ${tx("إزالة البسملة", "Besmeleyi Kaldır", "Remove Basmala")}`
+                    : `+ ${tx("أضف البسملة", "Besmele Ekle", "Add Basmala")}`}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleAddNextVerse}
@@ -407,9 +432,15 @@ export default function Step1SurahVerse({
                   className="rounded-xl border border-border/60 bg-background/70 p-3.5 sm:p-4 space-y-3.5 transition-colors hover:border-primary/30"
                 >
                   <div className="flex items-center gap-2">
-                    <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                      {verse.id}
-                    </span>
+                    {verse.id === BASMALA_VERSE_ID ? (
+                      <span className="flex h-6 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 px-2.5 text-xs font-bold text-primary">
+                        {tx("البسملة", "Besmele", "Basmala")}
+                      </span>
+                    ) : (
+                      <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                        {verse.id}
+                      </span>
+                    )}
                     {lowConfidenceAyahs.has(verse.id) && (
                       <span
                         className="flex items-center gap-1 rounded-full bg-accent-amber-bg/60 border border-accent-amber/30 px-2 py-0.5 text-[11px] font-medium text-accent-amber"

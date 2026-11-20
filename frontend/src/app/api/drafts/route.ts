@@ -120,6 +120,12 @@ const TEMP_AUDIO_DIR = path.join(process.cwd(), "public", "renders", "temp_audio
 
 type CopiedFrom = { file: string; size: number; mtimeMs: number };
 
+// A prepared clip's improved copy (FLAC, same name): see render/route.ts's
+// improvedAudioPath.
+function improvedCopyName(preparedName: string): string {
+  return `${path.basename(preparedName, path.extname(preparedName))}.flac`;
+}
+
 async function sha1File(filePath: string): Promise<string> {
   const hash = crypto.createHash("sha1");
   for await (const chunk of createReadStream(filePath)) hash.update(chunk as Buffer);
@@ -183,9 +189,12 @@ async function keepPreparedAudio(
         throw err;
       }
     }
-    // Only the current clip is kept.
+    // Only the current clip is kept, with its improved copy if it has one
+    // (render/route.ts's improvedAudioPath).
     for (const name of await fs.readdir(draftDir)) {
-      if (name.startsWith("prepared-") && name !== copyName) await fs.unlink(path.join(draftDir, name)).catch(() => {});
+      if (name.startsWith("prepared-") && name !== copyName && name !== improvedCopyName(copyName)) {
+        await fs.unlink(path.join(draftDir, name)).catch(() => {});
+      }
     }
     return pointTo(copyPath, { file: path.basename(source), size: stat.size, mtimeMs: stat.mtimeMs });
   } catch (err) {
@@ -209,7 +218,10 @@ async function removeUnusedDraftFiles(draftId: string, draft: Record<string, unk
     if (at >= 0) used.add((url as string).slice(at + prefix.length).split(/[?&]/)[0]);
   }
   const prepared = (draft.preparedAudio as { preparedAudioLocalPath?: unknown } | undefined)?.preparedAudioLocalPath;
-  if (typeof prepared === "string" && path.dirname(path.resolve(prepared)) === dir) used.add(path.basename(prepared));
+  if (typeof prepared === "string" && path.dirname(path.resolve(prepared)) === dir) {
+    used.add(path.basename(prepared));
+    used.add(improvedCopyName(path.basename(prepared)));
+  }
   const names = await fs.readdir(dir).catch(() => [] as string[]);
   await Promise.all(
     names.filter((name) => !used.has(name)).map((name) => fs.unlink(path.join(dir, name)).catch(() => {}))
@@ -288,6 +300,8 @@ export async function POST(req: Request) {
       wordHighlight: formData.get("wordHighlight") === "true",
       ...(formData.get("wordHighlightColor") ? { wordHighlightColor: formData.get("wordHighlightColor") as string } : {}),
       showReciterName: formData.get("showReciterName") !== "false",
+      // Starts with the basmala before ayah 1 (lib/basmala.ts).
+      includeBasmala: formData.get("includeBasmala") === "true",
       // Video shape, export quality, and the title language of a video
       // without a translation: not saved before 2026-11-07, so a reopened
       // project came back portrait, 720p, in the interface's language.

@@ -31,3 +31,28 @@ def align_segments(req: AlignRequest):
         return segment_align.align(req.surah, req.ayah, req.tokens, req.segments, req.language)
     except segment_align.AlignUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))
+
+
+class SplitTranslationRequest(BaseModel):
+    surah: int
+    ayah: int
+    # Same tokens as AlignRequest's.
+    tokens: list[str]
+    # Each Arabic part's word count over `tokens`, in order.
+    word_counts: list[int]
+    # The whole ayah's translation, to cut into one piece per part.
+    translation: str
+    language: str = "tr"
+
+
+@router.post("/split-translation")
+def split_translation(req: SplitTranslationRequest):
+    """A new translation cut to fit an ayah's existing parts -- see
+    scripts/segment_align.py split_translation. 503 when it can't run; the
+    caller then cuts by length and flags it."""
+    try:
+        return segment_align.split_translation(
+            req.surah, req.ayah, req.tokens, req.word_counts, req.translation, req.language
+        )
+    except segment_align.AlignUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))

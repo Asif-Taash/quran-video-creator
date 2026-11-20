@@ -12,8 +12,14 @@ path is compared with the truth word by word. Run in the backend container
                                (verses, readings) + truth, for the on-screen
                                check (frontend: scripts/check-reading-display.ts)
 
+    ... --cached-only   no model at all (CPU, a minute or two): every case
+                        whose emission and Whisper answers are cached; the
+                        rest SKIP. One full run on the GPU fills the caches.
+    ... --pause 3       rest 3 s between cases (keeps the GPU cooler)
+
 Sources live in /app/data/reading_path_eval (copied there so the size-capped
-surah_cache can't evict them). Emissions are cached next to them.
+surah_cache can't evict them). Emissions and Whisper's answers are cached
+next to them (cache/, see _use_caches).
 
 A case passes when every recited target word is found at its true time
 (the reading path names the same ayah:word at the middle of every truth
@@ -58,6 +64,15 @@ start: 9 -> 11/12, 0 -> 4/6, 0 -> 2/6. ajmi79_one_word_restart_31 and
 hazza79_one_word_restart still count wrong but are right: the truth starts
 their first saying 0.5-0.7 s before the voice (the splice's piece opens on
 a breath of silence), and ctc-v16 starts it with the voice.
+
+2026-11-14, ctc-v16 -> ctc-v17 (Whisper on the GPU, then --cached-only):
+on screen 142 -> 150/168 (dev+held-out+fresh), silently wrong 21 -> 15,
+controls 28/28 -> 29/29 with the new control_maher44_restart (the user's
+"رَبُّكُمْ" said twice, and its madd+hamza joins as WORD_CHECKS). Most of
+it: the words of a recording with a repeat timed by plain alignment within
+each stretch read straight through (quran_aligner._retime_readings) instead
+of by the capped path search. hazza79_back_after_next counts wrong but is
+right, as above: its 79:31 now starts with the voice, 0.7 s after the truth.
 The same day quran_aligner._drop_stray_first_letters (a first letter alone
 in the fading madd before a long silence isn't the word's) changed no
 case's result; in control_maher98 and control_husary98 it starts 98:6 and
@@ -72,6 +87,7 @@ import hashlib
 import json
 import logging
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -82,6 +98,62 @@ import quran_aligner as qa  # noqa: E402
 EVAL_DIR = Path("/app/data/reading_path_eval")
 CACHE_DIR = EVAL_DIR / "cache"
 SR = qa.SAMPLE_RATE
+WHISPER_CACHE = CACHE_DIR / "whisper.pkl"
+
+
+class NotCached(RuntimeError):
+    """--cached-only: the case needs a model run that isn't cached yet."""
+
+
+def _use_caches(cached_only):
+    """Whisper's answers are kept in WHISPER_CACHE (keyed by the audio and the
+    options), as the emissions are: a rerun needs no model where nothing
+    changed, and with --cached-only none at all -- a change to the rules is
+    checked over every cached case on the CPU in a minute or two, instead
+    of 10+ minutes of GPU that heat the user's laptop. A case that would
+    need a model is skipped then (reported as SKIP)."""
+    import atexit
+    import pickle
+    from types import SimpleNamespace
+
+    cache = pickle.loads(WHISPER_CACHE.read_bytes()) if WHISPER_CACHE.exists() else {}
+    known = len(cache)
+
+    def save():
+        if len(cache) > known:
+            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            WHISPER_CACHE.write_bytes(pickle.dumps(cache))
+
+    atexit.register(save)
+    real = qa._get_verify_model
+
+    class CachedWhisper:
+        model = None
+
+        def transcribe(self, audio, **options):
+            key = (hashlib.sha1(np.ascontiguousarray(audio, dtype=np.float32).tobytes()).hexdigest()
+                   + repr(sorted(options.items())))
+            if key not in cache:
+                if cached_only:
+                    raise NotCached("Whisper")
+                if self.model is None:
+                    self.model = real()
+                segments, _ = self.model.transcribe(audio, **options)
+                cache[key] = [SimpleNamespace(text=g.text, start=g.start, end=g.end, words=[
+                    SimpleNamespace(word=w.word, start=w.start, end=w.end) for w in g.words or []]) for g in segments]
+            return iter(cache[key]), None
+
+    whisper = CachedWhisper()
+    qa._get_verify_model = lambda: whisper
+    if cached_only:
+        import torchaudio
+        labels = torchaudio.pipelines.MMS_FA.get_labels(star="*")
+        qa._mms = (None, {c: i for i, c in enumerate(labels)}, labels.index("*"))
+
+        def no_model(*_args, **_kwargs):
+            raise NotCached("alignment model")
+
+        qa.compute_emission = no_model
 
 # name: (source file, surah, mode, [(ayah, from, to), ...] in reading order)
 # mode "upload": the audio is the reading alone, aligned without context.
@@ -201,6 +273,30 @@ CONTROLS = {
     # كِتَٰبَهُمْ" read twice (39.3 s and 44.8 s), the second time partly in a
     # stretch the alignment model can't hear.
     "control_ajmi17_natural": ("ajmi_017_70-72.mp3", 17, 70, 72, None, [(71, 10, 15)], "surah"),
+    # The user's project (2026-11-14), Maher's 44:1-8 from mp3quran:
+    # "رَبُّكُمْ" said, a breath, and said again as he reads on (8:7). No
+    # repeat on screen -- ctc-v16 jumped back from a "وَرَبُّ" squeezed into
+    # the breath, and the highlight went ربكم, ورب, ربكم -- and the word lasts
+    # from its first saying (WORD_CHECKS).
+    "control_maher44_restart": ("maher_044.mp3", 44, 1, 8, 3.0, [], "surah"),
+}
+# Where a control's words must start (first reading; source seconds):
+# around the voice as heard in the recording, never where an earlier engine
+# put them. Maher's 44:1-8: a hamza word after a madd starts as the madd
+# ends (ctc-v16 started it in the madd: "إِلَٰهَ" 1.5 s early, while "لَآ"
+# was still held), one after a stop as the stop ends, and "رَبُّكُمْ" at
+# its first saying.
+WORD_CHECKS = {
+    "control_maher44_restart": {
+        (3, 1): (13.45, 13.85),   # أَنزَلْنَٰهُ after the madd of إِنَّآ (v16: 12.36)
+        (3, 6): (17.80, 18.05),   # إِنَّا after the stop on مُّبَٰرَكَةٍ (v16: 17.70)
+        (5, 4): (29.05, 29.40),   # إِنَّا after the madd of عِندِنَآ (v16: 28.14)
+        (7, 6): (42.05, 42.40),   # إِن after the madd of بَيْنَهُمَآ (v16: 41.24)
+        (8, 1): (47.25, 47.60),   # إِلَٰهَ after the madd of لَآ (v16: 45.94)
+        (8, 2): (47.95, 48.25),   # إِلَّا (v16: 47.90 -- from inside إِلَٰهَ)
+        (8, 7): (49.95, 50.60),   # رَبُّكُمْ, first saying (v16: 50.40, then again)
+        (8, 8): (52.20, 52.60),   # وَرَبُّ, once (v16: 51.46, squeezed into the breath)
+    },
 }
 for _reciter in OTHER_RECITERS_98:
     # Yasser, Shatri and Ghamdi read parts of 98:6 and 98:8 twice in these
@@ -380,6 +476,8 @@ def _run(wav, surah, a0, a1, prev_ctx, next_ctx, tag):
             moved |= qa._restarted_words(emission, env, units, readings)
     if moved:
         qa._resolve_times(units, env, 0.0, len(wav) / SR)
+    if hasattr(qa, "_unexplained_suspects"):  # ctc-v17
+        suspects = qa._unexplained_suspects(suspects, units)
     return units, readings, suspects + [a for a, _ in unheard]
 
 
@@ -464,7 +562,13 @@ def main():
     parser.add_argument("only", nargs="*")
     parser.add_argument("--json")
     parser.add_argument("-v", action="store_true")
+    parser.add_argument("--cached-only", action="store_true",
+                        help="no model at all: skip a case whose emission or Whisper answers aren't cached")
+    parser.add_argument("--pause", type=float, default=0.0,
+                        help="seconds to rest between cases (keeps the GPU cooler)")
     args = parser.parse_args()
+    _use_caches(args.cached_only)
+    skipped = []
     logging.basicConfig(level=logging.DEBUG if args.v else logging.WARNING, format="%(message)s")
     if not args.v:
         # _fail logs every rejected trial alignment as an error.
@@ -474,7 +578,12 @@ def main():
     for name, (src, surah, mode, plan) in CASES.items():
         if args.only and not any(name.startswith(p) for p in args.only):
             continue
-        wav, truth = _splice(src, surah, plan, RESTART_SPEED[sum(map(ord, name)) % 2])
+        try:
+            wav, truth = _splice(src, surah, plan, RESTART_SPEED[sum(map(ord, name)) % 2])
+        except NotCached as e:
+            skipped.append(name)
+            print(f"SKIP {name}: {e} not cached")
+            continue
         n = len(qa.fetch_surah_words(surah))
         if mode == "surah":
             a0, a1 = plan[0][0] + 1, max(a for a, _, _ in plan) - 1
@@ -483,8 +592,13 @@ def main():
         else:
             a0, a1 = min(a for a, _, _ in plan), max(a for a, _, _ in plan)
             prev_ctx = next_ctx = None
+        try:
+            units, readings, suspects = _run(wav, surah, a0, a1, prev_ctx, next_ctx, name)
+        except NotCached as e:
+            skipped.append(name)
+            print(f"SKIP {name}: {e} not cached")
+            continue
         cases += 1
-        units, readings, suspects = _run(wav, surah, a0, a1, prev_ctx, next_ctx, name)
         target_truth = [t for t in truth if a0 <= t[0] <= a1]
         occ = _occurrences(units, readings)
         wrong = _score(target_truth, occ)
@@ -500,11 +614,17 @@ def main():
               + (f"\n      wrong words: {' '.join(wrong)}" if wrong else "")
               + (f"\n      on screen: {'; '.join(screen)}" if screen else ""))
         exported[name] = _export(units, readings, target_truth, wav, None)
+        time.sleep(args.pause)
 
     for name, (src, surah, a0, a1, margin, expected, *mode) in CONTROLS.items():
         if args.only and not any(name.startswith(p) for p in args.only):
             continue
-        swav, pos, _, _ = _source(src, surah)
+        try:
+            swav, pos, _, _ = _source(src, surah)
+        except NotCached as e:
+            skipped.append(name)
+            print(f"SKIP {name}: {e} not cached")
+            continue
         first_key = min(k for k in pos if k[0] == a0)
         if margin is None:
             t0, t1, wav = 0.0, len(swav) / SR, swav
@@ -517,18 +637,33 @@ def main():
             # A built-in reciter's recording: the neighbouring ayahs as context.
             prev_ctx = (a0 - 1, qa.CONTEXT_WORDS) if a0 > 1 else None
             next_ctx = (a1 + 1, qa.CONTEXT_WORDS) if a1 < len(qa.fetch_surah_words(surah)) else None
-        units, readings, suspects = _run(wav, surah, a0, a1, prev_ctx, next_ctx, name if margin is not None else src)
+        try:
+            units, readings, suspects = _run(wav, surah, a0, a1, prev_ctx, next_ctx, name if margin is not None else src)
+        except NotCached as e:
+            skipped.append(name)
+            print(f"SKIP {name}: {e} not cached")
+            continue
         jumps = [(r["ayah"], r["from"], r["to"]) for r in readings or [] if r["jump"]]
         first_start = min(o[2] for o in _occurrences(units, readings) if (o[0], o[1]) == first_key)
         moved = abs(first_start - (pos[first_key][0] - t0))
-        ok = jumps == expected and moved <= 1.5
+        firsts = {}
+        for a, i, st, _ in _occurrences(units, readings):
+            firsts.setdefault((a, i), st + t0)
+        misplaced = [f"{a}:{i} at {firsts[(a, i)]:.2f}s, not {lo:.2f}-{hi:.2f}s" if (a, i) in firsts else f"{a}:{i} missing"
+                     for (a, i), (lo, hi) in WORD_CHECKS.get(name, {}).items()
+                     if not lo <= firsts.get((a, i), float("nan")) <= hi]
+        ok = jumps == expected and moved <= 1.5 and not misplaced
         total += 1
         passed += ok
         false_flags += bool(suspects)
         print(f"{'PASS' if ok else 'FAIL'} {name}: {' '.join(_runs(readings)) or 'no repeat found'}"
               + ("" if jumps == expected else f"  (expected jumps {expected})")
               + ("" if moved <= 1.5 else f"  (first word moved {moved:.1f}s)")
+              + (f"  (words misplaced: {'; '.join(misplaced)})" if misplaced else "")
               + (f"  [flagged for review at {', '.join(f'{s:.1f}s' for s in suspects)}]" if suspects else ""))
+        time.sleep(args.pause)
+    if skipped:
+        print(f"\nskipped {len(skipped)} (not cached): {' '.join(skipped)}")
     print(f"\n{passed}/{total} passed; {flagged} failed cases flagged for review, {false_flags} controls flagged; "
           f"on screen {screen_ok}/{cases} cases right ({screen_flagged} of the wrong ones flagged)")
     if args.json:

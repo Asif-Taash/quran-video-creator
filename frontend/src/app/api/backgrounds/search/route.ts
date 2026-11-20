@@ -4,6 +4,8 @@ import { resolveSearchQuery } from "@/lib/stockSearchQuery";
 import { topicById } from "@/lib/backgroundTopics";
 import { checkThumbnails } from "@/lib/natureCheck";
 import { usedBackgroundCheck } from "@/lib/usedBackgrounds";
+import { rememberShown, shownBeforeCheck } from "@/lib/shownBackgrounds";
+import { queryRelevance, topicRelevance } from "@/lib/backgroundRelevance";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +19,9 @@ const MAX_EXTRA_PAGES = 4;
 // of them could fill half a screen (6 of 14, 2026-11-01): at most this many
 // of one author's per batch.
 const MAX_PER_AUTHOR = 2;
+// Pages checked ahead of the user's scrolling (see the end of GET).
+const PREFETCH_PAGES = 3;
+const prefetching = new Set<string>();
 let warnedNotConfigured = false;
 
 // What each search (its seed, picked by the client per search) has already
@@ -84,7 +89,9 @@ export async function GET(req: Request) {
   if (!topic && (!isAllowed(resolved.queries[0], resolved.language) || !isAllowed(resolved.queries[0], "en"))) {
     return NextResponse.json({ items: [], providers, hasMore: false, notNature: true });
   }
-  const { items, errors, hasMore, lastPage: firstLastPage } = await searchStock(resolved.queries, type, orientation, page, resolved.language, seed);
+  // Only results whose tags are about the search (see lib/backgroundRelevance.ts).
+  const relevant = topic ? topicRelevance(topic.id) : queryRelevance(resolved.queries[0], resolved.language);
+  const { items, errors, hasMore, lastPage: firstLastPage } = await searchStock(resolved.queries, type, orientation, page, resolved.language, seed, relevant);
   if (errors.length > 0) console.warn("[Backgrounds] Provider errors:", errors);
   if (items.length === 0 && errors.length === providers.length) {
     return NextResponse.json({ error: "Background search is unavailable right now." }, { status: 502 });
@@ -114,29 +121,54 @@ export async function GET(req: Request) {
       perAuthor.set(it.author, count);
       return count <= MAX_PER_AUTHOR;
     });
+  // What an earlier search already sent waits: never-shown results come
+  // first (see lib/shownBackgrounds.ts). It only tops up a batch that found
+  // too little new within reach -- after the new ones -- rather than a
+  // trickle of one-photo loads or an empty screen.
+  const wasShown = await shownBeforeCheck();
+  const held: typeof items = [];
+  const neverShown = (list: typeof items) =>
+    list.filter((it) => {
+      if (!wasShown(it.key)) return true;
+      if (!held.some((h) => h.key === it.key)) held.push(it);
+      return false;
+    });
   let natural: typeof items;
   let lastPage = firstLastPage;
   let more = hasMore;
   try {
-    natural = capAuthors(await onlyNatural(items.filter((it) => !sent.has(it.key))));
+    natural = capAuthors(neverShown(await onlyNatural(items.filter((it) => !sent.has(it.key)))));
     for (let extra = 0; natural.length < MIN_RESULTS && more && extra < MAX_EXTRA_PAGES; extra++) {
-      const next = await searchStock(resolved.queries, type, orientation, lastPage + 1, resolved.language, seed);
+      const next = await searchStock(resolved.queries, type, orientation, lastPage + 1, resolved.language, seed, relevant);
       lastPage = next.lastPage;
       more = next.hasMore;
       const seen = new Set(natural.map((it) => it.key));
-      natural = [...natural, ...capAuthors(await onlyNatural(next.items.filter((it) => !seen.has(it.key) && !sent.has(it.key))))];
+      natural = [...natural, ...capAuthors(neverShown(await onlyNatural(next.items.filter((it) => !seen.has(it.key) && !sent.has(it.key)))))];
     }
+    if (natural.length < MIN_RESULTS) natural = [...natural, ...capAuthors(held).slice(0, MIN_RESULTS - natural.length)];
   } catch (err) {
     console.error("[Backgrounds] Image check failed:", err);
     return NextResponse.json({ error: "Background check is unavailable right now." }, { status: 503 });
   }
 
-  // Check the next page in the background, so scrolling on is already fast.
-  if (more) {
-    void searchStock(resolved.queries, type, orientation, lastPage + 1, resolved.language, seed)
-      .then((next) => checkThumbnails(next.items.map((it) => ({ key: it.key, url: it.thumbUrl }))))
-      .catch(() => undefined);
+  // Check the next pages in the background, so scrolling on is already
+  // fast: results never shown before each need the image check, a few
+  // seconds a page. One run per search at a time, one page after another.
+  if (more && !prefetching.has(searchKey)) {
+    prefetching.add(searchKey);
+    void (async () => {
+      let nextPage = lastPage + 1;
+      for (let i = 0; i < PREFETCH_PAGES; i++) {
+        const next = await searchStock(resolved.queries, type, orientation, nextPage, resolved.language, seed, relevant);
+        await checkThumbnails(next.items.map((it) => ({ key: it.key, url: it.thumbUrl })));
+        if (!next.hasMore) break;
+        nextPage = next.lastPage + 1;
+      }
+    })()
+      .catch(() => undefined)
+      .finally(() => prefetching.delete(searchKey));
   }
   natural.forEach((it) => sent.add(it.key));
+  void rememberShown(natural.map((it) => it.key));
   return NextResponse.json({ items: natural, providers, hasMore: more, lastPage });
 }

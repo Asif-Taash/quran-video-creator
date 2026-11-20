@@ -59,6 +59,7 @@ next-env.d.ts
 # backgrounds used in exported videos (lib/usedBackgrounds.ts)
 /src/data/used-backgrounds.json
 /src/data/used-backgrounds-pending/
+/src/data/shown-backgrounds.json
 
 # Copyrighted: kept on this computer only, never published (README:
 # "Telif hakkı nedeniyle depoda olmayan dosyalar").

@@ -20,7 +20,7 @@ import {
   ArrowPathIcon,
 } from "@heroicons/react/24/solid";
 import Spinner from "@/components/ui/Spinner";
-import type { ArabicFontKey } from "@/remotion/types";
+import { BASMALA_VERSE_ID, type ArabicFontKey } from "@/remotion/types";
 import { TEXT_LEAD_FRAMES, chunkOpacity, type TextScheduleEntry } from "@/remotion/textSchedule";
 
 import { useT } from "@/lib/LanguageContext";
@@ -642,7 +642,7 @@ export default function SegmentTimingEditor({
       // underneath instead of stretching to fill the region (which is
       // what made the whole strip look like a solid gray band before).
       const label = document.createElement("div");
-      label.textContent = `${seg.ayah}:${seg.part}`;
+      label.textContent = seg.ayah === BASMALA_VERSE_ID ? "بسملة" : `${seg.ayah}:${seg.part}`;
       label.style.cssText =
         "position:absolute;top:2px;left:2px;font-size:10px;font-weight:700;padding:1px 5px;color:#fff;background:rgba(0,0,0,0.5);border-radius:5px;line-height:1.4;white-space:nowrap;pointer-events:none;";
 
@@ -939,6 +939,46 @@ export default function SegmentTimingEditor({
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arabicFont]);
+
+  // The same for the translation: another one picked while the panel is
+  // open (VideoCreatorForm cuts it to fit the parts) used to leave the
+  // panel showing -- and its Save writing back -- the old one's texts (the
+  // user, 2026-11-16). Each ayah whose parts are still those the
+  // `segments` prop has takes their new texts, also in the undo history; an
+  // ayah split or merged here and not saved yet keeps its own.
+  const translationSignature = React.useMemo(
+    () => initialSegments.map((s) => `${s.id}\u0001${s.translation_text}`).join("\u0002"),
+    [initialSegments]
+  );
+  const lastSyncedTranslationRef = useRef(translationSignature);
+  useEffect(() => {
+    if (lastSyncedTranslationRef.current === translationSignature) return;
+    lastSyncedTranslationRef.current = translationSignature;
+    const fresh = new Map(initialSegments.map((s) => [s.id, s]));
+    const shape = (list: SegmentTimingInput[], ayah: number) =>
+      list
+        .filter((s) => s.ayah === ayah && !s.isBlank)
+        .map((s) => `${s.id}:${s.wordCount}:${s.repeatOfId ?? ""}`)
+        .join(",");
+    const withNewTexts = (list: SegmentTimingInput[]): SegmentTimingInput[] => {
+      const sameParts = new Map<number, boolean>();
+      let changed = false;
+      const next = list.map((seg) => {
+        const f = fresh.get(seg.id);
+        if (!f || seg.isBlank || f.translation_text === seg.translation_text) return seg;
+        if (!sameParts.has(seg.ayah)) sameParts.set(seg.ayah, shape(list, seg.ayah) === shape(initialSegments, seg.ayah));
+        if (!sameParts.get(seg.ayah)) return seg;
+        changed = true;
+        return { ...seg, translation_text: f.translation_text };
+      });
+      return changed ? next : list;
+    };
+    setLocalSegments(withNewTexts);
+    lastCommittedRef.current = { ...lastCommittedRef.current, segments: withNewTexts(lastCommittedRef.current.segments) };
+    undoStackRef.current = undoStackRef.current.map((snap) => ({ ...snap, segments: withNewTexts(snap.segments) }));
+    redoStackRef.current = redoStackRef.current.map((snap) => ({ ...snap, segments: withNewTexts(snap.segments) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [translationSignature]);
 
   const playSegment = useCallback(
     (id: string) => {

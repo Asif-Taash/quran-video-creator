@@ -73,6 +73,11 @@ export type WordTiming = {
   end: number;
 };
 
+// The basmala before ayah 1, when a video starts with it: a verse of its
+// own with this id (see lib/basmala.ts). It has no ayah number -- neither
+// the glyph nor the one before its translation.
+export const BASMALA_VERSE_ID = 0;
+
 export type QuranVerse = {
   id: number;
   text: string;

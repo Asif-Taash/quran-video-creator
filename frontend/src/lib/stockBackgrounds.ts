@@ -9,6 +9,7 @@
 // for 24h), files are downloaded to our own server instead of hot-linked,
 // and the picker credits the provider and author.
 
+import type { RelevanceCheck } from "@/lib/backgroundRelevance";
 export type StockProvider = "pexels" | "pixabay";
 export type StockMediaType = "photo" | "video";
 export type StockOrientation = "portrait" | "landscape" | "square";
@@ -346,41 +347,64 @@ const PIXABAY_MAX_RESULTS = 500;
 // One Pixabay result list: a wording, ranked one way, optionally only its
 // Editor's Choice results (the ones Pixabay's editors awarded -- the best of
 // the pool, a few hundred per topic).
-type PixabayListing = { query: string; order: "popular" | "latest"; editorsChoice: boolean };
+type PixabayListing = { query: string; order: "popular" | "latest"; editorsChoice: boolean; colors?: string };
+
+// Pixabay's color filter (photos only -- its video API has none) makes a
+// different 500-result subset of the same wording, so each wording x color
+// is a listing of its own. A topic the user had browsed a lot ("night sky":
+// 2,095 photos pass the word filter, 1,734 already checked) got 666 photos
+// never shown before from just 4 of its wordings this way (2026-11-14).
+// A color a wording doesn't suit just makes a short listing.
+const PIXABAY_PHOTO_COLORS = ["black", "blue", "turquoise", "lilac", "orange", "gray", "white", "yellow"];
 
 // Pages of a listing it turns out not to have, skipped past within one
 // request before it gives up (see searchPixabay).
 const PIXABAY_MAX_SKIPS = 8;
 
-// Every page of every listing a search walks, in order: page 1 of every
-// listing, then every page 2, ... -- each round shuffled by the seed, with
-// an Editor's Choice page leading every three. Pixabay serves at most 500
-// results per listing, and a search used to walk a single one, so a topic
-// ran dry within a few searches and its good results kept coming back (the
-// user, 2026-11-01); a 16-wording topic now reaches thousands. Related
-// wordings' Editor's Choice pools overlap heavily, hence mixed in rather
-// than first. Every listing is assumed full so the plan never shifts
-// mid-search; pages one doesn't have are skipped when fetched.
-function pixabayPlan(queries: string[], perPage: number, seed: number): { listing: PixabayListing; page: number }[] {
+// Every page of every listing a search walks, in order: one page of every
+// listing per round -- each round shuffled by the seed, with an Editor's
+// Choice page leading every three. Pixabay serves at most 500 results per
+// listing, and a search used to walk a single one, so a topic ran dry
+// within a few searches and its good results kept coming back (the user,
+// 2026-11-01); a 16-wording topic now reaches thousands. Related wordings'
+// Editor's Choice pools overlap heavily, hence mixed in rather than first.
+// Each listing walks its pages in its own seeded random order, not page 1
+// first: every search used to open with the same top results of every
+// listing, so a regular user saw the same photos again and again while
+// most of the pool was never reached (the user, 2026-11-14; see
+// lib/shownBackgrounds.ts). Every listing is assumed full so the plan never
+// shifts mid-search; pages one doesn't have are skipped (see searchPixabay).
+function pixabayPlan(queries: string[], perPage: number, seed: number, type: StockMediaType): { listing: PixabayListing; page: number }[] {
   const pages = Math.max(1, Math.ceil(PIXABAY_MAX_RESULTS / perPage));
   const editors: PixabayListing[] = queries.map((query) => ({ query, order: "popular", editorsChoice: true }));
+  const colors = type === "photo" ? [undefined, ...PIXABAY_PHOTO_COLORS] : [undefined];
   const rest: PixabayListing[] = queries.flatMap((query) =>
-    (["popular", "latest"] as const).map((order) => ({ query, order, editorsChoice: false }))
+    colors.flatMap((color) =>
+      (["popular", "latest"] as const).map((order) => ({ query, order, editorsChoice: false, ...(color ? { colors: color } : {}) }))
+    )
   );
+  const pageOrder = new Map<PixabayListing, number[]>();
+  [...editors, ...rest].forEach((listing, i) => {
+    pageOrder.set(listing, seededShuffle(Array.from({ length: pages }, (_, p) => p + 1), (seed ^ 0x2545f491) + i * 7919));
+  });
   const plan: { listing: PixabayListing; page: number }[] = [];
-  for (let page = 1; page <= pages; page++) {
-    const e = seededShuffle(editors, seed + page);
-    const r = seededShuffle(rest, (seed ^ 0x5bd1e995) + page);
+  for (let round = 0; round < pages; round++) {
+    const e = seededShuffle(editors, seed + round + 1);
+    const r = seededShuffle(rest, (seed ^ 0x5bd1e995) + round + 1);
     while (e.length > 0 || r.length > 0) {
       const next = [e.shift(), r.shift(), r.shift()].filter((l): l is PixabayListing => !!l);
-      plan.push(...next.map((listing) => ({ listing, page })));
+      plan.push(...next.map((listing) => ({ listing, page: pageOrder.get(listing)![round] })));
     }
   }
   return plan;
 }
 
+function pixabayCountKey(listing: PixabayListing, type: StockMediaType, orientation: StockOrientation, perPage: number, language: StockSearchLanguage): string {
+  return `pixabay|${type}|${orientation}|${language}|${perPage}|${listing.order}|${listing.editorsChoice ? "ec" : "all"}|${listing.colors ?? ""}|${listing.query}`;
+}
+
 // One page of a listing, or null when the listing doesn't have it.
-async function pixabayListingPage(listing: PixabayListing, type: StockMediaType, orientation: StockOrientation, perPage: number, language: StockSearchLanguage, page: number): Promise<StockItem[] | null> {
+async function pixabayListingPage(listing: PixabayListing, type: StockMediaType, orientation: StockOrientation, perPage: number, language: StockSearchLanguage, page: number, relevant?: RelevanceCheck): Promise<StockItem[] | null> {
   const base = type === "photo" ? "https://pixabay.com/api/" : "https://pixabay.com/api/videos/";
   const paramsFor = (p: number) => {
     const params = new URLSearchParams({
@@ -395,13 +419,14 @@ async function pixabayListingPage(listing: PixabayListing, type: StockMediaType,
       per_page: String(Math.max(3, perPage)),
     });
     if (listing.editorsChoice) params.set("editors_choice", "true");
+    if (listing.colors) params.set("colors", listing.colors);
     if (type === "photo") {
       params.set("image_type", "photo");
       params.set("orientation", pixabayOrientation(orientation));
     }
     return params;
   };
-  const countKey = `pixabay|${type}|${orientation}|${language}|${perPage}|${listing.order}|${listing.editorsChoice ? "ec" : "all"}|${listing.query}`;
+  const countKey = pixabayCountKey(listing, type, orientation, perPage, language);
   if (!pageCountCache.has(countKey)) {
     const first = await cachedJson(`${base}?${paramsFor(1)}`, {});
     const total = Math.min(PIXABAY_MAX_RESULTS, first.totalHits ?? 0);
@@ -417,20 +442,27 @@ async function pixabayListingPage(listing: PixabayListing, type: StockMediaType,
     throw err;
   }
   return type === "photo"
-    ? (data.hits ?? []).filter((h: any) => isAllowed(h.tags ?? "", language)).map(pixabayPhotoToItem)
+    ? (data.hits ?? []).filter((h: any) => isAllowed(h.tags ?? "", language) && (!relevant || relevant(h.tags ?? ""))).map(pixabayPhotoToItem)
     : (data.hits ?? [])
-        .filter((h: any) => isAllowed(h.tags ?? "", language))
+        .filter((h: any) => isAllowed(h.tags ?? "", language) && (!relevant || relevant(h.tags ?? "")))
         .map((h: any) => pixabayVideoToItem(h, language))
         .filter((item: StockItem) => !!item.thumbUrl && !!item.previewVideoUrl);
 }
 
-async function searchPixabay(queries: string[], type: StockMediaType, orientation: StockOrientation, logicalPage: number, perPage: number, language: StockSearchLanguage, seed: number): Promise<ProviderPage> {
-  const plan = pixabayPlan(queries, perPage, seed);
+async function searchPixabay(queries: string[], type: StockMediaType, orientation: StockOrientation, logicalPage: number, perPage: number, language: StockSearchLanguage, seed: number, relevant?: RelevanceCheck): Promise<ProviderPage> {
+  const plan = pixabayPlan(queries, perPage, seed, type);
   let n = logicalPage;
-  for (; n <= plan.length && n < logicalPage + PIXABAY_MAX_SKIPS; n++) {
+  // A page a listing is already known not to have costs nothing to pass;
+  // only fetches count against PIXABAY_MAX_SKIPS. With pages walked in a
+  // random order, most of a short listing's entries are such pages.
+  for (let fetched = 0; n <= plan.length && fetched < PIXABAY_MAX_SKIPS; n++) {
     const { listing, page } = plan[n - 1];
-    const items = await pixabayListingPage(listing, type, orientation, perPage, language, page);
-    if (items) return { items, hasMore: n < plan.length, lastPage: n };
+    const known = pageCountCache.get(pixabayCountKey(listing, type, orientation, perPage, language));
+    if (known !== undefined && page > known) continue;
+    fetched++;
+    const items = await pixabayListingPage(listing, type, orientation, perPage, language, page, relevant);
+    // A page left with nothing on the subject is passed like a missing one.
+    if (items && items.length > 0) return { items, hasMore: n < plan.length, lastPage: n };
   }
   const lastPage = Math.min(n, plan.length);
   return { items: [], hasMore: lastPage < plan.length, lastPage };
@@ -451,7 +483,10 @@ export async function searchStock(
   orientation: StockOrientation,
   page: number,
   language: StockSearchLanguage = "en",
-  seed = 1
+  seed = 1,
+  // Results whose tags aren't about the search are dropped (see
+  // lib/backgroundRelevance.ts). Pixabay only: Pexels has no tags.
+  relevant?: RelevanceCheck
 ): Promise<{ items: StockItem[]; errors: string[]; hasMore: boolean; lastPage: number }> {
   const providers = configuredProviders();
   const perProvider = providers.length > 1 ? 18 : 36;
@@ -460,7 +495,7 @@ export async function searchStock(
     providers.map((p) =>
       p === "pexels"
         ? searchPexels(pexelsQuery, type, orientation, page, perProvider, language, seed)
-        : searchPixabay(queries, type, orientation, page, perProvider, language, seed)
+        : searchPixabay(queries, type, orientation, page, perProvider, language, seed, relevant)
     )
   );
   const lists: StockItem[][] = [];

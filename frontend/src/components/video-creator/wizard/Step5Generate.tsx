@@ -286,6 +286,7 @@ export default function Step5Generate({
   backgroundKind,
 }: Step5Props) {
   const tx = useT();
+  const customHighlightColor = !WORD_HIGHLIGHT_COLORS.some((c) => c.toLowerCase() === wordHighlightColor.toLowerCase());
   // Brief "copied" checkmark swap on the title's copy button -- reverts on
   // its own after a couple seconds, no need to track anything past that.
   const [titleCopied, setTitleCopied] = useState(false);
@@ -556,6 +557,28 @@ export default function Step5Generate({
                             style={{ backgroundColor: color }}
                           />
                         ))}
+                        {/* Any other color (the user, 2026-11-14): the
+                            rainbow swatch opens the system color picker and
+                            shows the chosen color once it isn't a preset. */}
+                        <label
+                          title={tx("لون آخر", "Başka bir renk", "Another color")}
+                          className={`relative h-6 w-6 cursor-pointer rounded-full ring-offset-2 ring-offset-surface transition-transform hover:scale-110 ${
+                            customHighlightColor ? "ring-2 ring-foreground/70" : ""
+                          }`}
+                          style={{
+                            background: customHighlightColor
+                              ? wordHighlightColor
+                              : "conic-gradient(#f87171, #facc15, #4ade80, #22d3ee, #818cf8, #e879f9, #f87171)",
+                          }}
+                        >
+                          <input
+                            type="color"
+                            value={wordHighlightColor}
+                            onChange={(e) => onWordHighlightColorChange(e.target.value)}
+                            aria-label={tx("لون آخر", "Başka bir renk", "Another color")}
+                            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                          />
+                        </label>
                       </div>
                     )}
                   </div>

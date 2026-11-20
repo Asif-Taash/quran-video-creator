@@ -37,6 +37,8 @@ import Step3Audio from "./wizard/Step3Audio";
 import Step5Generate from "./wizard/Step5Generate";
 import ProjectsDialog from "./ProjectsDialog";
 import AudioChangeDialog from "./AudioChangeDialog";
+import { keepPieces, ownParts, restorePieces, withPieces } from "@/lib/segmentTranslations";
+import { BASMALA_GLYPHS, BASMALA_VERSE_ID, basmalaMeaning, canStartWithBasmala } from "@/lib/basmala";
 
 // localStorage key holding the open project's draft id -- this browser's
 // pointer into the project it resumes (see autosaveDraft, handleStartOver and
@@ -190,6 +192,11 @@ function applyTimingResults(prev: any[], results: SegmentTimingResult[], surahId
     // as a segment resized for the very first time always has.
     const oldMappings = allOldMappings?.filter((m) => !isHiddenPart(m));
     const canPreserveScale = oldMappings && oldMappings.length === ayahResults.length;
+    // Every other translation's pieces (see lib/segmentTranslations.ts)
+    // still fit while the parts hold the same words.
+    const oldOwn = (oldMappings ?? []).filter((m) => typeof m.repeat_of_part !== "number");
+    const newOwn = ayahResults.filter((r) => !(r.repeatOfId && idToPart.has(r.repeatOfId)));
+    const samePartWords = oldOwn.length === newOwn.length && oldOwn.every((m, i) => m.word_count === Math.max(1, newOwn[i].wordCount));
     next.push({
       surah: surahId,
       ayah: ayahId,
@@ -197,6 +204,8 @@ function applyTimingResults(prev: any[], results: SegmentTimingResult[], surahId
         ...hiddenBefore.map((m, i) => ({ ...m, part: i + 1 })),
         ...ayahResults.map((result, idx) => {
         const oldMapping = canPreserveScale ? oldMappings![idx] : undefined;
+        const ownIdx = newOwn.indexOf(result);
+        const keptPieces = samePartWords && ownIdx !== -1 ? oldOwn[ownIdx].translation_pieces : undefined;
         return {
           part: offset + idx + 1,
           // Real word count carried through as its own field (see
@@ -225,6 +234,7 @@ function applyTimingResults(prev: any[], results: SegmentTimingResult[], surahId
           ...(oldMapping?.arabicWidthScale !== undefined ? { arabicWidthScale: oldMapping.arabicWidthScale } : {}),
           ...(oldMapping?.translationTextScale !== undefined ? { translationTextScale: oldMapping.translationTextScale } : {}),
           ...(oldMapping?.translationWidthScale !== undefined ? { translationWidthScale: oldMapping.translationWidthScale } : {}),
+          ...(keptPieces ? { translation_pieces: keptPieces } : {}),
         };
         }),
         ...hiddenAfter.map((m, i) => ({ ...m, part: offset + ayahResults.length + i + 1 })),
@@ -321,6 +331,11 @@ export default function VideoCreatorForm() {
   const [backgroundVignette, setBackgroundVignette] = useState(0);
   // Colors the Arabic word being recited -- see QuranVideoProps.wordHighlight.
   const [wordHighlight, setWordHighlight] = useState(false);
+  // Start the video with the basmala before ayah 1 (lib/basmala.ts). Only
+  // in effect where the selection starts at ayah 1 of a surah that has one;
+  // the choice itself stays for the next such selection.
+  const [includeBasmala, setIncludeBasmala] = useState(false);
+  const startsWithBasmala = includeBasmala && canStartWithBasmala(selectedSurah?.id, startVerse);
   const [wordHighlightColor, setWordHighlightColor] = useState<string>(DEFAULT_WORD_HIGHLIGHT_COLOR);
   // Font size and text-box width (1 = default, narrower widths force more
   // line breaks) -- fully independent between the Arabic verse and the
@@ -404,6 +419,10 @@ export default function VideoCreatorForm() {
 
   const [segmentationProgress, setSegmentationProgress] = useState<string | null>(null);
   const [pendingSegmentationData, setPendingSegmentationData] = useState<any[]>([]);
+  // The latest of it, for the translation re-sync (it waits for the server
+  // between reading the parts and writing their new texts).
+  const pendingSegmentationRef = useRef<any[]>(pendingSegmentationData);
+  pendingSegmentationRef.current = pendingSegmentationData;
   // Per-ayah count of QCF glyph tokens each real word occupies in verse.text —
   // lets a mapping's word_count (real words) be converted into the glyph
   // token range needed to slice the Arabic preview text below.
@@ -413,12 +432,9 @@ export default function VideoCreatorForm() {
   // split — surfaced in the UI so the user knows exactly which segments to
   // double-check/adjust manually instead of trusting them blindly.
   const [lowConfidenceAyahs, setLowConfidenceAyahs] = useState<Set<number>>(new Set());
-  // Set when the translation selector changes while an ayah that's already
-  // been split into multiple timed parts exists -- only that ayah's FIRST
-  // part gets re-synced to the newly selected translation automatically
-  // (see the fetchSurahTranslations().then() below), since the other parts
-  // hold text the user manually distributed across them and re-deriving
-  // that split from the new translation isn't something we can do safely.
+  // Set when another translation was cut to fit an ayah's parts and a cut
+  // came out uncertain (or couldn't be made) -- see the translation re-sync
+  // (fetchSurahTranslations().then() below).
   const [translationSyncNotice, setTranslationSyncNotice] = useState(false);
   // Set once the user has dealt with (or dismissed) a prepared clip's
   // needsReview warning -- see the banner above Step5Generate.
@@ -570,7 +586,7 @@ export default function VideoCreatorForm() {
   // The selected ayahs as applyReadings needs them: translation, and the
   // prepared clip's tokens.
   const readingAyahs = (json: any) =>
-    selectedVersesContent.map((verse) => ({
+    shownVersesContent.map((verse) => ({
       id: verse.id,
       translation: verse.translation || "",
       tokens: ((json?.verses?.[String(verse.id)]?.words ?? []) as { w?: string }[]).map((w) => w.w ?? ""),
@@ -633,6 +649,7 @@ export default function VideoCreatorForm() {
       formData.append("surahId", selectedSurah.id.toString());
       formData.append("startVerse", startVerse.toString());
       formData.append("endVerse", endVerse.toString());
+      if (startsWithBasmala) formData.append("basmala", "true");
       formData.append("reciterId", selectedReciter);
       if (audioSourceMode === "custom" && customAudio) {
         formData.append("customAudio", customAudio);
@@ -767,6 +784,7 @@ export default function VideoCreatorForm() {
     formData.append("surahId", String(selectedSurah.id));
     formData.append("startVerse", String(startVerse));
     formData.append("endVerse", String(endVerse));
+    if (startsWithBasmala) formData.append("basmala", "true");
 
     formData.append("audioSourceMode", audioSourceMode);
     if (audioSourceMode === "custom" && customAudio && includeCustomAudio) {
@@ -1402,6 +1420,24 @@ export default function VideoCreatorForm() {
         })
       : [];
 
+  // The ayahs as shown and timed: the basmala first when the video starts
+  // with it (lib/basmala.ts) -- Al-Fatiha's own basmala glyphs, and its
+  // translation. Splitting and the word maps stay with the real ayahs
+  // (selectedVersesContent).
+  const shownVersesContent: typeof selectedVersesContent = startsWithBasmala
+    ? [
+        {
+          id: BASMALA_VERSE_ID,
+          text: BASMALA_GLYPHS.text,
+          page: BASMALA_GLYPHS.page,
+          textV1: BASMALA_GLYPHS.textV1,
+          pageV1: BASMALA_GLYPHS.pageV1,
+          translation: basmalaMeaning(getTranslation(1, 1, ""), selectedTranslation.language),
+        },
+        ...selectedVersesContent,
+      ]
+    : selectedVersesContent;
+
   // Mirrors QuranVideo.tsx's own resolvedTranslationFontFamily -- so
   // SegmentTimingEditor's Arabic-script-aware text (see arabicFont passed
   // to it below) shows the translation in the SAME font the actual
@@ -1490,6 +1526,7 @@ export default function VideoCreatorForm() {
   // Word counts get the same correction segmentation/apply/route.ts makes
   // for the export (fitWordCounts). Falls back to the server's own timing
   // whenever that can't be reproduced here.
+  const noTranslation = selectedTranslation.id === "none";
   const retimedPreviewProps = useMemo((): QuranVideoProps | null => {
     if (!previewProps || !previewTimingBasis || !selectedSurah) return previewProps;
     const { json, trimStartMs } = previewTimingBasis;
@@ -1510,10 +1547,14 @@ export default function VideoCreatorForm() {
           (s) => s.surah === selectedSurah.id && s.ayah === v.id
         )?.mappings;
         const realWordCount = puaTokenCountsByAyah[v.id]?.length ?? (json?.engine ? words.length : undefined);
+        // No translation: none in any part (a project saved before the fix
+        // in lib/segmentTranslations.ts may still hold the parts' texts).
+        const shownMappings =
+          mappings && noTranslation ? mappings.map((m) => ({ ...m, translation_text: "" })) : mappings;
         return {
           id: v.id,
           words: shiftWordsToTrim(words, trimStartMs),
-          mappings: mappings && realWordCount ? fitWordCounts(mappings, realWordCount) : mappings,
+          mappings: shownMappings && realWordCount ? fitWordCounts(shownMappings, realWordCount) : shownMappings,
           repeats: wordRepeats && shiftWordsToTrim(wordRepeats, trimStartMs),
         };
       }),
@@ -1535,7 +1576,7 @@ export default function VideoCreatorForm() {
         };
       }),
     };
-  }, [previewProps, previewTimingBasis, selectedSurah, effectiveSegmentation, puaTokenCountsByAyah]);
+  }, [previewProps, previewTimingBasis, selectedSurah, effectiveSegmentation, puaTokenCountsByAyah, noTranslation]);
 
   // The background look, word highlighting, fonts and text sizes always come
   // from the current state rather than whatever the last server preview
@@ -1619,7 +1660,7 @@ export default function VideoCreatorForm() {
   // segmentation, which autosave stored over their draft (2026-10-31).
   const audioParamsRef = useRef<unknown[] | null>(null);
   useEffect(() => {
-    const params = [selectedSurah?.id ?? null, startVerse, endVerse, selectedReciter, customAudio, audioSourceMode];
+    const params = [selectedSurah?.id ?? null, startVerse, endVerse, selectedReciter, customAudio, audioSourceMode, startsWithBasmala];
     const previous = audioParamsRef.current;
     audioParamsRef.current = params;
     if (isHydratingRef.current) return;
@@ -1645,7 +1686,7 @@ export default function VideoCreatorForm() {
     setPuaTokenCountsByAyah({});
     setLowConfidenceAyahs(new Set());
     fetch("/api/segmentation/clear", { method: "POST" }).catch(() => {});
-  }, [selectedSurah, startVerse, endVerse, selectedReciter, customAudio, audioSourceMode, cancelAudioPrep]);
+  }, [selectedSurah, startVerse, endVerse, selectedReciter, customAudio, audioSourceMode, startsWithBasmala, cancelAudioPrep]);
 
   // The video is created automatically: once the surah, the ayah range and
   // the audio source (a picked reciter, or an uploaded file) are all set,
@@ -1672,7 +1713,7 @@ export default function VideoCreatorForm() {
     }, 700);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSurah, startVerse, endVerse, hasAudioSource, selectedReciter, customAudio, audioSourceMode, preparedAudioUrl, isPreparingAudio, hydrationVersion]);
+  }, [selectedSurah, startVerse, endVerse, hasAudioSource, selectedReciter, customAudio, audioSourceMode, startsWithBasmala, preparedAudioUrl, isPreparingAudio, hydrationVersion]);
 
   // Persists the current builder state server-side (JSON + any uploaded
   // files) under a generated id, keyed on THIS browser via localStorage --
@@ -1707,6 +1748,7 @@ export default function VideoCreatorForm() {
       formData.append("wordHighlight", String(wordHighlight));
       formData.append("wordHighlightColor", wordHighlightColor);
       formData.append("showReciterName", String(showReciterName));
+      formData.append("includeBasmala", String(includeBasmala));
       formData.append("aspectRatio", aspectRatio);
       formData.append("quality", quality);
       // Only decides the title of a video without a translation (see
@@ -1865,6 +1907,7 @@ export default function VideoCreatorForm() {
     wordHighlight,
     wordHighlightColor,
     showReciterName,
+    includeBasmala,
     reciterNameEdit,
     aspectRatio,
     quality,
@@ -2069,6 +2112,8 @@ export default function VideoCreatorForm() {
         if (typeof data.wordHighlight === "boolean") setWordHighlight(data.wordHighlight);
         if (typeof data.wordHighlightColor === "string") setWordHighlightColor(data.wordHighlightColor);
         if (typeof data.showReciterName === "boolean") setShowReciterName(data.showReciterName);
+        // A project saved before it existed doesn't start with the basmala.
+        setIncludeBasmala(data.includeBasmala === true);
         setReciterNameEdit(typeof data.reciterNameEdit === "string" ? data.reciterNameEdit : null);
         // No File object to restore (never was one, just its already-
         // uploaded URL) -- that's fine, getAssetUrl in QuranVideo.tsx
@@ -2093,6 +2138,7 @@ export default function VideoCreatorForm() {
           data.selectedReciter || selectedReciter,
           restoredCustomAudio ?? customAudio,
           data.audioSourceMode || audioSourceMode,
+          data.includeBasmala === true && canStartWithBasmala(surah?.id, data.startVerse),
         ];
         // Same race for the translation re-sync effect: it would take the
         // restored translation for a change and write the whole ayah's
@@ -2266,51 +2312,106 @@ export default function VideoCreatorForm() {
     if (!selectedSurah) return;
     const surahId = selectedSurah.id;
     const translationId = selectedTranslation.id;
-    fetchSurahTranslations(surahId).then(() => {
+    const translationLanguage = selectedTranslation.language;
+    // Al-Fatiha's too: the basmala's translation is its ayah 1 (lib/basmala.ts).
+    Promise.allSettled([fetchSurahTranslations(surahId), fetchSurahTranslations(1)]).then(async () => {
       // Only re-sync already-timed ayahs' translation_text when the
       // TRANSLATION itself actually changed (not merely because this effect
       // also re-fires on a surah change) -- and only once the fetch that
       // populates getTranslation()'s cache has actually resolved, so we
       // never bake in a stale fallback string.
       if (isHydratingRef.current) return;
-      if (lastSyncedTranslationIdRef.current === translationId) return;
+      const previousTranslationId = lastSyncedTranslationIdRef.current;
+      if (previousTranslationId === translationId) return;
       lastSyncedTranslationIdRef.current = translationId;
 
+      const noneNow = translationId === "none";
+      // The basmala's is Al-Fatiha's ayah 1 (lib/basmala.ts).
+      const textOf = (ayah: number) =>
+        ayah === BASMALA_VERSE_ID ? basmalaMeaning(getTranslation(1, 1, ""), translationLanguage) : getTranslation(surahId, ayah, "");
+      // Split ayahs this translation has no kept pieces for: its text is
+      // cut to fit their parts on the server (lib/segmentTranslations.ts).
+      const toCut = noneNow
+        ? []
+        : pendingSegmentationRef.current
+            .filter(
+              (entry) =>
+                entry.surah === surahId &&
+                entry.ayah !== BASMALA_VERSE_ID &&
+                ownParts(entry).length > 1 &&
+                textOf(entry.ayah) &&
+                !restorePieces(entry, translationId, textOf(entry.ayah))
+            )
+            .map((entry) => ({ ayah: entry.ayah as number, wordCounts: ownParts(entry).map((m) => m.word_count as number) }));
+
+      // Right away: no translation; kept pieces; ayahs of one part.
       setPendingSegmentationData((prev) => {
-        let touchedMultiPart = false;
         let changed = false;
         const next = prev.map((entry) => {
           if (entry.surah !== surahId) return entry;
-          // Only part of this ayah is recited (isHiddenPart): the whole
-          // ayah's translation doesn't fit its parts -- the notice asks for
-          // a manual fix instead.
-          if (entry.mappings.some(isHiddenPart)) {
-            touchedMultiPart = true;
-            return entry;
+          const kept = keepPieces(entry, previousTranslationId);
+          const own = ownParts(kept);
+          let updated = kept;
+          if (noneNow) {
+            updated = withPieces(kept, own.map(() => ""));
+          } else {
+            const text = textOf(kept.ayah);
+            updated = restorePieces(kept, translationId, text) ?? (own.length <= 1 ? withPieces(kept, [text]) : kept);
           }
-          const liveTranslation = getTranslation(surahId, entry.ayah, "");
-          if (entry.mappings[0]?.translation_text === liveTranslation) return entry;
-          changed = true;
-          // A box width the user set for the old text doesn't fit the new
-          // one -- kept, a box narrowed around a short translation squeezed
-          // a longer one into a word or two per line.
-          const withNewText = ({ translationWidthScale: _oldTextWidth, ...m }: any) => ({ ...m, translation_text: liveTranslation });
-          if (entry.mappings.length <= 1) {
-            return { ...entry, mappings: entry.mappings.map(withNewText) };
-          }
-          // Split ayah: only the first part is safe to auto-update -- the
-          // rest hold text the user manually distributed across them.
-          touchedMultiPart = true;
-          return {
-            ...entry,
-            mappings: entry.mappings.map((m: any, idx: number) => (idx === 0 ? withNewText(m) : m)),
-          };
+          if (updated !== entry) changed = true;
+          return updated;
         });
-        if (touchedMultiPart) setTranslationSyncNotice(true);
         // The same array when nothing changed -- a new one (even an empty
         // `[]`) would re-run everything keyed on it.
         return changed ? next : prev;
       });
+      if (toCut.length === 0) return;
+
+      const cuts = await Promise.all(
+        toCut.map(async ({ ayah, wordCounts }) => {
+          try {
+            const res = await fetch("/api/segmentation/split-translation", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ surah: surahId, ayah, translation: textOf(ayah), wordCounts, language: translationLanguage ?? "tr" }),
+            });
+            const data = res.ok ? await res.json() : null;
+            if (Array.isArray(data?.pieces) && data.pieces.length === wordCounts.length) {
+              return { ayah, wordCounts, pieces: data.pieces as string[], uncertain: data.lowConfidence === true };
+            }
+          } catch (err) {
+            console.warn(`[UI] Couldn't cut the translation of ayah ${ayah} for its parts:`, err);
+          }
+          // Not cut: the whole text on the first part, for the user to share out.
+          return { ayah, wordCounts, pieces: wordCounts.map((_, i) => (i === 0 ? textOf(ayah) : "")), uncertain: true };
+        })
+      );
+      // Another translation picked meanwhile: that one's re-sync applies.
+      if (lastSyncedTranslationIdRef.current !== translationId) return;
+      setPendingSegmentationData((prev) => {
+        let changed = false;
+        const next = prev.map((entry) => {
+          if (entry.surah !== surahId) return entry;
+          const cut = cuts.find((c) => c.ayah === entry.ayah);
+          const counts = ownParts(entry).map((m) => m.word_count);
+          // Parts changed while it was being cut: left as they are.
+          if (!cut || counts.length !== cut.wordCounts.length || counts.some((c, i) => c !== cut.wordCounts[i])) return entry;
+          const updated = withPieces(entry, cut.pieces);
+          if (updated !== entry) changed = true;
+          return updated;
+        });
+        return changed ? next : prev;
+      });
+      // Each cut ayah is marked for review in the ayah list exactly when its cut is uncertain.
+      setLowConfidenceAyahs((prev) => {
+        const next = new Set(prev);
+        for (const cut of cuts) {
+          if (cut.uncertain) next.add(cut.ayah);
+          else next.delete(cut.ayah);
+        }
+        return next;
+      });
+      if (cuts.some((c) => c.uncertain)) setTranslationSyncNotice(true);
     });
   }, [selectedSurah?.id, selectedTranslation.id, fetchSurahTranslations, getTranslation]);
 
@@ -2661,7 +2762,7 @@ export default function VideoCreatorForm() {
     const puaMap = wordMapOverride ?? puaTokenCountsByAyah;
     // Same word timing the video uses, a repeat inside a part included.
     const heldWords = holdWordsThroughRepeats(
-      selectedVersesContent.map((verse) => ({ id: verse.id, words: preparedJsonData.verses[String(verse.id)]?.words ?? [] })),
+      shownVersesContent.map((verse) => ({ id: verse.id, words: preparedJsonData.verses[String(verse.id)]?.words ?? [] })),
       preparedJsonData.readings
     );
     // Same isQcf1 resolution as sliceArabicForWordRange above -- every
@@ -2679,7 +2780,7 @@ export default function VideoCreatorForm() {
     let lastSegHasManualTiming = false;
     const manualIds = new Set<string>();
 
-    for (const verse of selectedVersesContent) {
+    for (const verse of shownVersesContent) {
       const ayahId = verse.id;
       const segmentation = pendingSegmentationData.find(
         (s) => s.surah === selectedSurah.id && s.ayah === ayahId
@@ -2882,7 +2983,7 @@ export default function VideoCreatorForm() {
     if (!preparedJsonData?.verses || !preparedJsonData.engine) return undefined;
     const offset = trimmedPreviewAudioUrl ? trimmedPreviewOffset : 0;
     const data: Record<number, AyahWordTiming> = {};
-    for (const verse of selectedVersesContent) {
+    for (const verse of shownVersesContent) {
       const words: { start: number; end: number }[] | undefined = preparedJsonData.verses[String(verse.id)]?.words;
       const glyphCounts = arabicFont === "qcf1" ? undefined : puaTokenCountsByAyah[verse.id];
       if (!words?.length || (glyphCounts && glyphCounts.length !== words.length)) continue;
@@ -3211,7 +3312,10 @@ export default function VideoCreatorForm() {
                     handleAddNextVerse={handleAddNextVerse}
                     handleRemoveLastVerse={handleRemoveLastVerse}
                     versesArray={versesArray}
-                    selectedVersesContent={selectedVersesContent}
+                    selectedVersesContent={shownVersesContent}
+                    canStartWithBasmala={canStartWithBasmala(selectedSurah?.id, startVerse)}
+                    startsWithBasmala={startsWithBasmala}
+                    onToggleBasmala={() => guardAudioChange(() => setIncludeBasmala(!startsWithBasmala))}
                     lowConfidenceAyahs={lowConfidenceAyahs}
                     arabicFont={arabicFont}
                     onArabicFontChange={setArabicFont}
@@ -3276,7 +3380,7 @@ export default function VideoCreatorForm() {
                   dir={isArabic ? "rtl" : "ltr"}
                 >
                   <p className="text-xs text-accent-amber">
-                    {tx("تم تغيير الترجمة: تحدّث القسم الأول تلقائيًا لكل آية مقسَّمة إلى عدة أجزاء، لكن باقي الأجزاء لا تزال تحمل نص الترجمة القديم -- افتح لوحة التوقيت وأعد توزيع النص عليها يدويًا.", "Çeviri değişti: birden çok bölüme ayrılmış her ayetin yalnızca ilk bölümü otomatik güncellendi, diğer bölümler hâlâ eski çeviri metnini taşıyor -- Zamanlama panelini açıp metni elle yeniden dağıtın.", "The translation changed: only the first segment of each ayah split into several segments was updated automatically; the other segments still carry the old translation text -- open the Timing panel and redistribute the text manually.")}
+                    {tx("تغيّرت الترجمة، فوُزِّعت الترجمة الجديدة تلقائيًا على أجزاء كل آية مقسَّمة. الآيات المعلَّمة بـ«يحتاج مراجعة» في قائمة الآيات قد يكون موضع القطع فيها غير دقيق، فراجعها في لوحة التوقيت.", "Çeviri değişti; yeni çeviri, bölümlenmiş her ayetin bölümlerine otomatik dağıtıldı. Ayet listesinde «Kontrol gerekli» işaretli ayetlerde kesme yeri tam doğru olmayabilir; Zamanlama panelinden kontrol edin.", "The translation changed; the new one was spread over each split ayah's segments automatically. Where the ayah list marks an ayah «Needs review», the cut may be off: check it in the Timing panel.")}
                   </p>
                   <button
                     type="button"
@@ -3411,8 +3515,15 @@ export default function VideoCreatorForm() {
                 // even though the user never asked to split anything's
                 // timing -- and clicking it would wipe every ayah's
                 // segmentation, not just undo the resize.
+                // Nor does the reciter going back: a repeat (repeat_of_part)
+                // is a second showing of a part, not a part -- counted as
+                // one, an ayah he went back in kept this on "Bölümlemeyi
+                // kaldır", whose click changed nothing, and the ayahs could
+                // never be split (the user, 2026-11-16).
                 const isSegmented = pendingSegmentationData.some(
-                  (entry) => Array.isArray(entry.mappings) && entry.mappings.filter((m: any) => !isHiddenPart(m)).length > 1
+                  (entry) =>
+                    Array.isArray(entry.mappings) &&
+                    entry.mappings.filter((m: any) => !isHiddenPart(m) && typeof m.repeat_of_part !== "number").length > 1
                 );
                 return (
                   // Cancels this card's own p-6/md:p-8 padding on phone

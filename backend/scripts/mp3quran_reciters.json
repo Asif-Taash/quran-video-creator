@@ -1,0 +1,922 @@
+{
+ "mq_ahmad_hudhaifi": {
+  "url": "https://cdn.mp3quran.net/audio/ahmad-hudhaifi/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-32,34-36,38-39,41-45,47-114"
+ },
+ "mq_ahmad_hawashi": {
+  "url": "https://cdn.mp3quran.net/audio/ahmad-hawashi/r1/{surah:03d}.mp3",
+  "timing": 6,
+  "surahs": "1-114"
+ },
+ "mq_ahmad_suwailem": {
+  "url": "https://cdn.mp3quran.net/audio/ahmad-suwailem/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_ahmad_tarabulsi_r2": {
+  "url": "https://cdn.mp3quran.net/audio/ahmad-tarabulsi/r2/{surah:03d}.mp3",
+  "timing": 201,
+  "surahs": "1-114"
+ },
+ "mq_ahmad_shaheen": {
+  "url": "https://cdn.mp3quran.net/audio/ahmad-shaheen/r1/{surah:03d}.mp3",
+  "timing": 256,
+  "surahs": "1-114"
+ },
+ "mq_ahmad_deeban": {
+  "url": "https://cdn.mp3quran.net/audio/ahmad-deeban/r1/{surah:03d}.mp3",
+  "timing": 265,
+  "surahs": "1-114"
+ },
+ "mq_ahmad_saud": {
+  "url": "https://cdn.mp3quran.net/audio/ahmad-saud/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "85-114"
+ },
+ "mq_ahmad_saber": {
+  "url": "https://cdn.mp3quran.net/audio/ahmad-saber/r1/{surah:03d}.mp3",
+  "timing": 8,
+  "surahs": "1-114"
+ },
+ "mq_ahmad_humaid": {
+  "url": "https://cdn.mp3quran.net/audio/ahmad-humaid/r1/{surah:03d}.mp3",
+  "timing": 137,
+  "surahs": "1-8,10-13,15,18-22,25-32,34-114"
+ },
+ "mq_ahmad_amer": {
+  "url": "https://cdn.mp3quran.net/audio/ahmad-amer/r1/{surah:03d}.mp3",
+  "timing": 203,
+  "surahs": "1-114"
+ },
+ "mq_ahmad_masarawi": {
+  "url": "https://cdn.mp3quran.net/audio/ahmad-masarawi/r1/{surah:03d}.mp3",
+  "timing": 289,
+  "surahs": "1-114"
+ },
+ "mq_ahmad_naina": {
+  "url": "https://cdn.mp3quran.net/audio/ahmad-naina/r1/{surah:03d}.mp3",
+  "timing": 9,
+  "surahs": "1-114"
+ },
+ "mq_akram_alaqmi": {
+  "url": "https://cdn.mp3quran.net/audio/akram-alaqmi/r1/{surah:03d}.mp3",
+  "timing": 10,
+  "surahs": "1-114"
+ },
+ "mq_anas_emadi": {
+  "url": "https://cdn.mp3quran.net/audio/anas-emadi/r1/{surah:03d}.mp3",
+  "timing": 314,
+  "surahs": "1-114"
+ },
+ "mq_ibrahim_akhdar": {
+  "url": "https://cdn.mp3quran.net/audio/ibrahim-akhdar/r1/{surah:03d}.mp3",
+  "timing": 1,
+  "surahs": "1-114"
+ },
+ "mq_ibrahim_jibreen": {
+  "url": "https://cdn.mp3quran.net/audio/ibrahim-jibreen/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-4,6-8,10,12-27,30-41,44-114"
+ },
+ "mq_ibrahim_jormy": {
+  "url": "https://cdn.mp3quran.net/audio/ibrahim-jormy/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_ibrahim_dosari_r2": {
+  "url": "https://cdn.mp3quran.net/audio/ibrahim-dosari/r2/{surah:03d}.mp3",
+  "timing": 232,
+  "surahs": "1-114"
+ },
+ "mq_ibrahim_saadan": {
+  "url": "https://cdn.mp3quran.net/audio/ibrahim-saadan/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1,4-9,11-12,15-16,19-20,78-114"
+ },
+ "mq_ibrahim_shahri": {
+  "url": "https://cdn.mp3quran.net/audio/ibrahim-shahri/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-14,16-114"
+ },
+ "mq_ibrahim_asiri": {
+  "url": "https://cdn.mp3quran.net/audio/ibrahim-asiri/r1/{surah:03d}.mp3",
+  "timing": 3,
+  "surahs": "1-114"
+ },
+ "mq_islam_sobhi": {
+  "url": "https://cdn.mp3quran.net/audio/islam-sobhi/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-36,38,41-44,46-64,66-114"
+ },
+ "mq_zain_ahmad": {
+  "url": "https://cdn.mp3quran.net/audio/zain-ahmad/r1/{surah:03d}.mp3",
+  "timing": 13,
+  "surahs": "1-114"
+ },
+ "mq_ashri_omran": {
+  "url": "https://cdn.mp3quran.net/audio/ashri-omran/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-64,66-114"
+ },
+ "mq_waleed_shamsan": {
+  "url": "https://cdn.mp3quran.net/audio/waleed-shamsan/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1,8,17,19-20,24-26,29-33,35-37,41-45,47-60,62-68,70,75-76,81-82,85-86,93-114"
+ },
+ "mq_badr_turki": {
+  "url": "https://cdn.mp3quran.net/audio/badr-turki/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_peshawa_kurdi": {
+  "url": "https://cdn.mp3quran.net/audio/peshawa-kurdi/r1/{surah:03d}.mp3",
+  "timing": 268,
+  "surahs": "1-114"
+ },
+ "mq_tawfeeq_sayegh": {
+  "url": "https://cdn.mp3quran.net/audio/tawfeeq-sayegh/r1/{surah:03d}.mp3",
+  "timing": 17,
+  "surahs": "1-114"
+ },
+ "mq_jamal_abdullah": {
+  "url": "https://cdn.mp3quran.net/audio/jamal-abdullah/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_jamaan_osaimi": {
+  "url": "https://cdn.mp3quran.net/audio/jamaan-osaimi/r1/{surah:03d}.mp3",
+  "timing": 181,
+  "surahs": "1-114"
+ },
+ "mq_junaid_abdullah": {
+  "url": "https://cdn.mp3quran.net/audio/junaid-abdullah/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_hatem_waer": {
+  "url": "https://cdn.mp3quran.net/audio/hatem-waer/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_hassan_daghriri": {
+  "url": "https://cdn.mp3quran.net/audio/hassan-daghriri/r1/{surah:03d}.mp3",
+  "timing": 10905,
+  "surahs": "1-114"
+ },
+ "mq_hassan_saleh": {
+  "url": "https://cdn.mp3quran.net/audio/hassan-saleh/r1/{surah:03d}.mp3",
+  "timing": 299,
+  "surahs": "1-114"
+ },
+ "mq_hussain_sheikh": {
+  "url": "https://cdn.mp3quran.net/audio/hussain-sheikh/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "2,8,13-14,22,32,36,38,44-45,49-50,54-57,62-66,72-73,75-82,85,87,89-114"
+ },
+ "mq_hamad_daghriri": {
+  "url": "https://cdn.mp3quran.net/audio/hamad-daghriri/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-2,12-13,19,21,23,27,29,31,36,38-114"
+ },
+ "mq_khalid_ziyadi": {
+  "url": "https://cdn.mp3quran.net/audio/khalid-ziyadi/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_khalid_sharekh": {
+  "url": "https://cdn.mp3quran.net/audio/khalid-sharekh/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "2-19,68-98,100-114"
+ },
+ "mq_khalid_shuraimi": {
+  "url": "https://cdn.mp3quran.net/audio/khalid-shuraimi/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1,43-114"
+ },
+ "mq_khalid_ghamdi": {
+  "url": "https://cdn.mp3quran.net/audio/khalid-ghamdi/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-37,39-43,45-47,49-55,57-71,73,75-77,80,82-83,85-95,97-99,101-114"
+ },
+ "mq_khalid_qahtani": {
+  "url": "https://cdn.mp3quran.net/audio/khalid-qahtani/r1/{surah:03d}.mp3",
+  "timing": 21,
+  "surahs": "1-114"
+ },
+ "mq_khalid_mohanna": {
+  "url": "https://cdn.mp3quran.net/audio/khalid-mohanna/r1/{surah:03d}.mp3",
+  "timing": 159,
+  "surahs": "1-114"
+ },
+ "mq_khalid_wahaibi": {
+  "url": "https://cdn.mp3quran.net/audio/khalid-wahaibi/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1,3-20,24-25,29-32"
+ },
+ "mq_khalid_abdulkafi": {
+  "url": "https://cdn.mp3quran.net/audio/khalid-abdulkafi/r1/{surah:03d}.mp3",
+  "timing": 22,
+  "surahs": "1-114"
+ },
+ "mq_khalid_mohammadi": {
+  "url": "https://cdn.mp3quran.net/audio/khalid-mohammadi/r1/{surah:03d}.mp3",
+  "timing": 295,
+  "surahs": "1-114"
+ },
+ "mq_khalifa_tunaiji": {
+  "url": "https://cdn.mp3quran.net/audio/khalifa-tunaiji/r1/{surah:03d}.mp3",
+  "timing": 24,
+  "surahs": "1-114"
+ },
+ "mq_dawood_hamza": {
+  "url": "https://cdn.mp3quran.net/audio/dawood-hamza/r1/{surah:03d}.mp3",
+  "timing": 25,
+  "surahs": "1-114"
+ },
+ "mq_rami_duais": {
+  "url": "https://cdn.mp3quran.net/audio/rami-duais/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_ramadan_shakoor": {
+  "url": "https://cdn.mp3quran.net/audio/ramadan-shakoor/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-3,9-10,12-14,23-24,26,29,35-36,39-40,42-43,47-51,57-60,63,68-72,82-109,111-114"
+ },
+ "mq_zaki_daghistani": {
+  "url": "https://cdn.mp3quran.net/audio/zaki-daghistani/r1/{surah:03d}.mp3",
+  "timing": 33,
+  "surahs": "1-114"
+ },
+ "mq_sami_hassan": {
+  "url": "https://cdn.mp3quran.net/audio/sami-hassan/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1,19-20,24,26-27,32,34,50,55,81-82,86-88,91-95,97,102,104-105,109-112"
+ },
+ "mq_sami_dosari": {
+  "url": "https://cdn.mp3quran.net/audio/sami-dosari/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "2,8-9,12-14,29-35,39-41,78-114"
+ },
+ "mq_saad_muqrin": {
+  "url": "https://cdn.mp3quran.net/audio/saad-muqrin/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_salman_siddiq": {
+  "url": "https://cdn.mp3quran.net/audio/salman-siddiq/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_salman_otaibi": {
+  "url": "https://cdn.mp3quran.net/audio/salman-otaibi/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-3,10-11,14,19,23,25,32,36,38-40,46,48,50,52,55-56,58-59,61-64,66-114"
+ },
+ "mq_sahl_yassin": {
+  "url": "https://cdn.mp3quran.net/audio/sahl-yassin/r1/{surah:03d}.mp3",
+  "timing": 32,
+  "surahs": "1-114"
+ },
+ "mq_sayed_hashemi": {
+  "url": "https://cdn.mp3quran.net/audio/sayed-hashemi/r1/{surah:03d}.mp3",
+  "timing": 294,
+  "surahs": "1-114"
+ },
+ "mq_sayed_ramadan": {
+  "url": "https://cdn.mp3quran.net/audio/sayed-ramadan/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_shaban_sayyad": {
+  "url": "https://cdn.mp3quran.net/audio/shaban-sayyad/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "2-7,9-13,16-17,19-22,24,26-29,32-33,35,38,40-43,45-47,52-54,59-60,67-69,77-82,87-92,94-105"
+ },
+ "mq_shirzad_taher": {
+  "url": "https://cdn.mp3quran.net/audio/shirzad-taher/r1/{surah:03d}.mp3",
+  "timing": 38,
+  "surahs": "1-114"
+ },
+ "mq_saber_abdulhakam_r5": {
+  "url": "https://cdn.mp3quran.net/audio/saber-abdulhakam/r5/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_saber_abdulhakam": {
+  "url": "https://cdn.mp3quran.net/audio/saber-abdulhakam/r1/{surah:03d}.mp3",
+  "timing": 39,
+  "surahs": "1-114"
+ },
+ "mq_saber_abdulhakam_r2": {
+  "url": "https://cdn.mp3quran.net/audio/saber-abdulhakam/r2/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_saleh_talib": {
+  "url": "https://cdn.mp3quran.net/audio/saleh-talib/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1,25,34,38-39,44-47,55-61,70,72-86"
+ },
+ "mq_saleh_shamrani": {
+  "url": "https://cdn.mp3quran.net/audio/saleh-shamrani/r1/{surah:03d}.mp3",
+  "timing": 300,
+  "surahs": "1-114"
+ },
+ "mq_saleh_sahood": {
+  "url": "https://cdn.mp3quran.net/audio/saleh-sahood/r1/{surah:03d}.mp3",
+  "timing": 40,
+  "surahs": "1-114"
+ },
+ "mq_saleh_quraishi": {
+  "url": "https://cdn.mp3quran.net/audio/saleh-quraishi/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_saleh_habdan": {
+  "url": "https://cdn.mp3quran.net/audio/saleh-habdan/r1/{surah:03d}.mp3",
+  "timing": 42,
+  "surahs": "1-114"
+ },
+ "mq_salah_budair": {
+  "url": "https://cdn.mp3quran.net/audio/salah-budair/r1/{surah:03d}.mp3",
+  "timing": 43,
+  "surahs": "1-114"
+ },
+ "mq_salah_hashim": {
+  "url": "https://cdn.mp3quran.net/audio/salah-hashim/r1/{surah:03d}.mp3",
+  "timing": 44,
+  "surahs": "1-114"
+ },
+ "mq_salah_bukhatir": {
+  "url": "https://cdn.mp3quran.net/audio/salah-bukhatir/r1/{surah:03d}.mp3",
+  "timing": 46,
+  "surahs": "1-114"
+ },
+ "mq_salah_musalli": {
+  "url": "https://cdn.mp3quran.net/audio/salah-musalli/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "50,67-114"
+ },
+ "mq_adel_kalbani": {
+  "url": "https://cdn.mp3quran.net/audio/adel-kalbani/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_adel_rayyan": {
+  "url": "https://cdn.mp3quran.net/audio/adel-rayyan/r1/{surah:03d}.mp3",
+  "timing": 48,
+  "surahs": "1-114"
+ },
+ "mq_asim_luhaidan": {
+  "url": "https://cdn.mp3quran.net/audio/asim-luhaidan/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_abdulelah_aoun": {
+  "url": "https://cdn.mp3quran.net/audio/abdulelah-aoun/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_abdulbari_thubaiti": {
+  "url": "https://cdn.mp3quran.net/audio/abdulbari-thubaiti/r1/{surah:03d}.mp3",
+  "timing": 49,
+  "surahs": "1-114"
+ },
+ "mq_abdulbari_muhammad": {
+  "url": "https://cdn.mp3quran.net/audio/abdulbari-muhammad/r1/{surah:03d}.mp3",
+  "timing": 50,
+  "surahs": "1-114"
+ },
+ "mq_abdulbadi_ghailan": {
+  "url": "https://cdn.mp3quran.net/audio/abdulbadi-ghailan/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_abdulrahman_suwayid": {
+  "url": "https://cdn.mp3quran.net/audio/abdulrahman-suwayid/r1/{surah:03d}.mp3",
+  "timing": 135,
+  "surahs": "1-9,11-114"
+ },
+ "mq_abdulrahman_shahat": {
+  "url": "https://cdn.mp3quran.net/audio/abdulrahman-shahat/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_abdulrahman_oosi": {
+  "url": "https://cdn.mp3quran.net/audio/abdulrahman-oosi/r1/{surah:03d}.mp3",
+  "timing": 225,
+  "surahs": "1-114"
+ },
+ "mq_abdulrahman_majed": {
+  "url": "https://cdn.mp3quran.net/audio/abdulrahman-majed/r1/{surah:03d}.mp3",
+  "timing": 236,
+  "surahs": "1-114"
+ },
+ "mq_abdulrahman_badr": {
+  "url": "https://cdn.mp3quran.net/audio/abdulrahman-badr/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_abdulrasheed_sufi_r3": {
+  "url": "https://cdn.mp3quran.net/audio/abdulrasheed-sufi/r3/{surah:03d}.mp3",
+  "timing": 258,
+  "surahs": "1-114"
+ },
+ "mq_abdulaziz_ahmad": {
+  "url": "https://cdn.mp3quran.net/audio/abdulaziz-ahmad/r1/{surah:03d}.mp3",
+  "timing": 55,
+  "surahs": "1-114"
+ },
+ "mq_abdulaziz_turki": {
+  "url": "https://cdn.mp3quran.net/audio/abdulaziz-turki/r1/{surah:03d}.mp3",
+  "timing": 282,
+  "surahs": "1-114"
+ },
+ "mq_abdulaziz_zahrani": {
+  "url": "https://cdn.mp3quran.net/audio/abdulaziz-zahrani/r1/{surah:03d}.mp3",
+  "timing": 56,
+  "surahs": "1-114"
+ },
+ "mq_abdulaziz_asiri": {
+  "url": "https://cdn.mp3quran.net/audio/abdulaziz-asiri/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-28,30-32,35-37,39-41,45,49-57,63,66-67,69-73,75-78,80-81,83,86-89,93,99,101,107,110,112"
+ },
+ "mq_abdulghani_abdullah": {
+  "url": "https://cdn.mp3quran.net/audio/abdulghani-abdullah/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-2,5-6,9,67,87,91-92,94-95,97,114"
+ },
+ "mq_abdulkareem_hazmi": {
+  "url": "https://cdn.mp3quran.net/audio/abdulkareem-hazmi/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_abdullah_buraimi": {
+  "url": "https://cdn.mp3quran.net/audio/abdullah-buraimi/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1,19,23-25,31-32,36,49-50,55,57-114"
+ },
+ "mq_abdullah_buaijan": {
+  "url": "https://cdn.mp3quran.net/audio/abdullah-buaijan/r1/{surah:03d}.mp3",
+  "timing": 58,
+  "surahs": "1-114"
+ },
+ "mq_abdullah_khalaf": {
+  "url": "https://cdn.mp3quran.net/audio/abdullah-khalaf/r1/{surah:03d}.mp3",
+  "timing": 244,
+  "surahs": "1-114"
+ },
+ "mq_abdullah_qarafi": {
+  "url": "https://cdn.mp3quran.net/audio/abdullah-qarafi/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_abdullah_kandari": {
+  "url": "https://cdn.mp3quran.net/audio/abdullah-kandari/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_abdullah_mishal": {
+  "url": "https://cdn.mp3quran.net/audio/abdullah-mishal/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "8,14,41,49-56"
+ },
+ "mq_abdullah_matrood": {
+  "url": "https://cdn.mp3quran.net/audio/abdullah-matrood/r1/{surah:03d}.mp3",
+  "timing": 59,
+  "surahs": "1-114"
+ },
+ "mq_abdullah_bukhari": {
+  "url": "https://cdn.mp3quran.net/audio/abdullah-bukhari/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-2,36-40,42-57,59-114"
+ },
+ "mq_abdullah_basfar": {
+  "url": "https://cdn.mp3quran.net/audio/abdullah-basfar/r1/{surah:03d}.mp3",
+  "timing": 60,
+  "surahs": "1-114"
+ },
+ "mq_abdullah_khayyat": {
+  "url": "https://cdn.mp3quran.net/audio/abdullah-khayyat/r1/{surah:03d}.mp3",
+  "timing": 61,
+  "surahs": "1-114"
+ },
+ "mq_abdullah_abdal": {
+  "url": "https://cdn.mp3quran.net/audio/abdullah-abdal/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_abdullah_ghailan": {
+  "url": "https://cdn.mp3quran.net/audio/abdullah-ghailan/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_abdullah_kamel": {
+  "url": "https://cdn.mp3quran.net/audio/abdullah-kamel/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_abdulmajeed_arkani": {
+  "url": "https://cdn.mp3quran.net/audio/abdulmajeed-arkani/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1,12,14-15,18-19,21-22,40,50,56,76,78-114"
+ },
+ "mq_abdulmohsen_harthi": {
+  "url": "https://cdn.mp3quran.net/audio/abdulmohsen-harthi/r1/{surah:03d}.mp3",
+  "timing": 66,
+  "surahs": "1-114"
+ },
+ "mq_abdulmohsen_obaikan": {
+  "url": "https://cdn.mp3quran.net/audio/abdulmohsen-obaikan/r1/{surah:03d}.mp3",
+  "timing": 69,
+  "surahs": "1-114"
+ },
+ "mq_abdulmohsen_qasim": {
+  "url": "https://cdn.mp3quran.net/audio/abdulmohsen-qasim/r1/{surah:03d}.mp3",
+  "timing": 67,
+  "surahs": "1-114"
+ },
+ "mq_abdulhadi_kanakeri": {
+  "url": "https://cdn.mp3quran.net/audio/abdulhadi-kanakeri/r1/{surah:03d}.mp3",
+  "timing": 70,
+  "surahs": "1-114"
+ },
+ "mq_abdulwadood_haneef": {
+  "url": "https://cdn.mp3quran.net/audio/abdulwadood-haneef/r1/{surah:03d}.mp3",
+  "timing": 71,
+  "surahs": "1-114"
+ },
+ "mq_abdulwali_arkani": {
+  "url": "https://cdn.mp3quran.net/audio/abdulwali-arkani/r1/{surah:03d}.mp3",
+  "timing": 72,
+  "surahs": "1-114"
+ },
+ "mq_othman_ansari": {
+  "url": "https://cdn.mp3quran.net/audio/othman-ansari/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-7,40-44,46-56,58-69,74-114"
+ },
+ "mq_ali_abuhashim": {
+  "url": "https://cdn.mp3quran.net/audio/ali-abuhashim/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "11-12,18-19,21,25,50-57"
+ },
+ "mq_ali_hudhaifi": {
+  "url": "https://cdn.mp3quran.net/audio/ali-hudhaifi/r1/{surah:03d}.mp3",
+  "timing": 74,
+  "surahs": "1-114"
+ },
+ "mq_ali_souissi": {
+  "url": "https://cdn.mp3quran.net/audio/ali-souissi/r1/{surah:03d}.mp3",
+  "timing": 77,
+  "surahs": "1-114"
+ },
+ "mq_alijon_hamdan": {
+  "url": "https://cdn.mp3quran.net/audio/alijon-hamdan/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_imad_hafez": {
+  "url": "https://cdn.mp3quran.net/audio/imad-hafez/r1/{surah:03d}.mp3",
+  "timing": 78,
+  "surahs": "1-114"
+ },
+ "mq_omar_duraiwiz": {
+  "url": "https://cdn.mp3quran.net/audio/omar-duraiwiz/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_issa_sanankoua": {
+  "url": "https://cdn.mp3quran.net/audio/issa-sanankoua/r1/{surah:03d}.mp3",
+  "timing": 303,
+  "surahs": "1-114"
+ },
+ "mq_fouad_khamiri": {
+  "url": "https://cdn.mp3quran.net/audio/fouad-khamiri/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_fahad_kandari": {
+  "url": "https://cdn.mp3quran.net/audio/fahad-kandari/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-2,6,12,14,17-19,22-23,30-31,36,42,51-64,66-114"
+ },
+ "mq_fawaz_kaabi": {
+  "url": "https://cdn.mp3quran.net/audio/fawaz-kaabi/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-18,21-23,25-30,33,35-36,39-41,49,54-59,62-63,66-67,73,78,87,109,112"
+ },
+ "mq_faisal_hajri": {
+  "url": "https://cdn.mp3quran.net/audio/faisal-hajri/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_lafi_oni": {
+  "url": "https://cdn.mp3quran.net/audio/lafi-oni/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "3,8-24,27-33,35-45,67-114"
+ },
+ "mq_majed_zamil": {
+  "url": "https://cdn.mp3quran.net/audio/majed-zamil/r1/{surah:03d}.mp3",
+  "timing": 139,
+  "surahs": "1-114"
+ },
+ "mq_majed_anazi": {
+  "url": "https://cdn.mp3quran.net/audio/majed-anazi/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1,3-114"
+ },
+ "mq_malallah_jaber": {
+  "url": "https://cdn.mp3quran.net/audio/malallah-jaber/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_maher_muaiqly_r3": {
+  "url": "https://cdn.mp3quran.net/audio/maher-muaiqly/r3/{surah:03d}.mp3",
+  "timing": 133,
+  "surahs": "1-114"
+ },
+ "mq_maher_shakhashiro": {
+  "url": "https://cdn.mp3quran.net/audio/maher-shakhashiro/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_muhammad_ayyub_r2": {
+  "url": "https://cdn.mp3quran.net/audio/muhammad-ayyub/r2/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_muhammad_bukhait": {
+  "url": "https://cdn.mp3quran.net/audio/muhammad-bukhait/r1/{surah:03d}.mp3",
+  "timing": 250,
+  "surahs": "1-114"
+ },
+ "mq_muhammad_barrak": {
+  "url": "https://cdn.mp3quran.net/audio/muhammad-barrak/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1,12,14,36-37,44-45,50-57,67-114"
+ },
+ "mq_muhammad_zubaidi": {
+  "url": "https://cdn.mp3quran.net/audio/muhammad-zubaidi/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_muhammad_tablawi_r2": {
+  "url": "https://cdn.mp3quran.net/audio/muhammad-tablawi/r2/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_muhammad_tablawi": {
+  "url": "https://cdn.mp3quran.net/audio/muhammad-tablawi/r1/{surah:03d}.mp3",
+  "timing": 106,
+  "surahs": "1-114"
+ },
+ "mq_muhammad_faqih": {
+  "url": "https://cdn.mp3quran.net/audio/muhammad-faqih/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_muhammad_luhaidan": {
+  "url": "https://cdn.mp3quran.net/audio/muhammad-luhaidan/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_muhammad_muhaisni": {
+  "url": "https://cdn.mp3quran.net/audio/muhammad-muhaisni/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_muhammad_monshed": {
+  "url": "https://cdn.mp3quran.net/audio/muhammad-monshed/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-77,80-88,90-99,101-114"
+ },
+ "mq_muhammad_burhaji": {
+  "url": "https://cdn.mp3quran.net/audio/muhammad-burhaji/r1/{surah:03d}.mp3",
+  "timing": 340,
+  "surahs": "1-114"
+ },
+ "mq_muhammad_jibreel": {
+  "url": "https://cdn.mp3quran.net/audio/muhammad-jibreel/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_muhammad_khalil": {
+  "url": "https://cdn.mp3quran.net/audio/muhammad-khalil/r1/{surah:03d}.mp3",
+  "timing": 229,
+  "surahs": "1-114"
+ },
+ "mq_muhammad_dibirov": {
+  "url": "https://cdn.mp3quran.net/audio/muhammad-dibirov/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "2,12-13,17-20,24,26-27,31-32,36-37,41,44,53,55-56,67,70,72,76,79"
+ },
+ "mq_muhammad_shareef": {
+  "url": "https://cdn.mp3quran.net/audio/muhammad-shareef/r1/{surah:03d}.mp3",
+  "timing": 198,
+  "surahs": "1-114"
+ },
+ "mq_muhammad_refaat": {
+  "url": "https://cdn.mp3quran.net/audio/muhammad-refaat/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1,10-12,17-20,48,54-56,69,72-73,75-79,81-83,85-89,96,98,100"
+ },
+ "mq_muhammad_shah": {
+  "url": "https://cdn.mp3quran.net/audio/muhammad-shah/r1/{surah:03d}.mp3",
+  "timing": 110,
+  "surahs": "1-114"
+ },
+ "mq_muhammad_minshawi_r4": {
+  "url": "https://cdn.mp3quran.net/audio/muhammad-minshawi/r4/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-15,17-22,25-34,36-114"
+ },
+ "mq_muhammad_abdulkareem": {
+  "url": "https://cdn.mp3quran.net/audio/muhammad-abdulkareem/r1/{surah:03d}.mp3",
+  "timing": 115,
+  "surahs": "1-114"
+ },
+ "mq_muhammad_khan": {
+  "url": "https://cdn.mp3quran.net/audio/muhammad-khan/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_mahmoud_rifai": {
+  "url": "https://cdn.mp3quran.net/audio/mahmoud-rifai/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_mahmoud_harfoush": {
+  "url": "https://cdn.mp3quran.net/audio/mahmoud-harfoush/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_mahmoud_husary_r2": {
+  "url": "https://cdn.mp3quran.net/audio/mahmoud-husary/r2/{surah:03d}.mp3",
+  "timing": 119,
+  "surahs": "1-114"
+ },
+ "mq_mahmoud_abdulhakam": {
+  "url": "https://cdn.mp3quran.net/audio/mahmoud-abdulhakam/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_mahmoud_banna_r2": {
+  "url": "https://cdn.mp3quran.net/audio/mahmoud-banna/r2/{surah:03d}.mp3",
+  "timing": 122,
+  "surahs": "1-114"
+ },
+ "mq_mahmoud_banna": {
+  "url": "https://cdn.mp3quran.net/audio/mahmoud-banna/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_mukhtar_haj": {
+  "url": "https://cdn.mp3quran.net/audio/mukhtar-haj/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_mustafa_ismail_r2": {
+  "url": "https://cdn.mp3quran.net/audio/mustafa-ismail/r2/{surah:03d}.mp3",
+  "timing": 288,
+  "surahs": "1-114"
+ },
+ "mq_mustafa_ismail": {
+  "url": "https://cdn.mp3quran.net/audio/mustafa-ismail/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_mustafa_lahouni": {
+  "url": "https://cdn.mp3quran.net/audio/mustafa-lahouni/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_mustafa_azzawi": {
+  "url": "https://cdn.mp3quran.net/audio/mustafa-azzawi/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_moeedh_harthi": {
+  "url": "https://cdn.mp3quran.net/audio/moeedh-harthi/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_muftah_saltani_r3": {
+  "url": "https://cdn.mp3quran.net/audio/muftah-saltani/r3/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_musa_bilal": {
+  "url": "https://cdn.mp3quran.net/audio/musa-bilal/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_nasser_obaid": {
+  "url": "https://cdn.mp3quran.net/audio/nasser-obaid/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "3,7,10,13-15,19,21,25-27,32,35-41,67-114"
+ },
+ "mq_nasser_asfour": {
+  "url": "https://cdn.mp3quran.net/audio/nasser-asfour/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_nasser_majed": {
+  "url": "https://cdn.mp3quran.net/audio/nasser-majed/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_nabil_rifai": {
+  "url": "https://cdn.mp3quran.net/audio/nabil-rifai/r1/{surah:03d}.mp3",
+  "timing": 87,
+  "surahs": "1-114"
+ },
+ "mq_nadhir_maliki": {
+  "url": "https://cdn.mp3quran.net/audio/nadhir-maliki/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_neama_hassan": {
+  "url": "https://cdn.mp3quran.net/audio/neama-hassan/r1/{surah:03d}.mp3",
+  "timing": 88,
+  "surahs": "1-114"
+ },
+ "mq_haroon_baqai": {
+  "url": "https://cdn.mp3quran.net/audio/haroon-baqai/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1,56,62,67-114"
+ },
+ "mq_hashim_abudalal": {
+  "url": "https://cdn.mp3quran.net/audio/hashim-abudalal/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_hani_rifai": {
+  "url": "https://cdn.mp3quran.net/audio/hani-rifai/r1/{surah:03d}.mp3",
+  "timing": 89,
+  "surahs": "1-114"
+ },
+ "mq_hazza_balushi": {
+  "url": "https://cdn.mp3quran.net/audio/hazza-balushi/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1,6,8,12-15,17-22,25,29-32,34-47,49-57,61,63,67-114"
+ },
+ "mq_haitham_jadani": {
+  "url": "https://cdn.mp3quran.net/audio/haitham-jadani/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-4,6-17,19-21,23-41,43-57,61-64,67-70,72,75-85,87-114"
+ },
+ "mq_wadee_yamani": {
+  "url": "https://cdn.mp3quran.net/audio/wadee-yamani/r1/{surah:03d}.mp3",
+  "timing": 219,
+  "surahs": "1-114"
+ },
+ "mq_waleed_dulaimi": {
+  "url": "https://cdn.mp3quran.net/audio/waleed-dulaimi/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1,8,11-12,17,19,31,37,39,41,45,48-54,63,70,75,78-114"
+ },
+ "mq_yasser_faylakawi": {
+  "url": "https://cdn.mp3quran.net/audio/yasser-faylakawi/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-12,14-37,39,41,44,56,67-111,113-114"
+ },
+ "mq_yasser_qurashi": {
+  "url": "https://cdn.mp3quran.net/audio/yasser-qurashi/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_yasser_salama": {
+  "url": "https://cdn.mp3quran.net/audio/yasser-salama/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_yahya_hawwa": {
+  "url": "https://cdn.mp3quran.net/audio/yahya-hawwa/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_youssef_edghouch": {
+  "url": "https://cdn.mp3quran.net/audio/youssef-edghouch/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1,3,55,67,71,73,75,78,82,85,87-88,90-92,100,105-114"
+ },
+ "mq_yousef_shoaey": {
+  "url": "https://cdn.mp3quran.net/audio/yousef-shoaey/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_yousef_aidarous": {
+  "url": "https://cdn.mp3quran.net/audio/yousef-aidarous/r1/{surah:03d}.mp3",
+  "timing": null,
+  "surahs": "1-114"
+ },
+ "mq_yousef_ahmad": {
+  "url": "https://cdn.mp3quran.net/audio/yousef-ahmad/r1/{surah:03d}.mp3",
+  "timing": 193,
+  "surahs": "1-114"
+ }
+}

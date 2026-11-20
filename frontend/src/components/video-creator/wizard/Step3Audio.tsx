@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import DropdownSelect from "@/components/ui/DropdownSelect";
 import Spinner from "@/components/ui/Spinner";
 import { MusicalNoteIcon, VideoCameraIcon, XMarkIcon } from "@heroicons/react/24/outline";
 
 import { useT } from "@/lib/LanguageContext";
-import { RECITERS } from "@/lib/reciterNames";
 import AudioLinkInput from "./AudioLinkInput";
+import ReciterPicker from "./ReciterPicker";
 interface Step3Props {
   isArabic: boolean;
   audioSourceMode: "reciter" | "custom";
@@ -114,15 +113,13 @@ export default function Step3Audio({
         </div>
 
         {audioSourceMode === "reciter" ? (
-          <DropdownSelect
-            placeholder={tx("اختر القارئ", "Kari seçin", "Choose a reciter")}
-            options={RECITERS.map((r) => ({
-              value: r.id,
-              label: isArabic ? r.labelAr ?? r.nameAr : r.labelLatin ?? r.nameLatin,
-            }))}
+          <ReciterPicker
+            isArabic={isArabic}
             value={selectedReciter}
-            onChange={(val) => onReciterChange(val as string)}
-            isRtl={isArabic}
+            onChange={onReciterChange}
+            surahId={(selectedSurah as { id?: number } | null)?.id ?? null}
+            startVerse={startVerse}
+            endVerse={endVerse}
           />
         ) : (
           <div className="w-full">

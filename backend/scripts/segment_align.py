@@ -16,6 +16,11 @@ move. A small margin is reported as uncertain instead of trusted.
 
 Measured on 50 hand-checked ayahs (2026-10-27): 91 of 97 cuts exact; a
 margin under 0.2 flagged 4 of the 6 wrong cuts and 9 of the 91 right ones.
+
+split_translation() is the reverse, for an ayah already split when the user
+picks another translation: the Arabic parts stay, the new text is cut to fit
+them. On the same cases (2026-11-16): 95 of 97 cuts exact; 1 of the 2 wrong
+ones flagged, 1 of the 95 right ones.
 """
 import json
 import logging
@@ -230,6 +235,172 @@ def align(surah, ayah, tokens, segments, language):
     word_counts = [edges[i + 1] - edges[i] for i in range(m)]
     return {
         "word_counts": word_counts,
+        "margins": [round(x, 3) for x in margins],
+        "low_confidence": any(x < LOW_CONFIDENCE_MARGIN for x in margins),
+    }
+
+
+# ---------- the reverse: fixed Arabic parts, a new translation ----------
+#
+# The user picks another translation for an ayah already split into parts
+# (by the split above or by hand): the parts stay, and the new text is cut
+# to fit them -- every translation word goes to the Arabic part whose word
+# glosses it is closest to, with cuts preferring punctuation.
+
+_EDGE_PUNCT = re.compile(r"^[\"'“”‘’«»(\[]+|[\"'“”‘’«»)\].,;:!?؟،؛…]+$")
+_SENTENCE_END = re.compile(r"[.!?؟…][\"'“”‘’»)\]]*$")
+_CLAUSE_END = re.compile(r"[,;:،؛][\"'“”‘’»)\]]*$")
+_QUOTE_CLOSE = re.compile(r"[\"”’»][.,;:!?؟]*$")
+# An opening quote starts a clause; a parenthesis rarely does in these
+# translations -- it is an explanation inserted mid-clause, even mid-word:
+# "(güzel isim)lerle".
+_OPENS = re.compile(r"^[\"“‘«]")
+# Turkish/English speech verbs that follow the quote they close
+# ('"... olacak?" diyorlar'): never the start of a part.
+_SPEECH_AFTER_QUOTE = re.compile(
+    r"^(dedi|dediler|dedik|dedim|der|derler|diyor|diyorlar|diyordu|diyorlardı|demişti|demişlerdi|demişler|diye|deyince|"
+    r"he|she|they|said|says)\b",
+    re.I,
+)
+# A Turkish light verb ("dua edin", "secde ederler", "sahip olan") is one
+# phrase with the word before it: never the start of a part.
+_LIGHT_VERB = re.compile(r"^(et|ed|eyle|ol|kıl)", re.I)
+# Tuned on the hand-checked cases (eval_segment_align.py --reverse).
+SENTENCE_BONUS = 0.6
+CLAUSE_BONUS = 0.2
+MID_CLAUSE_PENALTY = 0.4
+SHORT_PIECE_WORDS = 3
+SHORT_PIECE_PENALTY = 0.4
+
+
+def _clean(word):
+    return _EDGE_PUNCT.sub("", word) or word
+
+
+def _text_prior(words):
+    """prior[b]: how good a cut before words[b] is, from punctuation alone."""
+    prior = [0.0] * (len(words) + 1)
+    depth = 0
+    for b in range(1, len(words)):
+        prev, nxt = words[b - 1], words[b]
+        depth += prev.count("(") - prev.count(")")
+        if _SENTENCE_END.search(prev):
+            p = SENTENCE_BONUS
+        elif _CLAUSE_END.search(prev) or _OPENS.match(nxt):
+            p = CLAUSE_BONUS
+        else:
+            p = -MID_CLAUSE_PENALTY
+            if _LIGHT_VERB.match(_clean(nxt)):
+                p -= SENTENCE_BONUS
+        if depth > 0:
+            p -= SENTENCE_BONUS  # inside a parenthesis
+        if _QUOTE_CLOSE.search(prev) and _SPEECH_AFTER_QUOTE.match(_clean(nxt)):
+            p -= SENTENCE_BONUS
+        prior[b] = p
+    return prior
+
+
+def _best_text_cuts(aff, prior, expected, forbid=None):
+    """Like _best_cuts, over translation words: aff[t][i] is how much word t
+    belongs to part i; expected[i] the length part i's glosses suggest."""
+    n, m = len(aff), len(expected)
+    pre = [[0.0] * (n + 1) for _ in range(m)]
+    for i in range(m):
+        for t in range(n):
+            pre[i][t + 1] = pre[i][t] + aff[t][i]
+    neg = float("-inf")
+    dp = [[neg] * (n + 1) for _ in range(m + 1)]
+    back = [[0] * (n + 1) for _ in range(m + 1)]
+    dp[0][0] = 0.0
+    for i in range(1, m + 1):
+        for b in range(i, n - (m - i) + 1):
+            if forbid == (i, b):
+                continue
+            for a in range(i - 1, b):
+                if dp[i - 1][a] == neg:
+                    continue
+                length = b - a
+                v = dp[i - 1][a] + pre[i - 1][b] - pre[i - 1][a] - LENGTH_WEIGHT * (length - expected[i - 1]) ** 2 / n
+                if length < SHORT_PIECE_WORDS and expected[i - 1] >= SHORT_PIECE_WORDS:
+                    v -= SHORT_PIECE_PENALTY
+                if i < m:
+                    v += prior[b]
+                if v > dp[i][b]:
+                    dp[i][b], back[i][b] = v, a
+    cuts, b = [], n
+    for i in range(m, 0, -1):
+        a = back[i][b]
+        if i > 1:
+            cuts.append(a)
+        b = a
+    return dp[m][n], cuts[::-1]
+
+
+def split_translation(surah, ayah, tokens, word_counts, translation, language):
+    """The translation cut into len(word_counts) pieces, one per Arabic part
+    (word_counts over `tokens`, pause marks included), plus each cut's
+    confidence margin and whether any cut is uncertain."""
+    words = translation.split()
+    m, n_words = len(word_counts), len(words)
+    if m < 2:
+        raise AlignUnavailable("nothing to split")
+    if n_words < m:
+        raise AlignUnavailable("fewer translation words than parts")
+    if sum(word_counts) != len(tokens) or any(c < 1 for c in word_counts):
+        raise AlignUnavailable(f"part word counts {word_counts} don't cover the {len(tokens)} tokens")
+    real = [k for k, t in enumerate(tokens) if not _is_mark(t)]
+    edges = [0]
+    for c in word_counts:
+        edges.append(edges[-1] + c)
+    part_of = [next(i for i in range(m) if edges[i] <= k < edges[i + 1]) for k in real]
+    if len(set(part_of)) != m:
+        raise AlignUnavailable("a part holds no word")
+    gl = glosses_for(surah, ayah)
+    if len(gl["tr"]) != len(real) or len(gl["en"]) != len(real):
+        raise AlignUnavailable(f"glosses ({len(gl['en'])}) don't match the {len(real)} words")
+
+    if language == "en":
+        views = [gl["en"]]
+    elif language == "ar":
+        views = [[_TASHKEEL.sub("", tokens[k]) for k in real], gl["en"]]
+    else:
+        views = [gl["tr"], gl["en"]]
+
+    import torch
+    clean = [_clean(w) for w in words]
+    grams_at = []
+    for t in range(n_words):
+        g = [clean[t]]
+        if t > 0:
+            g.append(f"{clean[t - 1]} {clean[t]}")
+        if t + 1 < n_words:
+            g.append(f"{clean[t]} {clean[t + 1]}")
+        grams_at.append(g)
+    grams = list(dict.fromkeys(g for gs in grams_at for g in gs))
+    index = {g: k for k, g in enumerate(grams)}
+    gram_vecs = _embed(grams)
+    sims = torch.full((n_words, m), -1.0)
+    for view in views:
+        sim = _embed([v or "-" for v in view]) @ gram_vecs.T  # real words x grams
+        per_part = torch.stack([sim[[j for j, p in enumerate(part_of) if p == i]].max(dim=0).values for i in range(m)])
+        for t, gs in enumerate(grams_at):
+            cols = [index[g] for g in gs]
+            sims[t] = torch.maximum(sims[t], per_part[:, cols].max(dim=1).values)
+    aff = (sims - sims.mean(dim=1, keepdim=True)).tolist()
+
+    # A part's share of the translation: its words' glosses' share.
+    weight_view = gl["en"] if language == "en" else gl["tr"] if language != "ar" else None
+    weights = [0.0] * m
+    for j, p in enumerate(part_of):
+        weights[p] += max(1, len(re.findall(r"\w+", weight_view[j]))) if weight_view else 1
+    expected = [n_words * w / sum(weights) for w in weights]
+
+    prior = _text_prior(words)
+    score, cuts = _best_text_cuts(aff, prior, expected)
+    margins = [score - _best_text_cuts(aff, prior, expected, forbid=(i, c))[0] for i, c in enumerate(cuts, start=1)]
+    bounds = [0] + cuts + [n_words]
+    return {
+        "pieces": [" ".join(words[bounds[i]:bounds[i + 1]]) for i in range(m)],
         "margins": [round(x, 3) for x in margins],
         "low_confidence": any(x < LOW_CONFIDENCE_MARGIN for x in margins),
     }

@@ -50,7 +50,10 @@ from extract_precise_clip import (
     RECITERS_MP3QURAN,
     RECITERS_TIMING_ID,
     WORK_DIR,
+    HQ_CACHE_SUFFIX,
+    check_reciter_has_surah,
     download_full_surah,
+    has_hq_copy,
     is_backup_recording,
 )
 import job_control
@@ -60,7 +63,7 @@ logger = logging.getLogger(__name__)
 # Bumped whenever output semantics change, so cached clips written by an
 # older engine (or by extract_precise_clip.py, which never wrote this field)
 # are never reused.
-ENGINE_VERSION = "ctc-v16"
+ENGINE_VERSION = "ctc-v17"
 # Part of the clip cache key next to ENGINE_VERSION: what the written audio
 # is, which can change while the alignment doesn't.
 AUDIO_VERSION = "loud1"
@@ -125,6 +128,12 @@ REPEAT_MIN_REL_CONF = 0.85
 REPEAT_MIN_CONF = 0.45
 REPEAT_SIMILAR_TEXT = 0.8
 BASMALA_CLEAN = "بسم الله الرحمن الرحيم"
+# A video may start with the basmala before ayah 1 (the user, 2026-11-15):
+# it is then timed from the recitation like an ayah, as pseudo-ayah
+# BASMALA_AYAH (the frontend's BASMALA_VERSE_ID). Al-Fatiha's basmala is its
+# ayah 1, and At-Tawbah has none.
+BASMALA_AYAH = 0
+NO_BASMALA_SURAHS = {1, 9}
 
 # A reciter often goes back and reads part of the selection again: a few
 # words after a pause, a whole ayah, the previous ayah after starting the
@@ -179,6 +188,28 @@ RETURN_ROUNDS = 24
 # (until then an ayah starting with it showed at the second, the first
 # absorbed by the word before).
 RETURN_RESTART_GAP_SEC = 2 * CLEAR_WIDEN_SEC
+# With that one-word return turned down, the search can make the same
+# restart look longer: it squeezes the NEXT word into the breath between
+# the two sayings -- a letter a frame, heard not at all -- and goes back
+# from there, so two words seem read twice and the jump verifies (Maher
+# 44:8: "رَبُّكُمْ", a breath, "رَبُّكُمْ وَرَبُّ": "وَرَبُّ" put in 0.16 s
+# of the breath, then highlighted although he never said it there). A jump
+# whose word just before it lies RETURN_UNSAID_SHARE+ inside pauses and is
+# heard below RETURN_UNSAID_CONF is turned down: that word was not said.
+# Turned down that way, it found the next disguise: "وَرَبُّ" on the start
+# of the second saying, and "رَبُّكُمْ" read again from inside it, its
+# first four letters a frame each. A word he goes back to starts as a
+# breath ends, said plainly; no voice says RETURN_PACKED_LETTERS+ letters
+# in as many 20 ms frames. So a jump is also turned down when the word it
+# lands on starts with that many letters packed so. (Anywhere in a word it
+# is no sign: the end of a word he stops on has spelled letters he doesn't
+# say -- a tanween at a pause -- and a check on every word read twice lost
+# 15 of the eval's true repeats.) Only for jumps Whisper didn't hear: one
+# both ears heard stands.
+# The restart itself is then found by _restarted_words.
+RETURN_UNSAID_SHARE = 0.5
+RETURN_UNSAID_CONF = 0.1
+RETURN_PACKED_LETTERS = 4
 # A second ear. In slow, long-madd recitation (Husary, Minshawi, Abdul
 # Basit: 1-2 of 10 spliced repeats found by ctc-v12) the alignment model
 # hears a repeat too faintly for the search to take it -- blanks absorb it
@@ -308,6 +339,7 @@ RETURN_MAX_CELLS = 3e8
 # Below this a word was almost certainly forced onto audio that doesn't hold
 # it (correct words score ~0.6-0.95) -- flagged even when nothing else is.
 WORD_MISMATCH_CONF = 0.15
+WEAK_HEARD_SEC = 0.3
 
 
 def _fail(message: str):
@@ -869,6 +901,7 @@ def _snap_offset(env, t_token_end, t_max, max_fwd=4.0, min_quiet=0.15):
 def _resolve_times(units, env, region_start, region_end):
     """Turn frame spans into word start/end seconds (relative to the
     analysed region) and per-ayah onset/offset."""
+    _attach_detached_first_letters(units, env)
     aligned = _aligned(units)
     for u in aligned:
         u["tok_start"] = u["f0"] * FRAME_SEC
@@ -1067,6 +1100,7 @@ def _align_region(surah_id, words_by_ayah, start_ayah, end_ayah, wav, *, prev_co
 
 
 STRAY_SILENT_SHARE = 0.8
+STRAY_HAMZA_SILENT_SHARE = 0.6
 
 
 def _drop_stray_first_letters(units, env):
@@ -1083,7 +1117,15 @@ def _drop_stray_first_letters(units, env):
     twice has its first saying there, see _restarted_words) and the letter
     itself as quiet as silence (RETURN_SILENCE_DB under the recitation).
     Over the eval that moves 4 words (those two among them), and no case
-    changes. Returns whether anything moved."""
+    changes. A hamza is the onset of the vowel after it -- nothing of it is
+    said apart from that vowel -- so for a word starting with one the gap
+    need only be STRAY_HAMZA_SILENT_SHARE silence and the letter a pause's
+    depth under the recitation (RETURN_SPAN_PAUSE_DB): Maher's 44:3 has the
+    hamza of "إِنَّا" in the fading end of "مُّبَٰرَكَةٍ" 13 dB down, 0.3 s of
+    silence (he stops there), then the word -- 0.33 s early on screen and in
+    the highlight. That changed no eval case's result; two already wrong
+    (79:31's "أَخْرَجَ" said twice, its first saying missed) show it 0.3 and
+    0.7 s later, at the second saying. Returns whether anything moved."""
     runs = _pause_runs(env, 0, len(env))
     deep = [(i * ENV_HOP_SEC, j * ENV_HOP_SEC) for i, j, d in runs
             if (j - i) * ENV_HOP_SEC >= RETURN_SPAN_PAUSE_SEC and d >= RETURN_SPAN_PAUSE_DB]
@@ -1100,13 +1142,111 @@ def _drop_stray_first_letters(units, env):
         # fading echo is, no letter he says.
         e0, e1 = int(spans[0][0] * FRAME_SEC / ENV_HOP_SEC), int(a / ENV_HOP_SEC) + 1
         letter_db = float(np.max(env[e0:e1])) if e1 > e0 else level
-        if (silent < RETURN_SPAN_PAUSE_SEC or silent < STRAY_SILENT_SHARE * (b - a)
-                or letter_db > level - RETURN_SILENCE_DB):
+        share, quiet = ((STRAY_HAMZA_SILENT_SHARE, RETURN_SPAN_PAUSE_DB) if str(u.get("roman") or "").startswith("'")
+                        else (STRAY_SILENT_SHARE, RETURN_SILENCE_DB))
+        if silent < RETURN_SPAN_PAUSE_SEC or silent < share * (b - a) or letter_db > level - quiet:
             continue
         logger.info(f"{u['ayah']}:{u['index']}: its first letter at {spans[0][0] * FRAME_SEC:.1f}s is "
                     f"{silent:.1f}s of silence before the rest; it starts at {b:.1f}s.")
         u["spans"] = spans[1:]
         u["f0"] = spans[1][0]
+        moved = True
+    return moved
+
+
+# A word's first letter or two laid inside the previous word's madd, in
+# connected recitation (no pause between them; the paused case is
+# _drop_stray_first_letters). The model barely hears a hamza, so CTC puts
+# it at the first frame it can, right where the madd begins, and the rest
+# of the word comes where it is really said. In Maher's 44:8 the re-aligned
+# reading path put the hamza of "إِلَٰهَ" 1.5 s before its other letters, at
+# the start of the madd of "لَآ": the word started (and was highlighted)
+# while "لَآ" was still being held (the user, 2026-11-14: wait for the
+# madd to end, for every madd).
+# The word starts at the closure before its next letter instead: the
+# glottal stop of the hamza is a short dip in the voice that ends the madd
+# (or the short vowel) before it. Only words that begin with a hamza: the
+# model hears other first letters well enough, and a non-hamza first
+# letter far from the rest is usually held on purpose (a ghunna). Without a
+# clear dip nothing moves.
+# The voice must run on from the previous word's last letter to the next
+# letter with no pause, and come back up right after the closure (a vowel
+# follows a hamza). In Maher's 44:5 the base alignment put the hamza of
+# "إِنَّا" 0.34 s into the madd of "عِندِنَآ" -- the madd ran on to 29.2 s.
+# A stop consonant in the word makes such a dip too: Yasser's 98:4
+# "أُوتُوا۟" had its hamza right after "ٱلَّذِينَ" and was moved to the
+# closure of its t, 0.27 s late. Whisper's reading track tells them apart
+# where there is one: at all eight of Maher's 44:1-8 madd joins it heard
+# the word at the dip, there at the hamza.
+DETACHED_GAP_SEC = 0.2      # the letter this far before the rest of its word
+DETACHED_NEAR_SEC = 0.6     # the closure is looked for this far before the next letter
+DETACHED_DIP_DB = 4.0       # this far under the held madd around it
+DETACHED_RISE_SEC = 0.12    # and the voice back up this soon after it
+DETACHED_RISE_DB = 3.0
+
+
+def _attach_detached_first_letters(units, env):
+    """Move a word's start off the previous word's madd onto the closure
+    before its next letter (see DETACHED_*). Returns whether anything
+    moved."""
+    runs = _pause_runs(env, 0, len(env))
+    deep = [(i * ENV_HOP_SEC, j * ENV_HOP_SEC) for i, j, d in runs
+            if (j - i) * ENV_HOP_SEC >= RETURN_SPAN_PAUSE_SEC and d >= RETURN_SPAN_PAUSE_DB]
+    aligned = _aligned(units)
+    moved = False
+
+    def heard_where_it_was(u, was, dip):
+        # A stop inside the word closes the voice too ("أُوتُوا۟": the t), so
+        # where Whisper heard the word nearer where it was than at the dip,
+        # it stays (see above).
+        heard = [h for h in u.get("whisper_at", ()) if min(abs(h - was), abs(h - dip)) <= 1.0]
+        return bool(heard) and min(abs(h - was) for h in heard) < min(abs(h - dip) for h in heard)
+
+    # Moved in an earlier pass, before Whisper's track was there to ask --
+    # unless something else has moved it since.
+    for u in aligned:
+        before, after = u.get("detached_from") or (None, None)
+        if before and u.get("spans") == after and heard_where_it_was(u, before[0][0] * FRAME_SEC, after[0][0] * FRAME_SEC):
+            logger.info(f"{u['ayah']}:{u['index']}: Whisper heard it at its first letter; it starts at "
+                        f"{before[0][0] * FRAME_SEC:.2f}s again.")
+            u["spans"], u["f0"] = before, before[0][0]
+            del u["detached_from"]
+            moved = True
+    for prev, u in zip(aligned, aligned[1:]):
+        spans = u.get("spans") or []
+        if not str(u.get("roman") or "").startswith("'"):
+            continue
+        cut = next((j for j in (0, 1) if j + 1 < len(spans)
+                    and (spans[j + 1][0] - spans[j][1] - 1) * FRAME_SEC >= DETACHED_GAP_SEC), None)
+        if cut is None:
+            continue
+        a, b = (spans[cut][1] + 1) * FRAME_SEC, spans[cut + 1][0] * FRAME_SEC
+        # A pause anywhere from the previous word on: not a madd held into
+        # the word (a restart or a stray letter, handled elsewhere).
+        prev_end = (prev["f1"] + 1) * FRAME_SEC
+        if any(p0 < b and p1 > prev_end for p0, p1 in deep):
+            continue
+        ia, ib = int(a / ENV_HOP_SEC), min(len(env) - 1, int(b / ENV_HOP_SEC))
+        if ib - ia < 3:
+            continue
+        level = float(np.median(env[ia:ib]))
+        lo = max(ia, ib - int(DETACHED_NEAR_SEC / ENV_HOP_SEC))
+        k = lo + int(np.argmin(env[lo:ib + 1]))
+        if level - float(env[k]) < DETACHED_DIP_DB:
+            continue
+        rise = env[k:min(len(env), k + int(DETACHED_RISE_SEC / ENV_HOP_SEC) + 1)]
+        if float(rise.max()) - float(env[k]) < DETACHED_RISE_DB:
+            continue
+        f = int(k * ENV_HOP_SEC / FRAME_SEC)
+        if not spans[cut][1] < f < spans[cut + 1][0]:
+            continue
+        if heard_where_it_was(u, spans[0][0] * FRAME_SEC, f * FRAME_SEC):
+            continue
+        logger.info(f"{u['ayah']}:{u['index']}: its first letter at {spans[0][0] * FRAME_SEC:.2f}s sat in the "
+                    f"madd before it; the word starts at {f * FRAME_SEC:.2f}s.")
+        u["spans"] = [(f, f)] + spans[cut + 1:]
+        u["f0"] = f
+        u["detached_from"] = (spans, u["spans"])
         moved = True
     return moved
 
@@ -1193,6 +1333,40 @@ def _assess(units, ayah_info, start_ayah, end_ayah, wav, words_by_ayah, region_s
 
 
 # ========== OUTPUT ==========
+
+def write_lossless_cut(source_path, clip_start, duration, fade_in, fade_out, out_path):
+    """The clip _write_outputs writes -- the same cut, gain and fades -- as
+    FLAC instead of MP3, for the video itself (frontend lib/losslessAudio.ts).
+
+    The MP3 clip went through three more lossy encodes before a video was
+    done (this one, the render's trim, the export's AAC), each adding
+    roughness to the high sounds: on Ajmi's «فِى شِقَاقٍ» (2:137) the damage
+    above 8 kHz came within 12-15 dB of the voice (the user heard it,
+    2026-11-17); cut losslessly, only the export's encode remains, 23-27 dB
+    below. The recording itself is untouched."""
+    out_path = Path(out_path)
+    filters = [f"atrim=start={clip_start:.4f}:end={clip_start + duration:.4f}", "asetpts=PTS-STARTPTS"]
+    gain = _loudness_gain_db(source_path, clip_start, duration)
+    if gain:
+        filters.append(f"volume={gain:.2f}dB")
+    fade = 0.15
+    if fade_in:
+        filters.append(f"afade=t=in:st=0:d={fade:.3f}")
+    if fade_out:
+        filters.append(f"afade=t=out:st={duration - fade:.3f}:d={fade:.3f}")
+    tmp = out_path.with_name(f"{out_path.stem}.{os.getpid()}.tmp.flac")
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-v", "error", "-i", str(source_path), "-vn", "-af", ",".join(filters),
+             "-c:a", "flac", "-sample_fmt", "s16", str(tmp)],
+            check=True, capture_output=True,
+        )
+        os.replace(tmp, out_path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+    return gain
+
 
 def _write_outputs(source_path, source_duration, source_offset, units, ayah_info, start_ayah, end_ayah,
                    pad_seconds, clip_name, meta, reasons, confidence, readings=None):
@@ -1372,7 +1546,7 @@ def _coarse_locate(audio_path, words_by_ayah, start_ayah, end_ayah, duration, ex
         return _norm_words(" ".join(words_by_ayah[a]["clean"]))
 
     lo, hi = start_ayah, end_ayah
-    n_ayahs = len(words_by_ayah)
+    n_ayahs = max(words_by_ayah)  # not len(): a basmala is key 0
     if extend:
         while sum(len(ayah_words(a)) for a in range(lo, hi + 1)) < COARSE_MIN_WORDS and (lo > 1 or hi < n_ayahs):
             if hi < n_ayahs:
@@ -1426,7 +1600,7 @@ def _locate_window(source_path, surah_id, words_by_ayah, start_ayah, end_ayah, d
 def _extract_from_long_audio(source_path, surah_id, start_ayah, end_ayah, pad_seconds, words_by_ayah,
                              clip_name, meta, approx=None, use_context=True):
     """Shared by whole-surah reciter recordings and user uploads."""
-    n_ayahs = len(words_by_ayah)
+    n_ayahs = max(words_by_ayah)  # not len(): a basmala is key 0
     duration = _probe_duration(source_path)
     prev_ctx = (start_ayah - 1, CONTEXT_WORDS) if use_context and start_ayah > 1 else None
     next_ctx = (end_ayah + 1, CONTEXT_WORDS) if use_context and end_ayah < n_ayahs else None
@@ -1501,6 +1675,7 @@ def _extract_from_long_audio(source_path, surah_id, start_ayah, end_ayah, pad_se
     moved |= _restarted_words(emission, env, units, readings, wav)
     if moved:
         ayah_info = _resolve_times(units, env, 0.0, len(wav) / SAMPLE_RATE)
+    suspects = _unexplained_suspects(suspects, units)
     reasons, mean_conf = _assess(
         units, ayah_info, start_ayah, end_ayah, wav, words_by_ayah,
         region_start_is_audio_start=(t0 <= 0.0),
@@ -1768,7 +1943,18 @@ def _path_occurrences(path, jumps, em, y, tok_word, consonant):
     return occ
 
 
-def _verify_jumps(occ, order, heard=()):
+def _packed_start(spans):
+    """How many of a word's first letters are one frame each, one right
+    after the other ([(first frame, last frame)] per letter)."""
+    run = 0
+    for k, (a, b) in enumerate(spans):
+        if a != b or (k and a != spans[k - 1][1] + 1):
+            break
+        run += 1
+    return run
+
+
+def _verify_jumps(occ, order, heard=(), paused=None):
     def from_as_heard(w, last):
         # Whisper misses words often enough that a later word of the same
         # ayah is still it; a word of the next ayah is not.
@@ -1780,7 +1966,7 @@ def _verify_jumps(occ, order, heard=()):
     from word `from` or another of its ayah (see TRACK_*) -- a jump from the
     next ayah is not the one Whisper heard: the search put that ayah's
     first word into a madd and jumped back from it (98:2-3, Husary and
-    Mishary)."""
+    Mishary). paused: per frame, inside a pause (see RETURN_UNSAID_*)."""
     firsts = {}
     for o in occ:
         firsts.setdefault(o["w"], o)
@@ -1817,10 +2003,123 @@ def _verify_jumps(occ, order, heard=()):
                 if short:
                     score = -1.0
                 ok = ratio >= RETURN_MIN_RATIO and score >= RETURN_ACCEPT
+                # Not said where the path puts it (RETURN_UNSAID_*): the word
+                # before the jump, or the start of the word it lands on.
+                unsaid = None
+                if n and paused is not None:
+                    p = occ[n - 1]
+                    inside = float(np.mean(paused[p["f0"]:p["f1"] + 1]))
+                    if inside >= RETURN_UNSAID_SHARE and p["conf"] < RETURN_UNSAID_CONF:
+                        unsaid = f"the word before it unsaid ({inside:.0%} in pauses, heard {p['conf']:.2f})"
+                if unsaid is None and _packed_start(o["spans"]) >= RETURN_PACKED_LETTERS:
+                    unsaid = "the word it goes back to starts squeezed into a few frames"
+                if ok and unsaid:
+                    ok, score = False, -1.0
+                    detail += ", " + unsaid
             checks.append({"to": o["w"], "from": occ[n - 1]["w"] if n else o["w"], "frame": o["f0"], "ok": ok, "margin": float(score - RETURN_ACCEPT), "words": len(pairs),
                            "suspect": not ok and score >= RETURN_SUSPECT, "detail": detail})
         seen.setdefault(o["w"], o)
     return checks
+
+
+def _retime_readings(emission, env, occ, order, r0, n_frames):
+    """The path decides the order he read in; the times inside each stretch
+    he read straight through (from one jump to the next) come from plain
+    forced alignment of those words over that stretch, as _ctc_align times
+    a recording without repeats. The path's own times are worse: its letter
+    cost is capped (RETURN_LETTER_CAP) so that it can afford to go back, and
+    with that cap a word costs about the same squeezed into a few frames as
+    spread over its sound. Every word moved onto those times when a repeat
+    was found, also words far from it. Minshawi's 79:29 with its end read
+    twice: the plain alignment had "وَأَغْطَشَ لَيْلَهَا وَأَخْرَجَ" right to
+    0.03 s, the path 0.5-0.6 s late with "وَأَخْرَجَ" packed into 0.12 s, and
+    the ayah came on screen late; 111 words packed like that over the
+    eval's repeat cases (scored without Whisper). Plain alignment puts a
+    first letter it barely hears (a hamza) at the first frame it can, as
+    in a recording without repeats, so the same _drop_stray_first_letters
+    follows (the user's fajr upload: "ءَأَنتُمْ" and "أَخْرَجَ" 1.5-2.5 s
+    early, in the silence before them) -- and _attach_detached_first_letters
+    for one in the madd before it. Audio the model can't hear
+    (_deaf_stretches) is left out: plain alignment spreads unheard words
+    over it anyhow (the fajr upload's 79:31 into 79:32's first reading,
+    which made a false repeat), and Whisper times them there
+    (_hear_deaf_stretches) -- a word the path put in it keeps the path's
+    times, and the rest are aligned in the stretches between (so the
+    held-out letter names of "حمٓ" don't keep 44:1-8 from it). A stretch
+    too short for its letters keeps the path's times too.
+    occ: _path_occurrences, changed in place (f0/f1/spans/conf, frames of
+    the searched region that starts at r0, f1 inclusive)."""
+    import torch
+    import torchaudio.functional as F
+
+    _, _, star = _get_mms()
+    deaf = [(int(d0 / FRAME_SEC) - r0, int(d1 / FRAME_SEC) - r0)
+            for d0, d1 in _deaf_stretches(emission, env, r0 * FRAME_SEC, (r0 + n_frames) * FRAME_SEC)]
+    firsts = [n for n, o in enumerate(occ) if n == 0 or o["jump"]]
+    for k, a in enumerate(firsts):
+        b = firsts[k + 1] if k + 1 < len(firsts) else len(occ)
+        run = occ[a:b]
+        # A word the path put in audio the model can't hear stays as it is;
+        # the others are aligned in the free stretches between those words
+        # and that audio, each word in the stretch the path has it in.
+        unheard = [o for o in run if any(d0 <= o["f1"] and o["f0"] < d1 for d0, d1 in deaf)]
+        free = [(0 if a == 0 else run[0]["f0"], occ[b]["f0"] if b < len(occ) else n_frames)]
+        for c0, c1 in deaf + [(o["f0"], o["f1"] + 1) for o in unheard]:
+            free = [piece for f0, f1 in free for piece in ((f0, min(f1, c0)), (max(f0, c1), f1)) if piece[1] > piece[0]]
+        groups = {}
+        for o in run:
+            mid = (o["f0"] + o["f1"]) / 2
+            stretch = next((f for f in free if f[0] <= mid < f[1]), None)
+            if o not in unheard and stretch is not None:
+                groups.setdefault(stretch, []).append(o)
+        for (f0, f1), words in groups.items():
+            _retime_stretch(emission, words, order, r0, f0, f1, star)
+        # A first letter it barely hears, before a silence or inside the
+        # madd before it, as in a recording without repeats (also where
+        # the path's times stay: mishary's 98:5 "إِلَّا" in the madd before
+        # it, 1.8 s early, in audio the model can't hear).
+        words = [{"ayah": order[o["w"]]["ayah"], "index": order[o["w"]]["index"], "roman": order[o["w"]].get("roman"),
+                  "ids": order[o["w"]]["ids"], "target": order[o["w"]]["target"],
+                  "whisper_at": order[o["w"]].get("whisper_at", ()),
+                  "spans": [(r0 + x, r0 + y) for x, y in o["spans"]], "f0": r0 + o["f0"], "f1": r0 + o["f1"]} for o in run]
+        _drop_stray_first_letters(words, env)
+        _attach_detached_first_letters(words, env)
+        for o, w in zip(run, words):
+            o["spans"] = [(x - r0, y - r0) for x, y in w["spans"]]
+            o["f0"], o["f1"] = o["spans"][0][0], o["spans"][-1][1]
+
+
+def _retime_stretch(emission, run, order, r0, f0, f1, star):
+    """Plain forced alignment of the path's occurrences `run` (consecutive
+    words) over frames [f0, f1) of the region, for _retime_readings; left
+    as they are when the stretch is too short for their letters."""
+    import torch
+    import torchaudio.functional as F
+
+    targets, ranges = [star], []
+    for o in run:
+        u = order[o["w"]]
+        if u["star_before"] and targets[-1] != star:
+            targets.append(star)
+        ranges.append((len(targets), len(targets) + len(u["ids"]) - 1))
+        targets.extend(u["ids"])
+    if targets[-1] != star:
+        targets.append(star)
+    if f1 - f0 < len(targets) + sum(x == y for x, y in zip(targets, targets[1:])):
+        return
+    try:
+        aligned, scores = F.forced_align(emission[r0 + f0:r0 + f1].unsqueeze(0).float(),
+                                         torch.tensor([targets], dtype=torch.int32), blank=0)
+    except RuntimeError:
+        return
+    spans = F.merge_tokens(aligned[0], scores[0].exp())
+    if len(spans) != len(targets):
+        return
+    for o, (s, e) in zip(run, ranges):
+        letters = spans[s:e + 1]
+        o["spans"] = [(f0 + int(t.start), f0 + int(t.end) - 1) for t in letters]
+        o["f0"], o["f1"] = o["spans"][0][0], o["spans"][-1][1]
+        o["conf"] = float(np.mean([t.score for t in letters]))
 
 
 def _unexplained_speech(path, em, runs, hop, r0, own=None):
@@ -1847,11 +2146,25 @@ def _unexplained_speech(path, em, runs, hop, r0, own=None):
 
 
 def _following_units(surah_id, words_by_ayah, units):
-    """Units (not aligned, not target) of the text after the selection, when
-    nothing after it was aligned as context -- see RETURN_FOLLOW_*."""
+    """Units (not aligned, not target) of the text after the selection --
+    see RETURN_FOLLOW_*; after the context, when the next ayah's first
+    words were aligned as context: RETURN_FOLLOW_MIN_WORDS of the text after
+    those. The search runs on RETURN_CONTEXT_SLACK_SEC past the context,
+    and without the words said there it took them for a repeat: Maher's
+    44:1-8 with 44:9's "بَلْ هُمْ فِى شَكٍّ" as context read "يَلْعَبُونَ" as
+    "ٱلْأَوَّلِينَ بَلْ" again (the eval's control_maher44_restart)."""
     aligned = [u for u in units if u["ids"] and "f0" in u]
-    if not aligned or not aligned[-1]["target"]:
+    if not aligned:
         return []
+    last = aligned[-1]
+    if not last["target"]:
+        follow = [u for u in _build_units(surah_id, words_by_ayah, [last["ayah"]], set())
+                  if u["ids"] and u["index"] > last["index"]]
+        ayah = last["ayah"] + 1
+        while ayah in words_by_ayah and len(follow) < RETURN_FOLLOW_MIN_WORDS:
+            follow += [u for u in _build_units(surah_id, words_by_ayah, [ayah], set()) if u["ids"]]
+            ayah += 1
+        return follow[:RETURN_FOLLOW_MIN_WORDS]
     targets = [u for u in aligned if u["target"]]
     seconds = max(1.0, (targets[-1]["f1"] - targets[0]["f0"]) * FRAME_SEC)
     want = int(np.clip(np.ceil(len(targets) / seconds * RETURN_SLACK_SEC * RETURN_FOLLOW_PACE),
@@ -1960,7 +2273,7 @@ def _reading_path(emission, units, env, follow=(), wav=None, words_by_ayah=None)
     repeat seemed to start but couldn't be verified. Also returns the
     stretches of speech it left unexplained (see _unexplained_speech), in
     seconds, for Whisper to listen to. follow: units of the
-    text after the selection when none was aligned as context (see
+    text after the selection, or after the context aligned after it (see
     _following_units). wav, words_by_ayah: for Whisper's track (TRACK_*);
     without them the alignment model's search alone."""
     aligned = [u for u in units if u["ids"] and "f0" in u]
@@ -1971,7 +2284,7 @@ def _reading_path(emission, units, env, follow=(), wav=None, words_by_ayah=None)
     tail = RETURN_CONTEXT_SLACK_SEC if not aligned[-1]["target"] else RETURN_SLACK_SEC
     r0 = max(0, aligned[0]["f0"] - int(lead / FRAME_SEC))
     r1 = min(emission.shape[0], aligned[-1]["f1"] + int(tail / FRAME_SEC) + 1)
-    order = aligned + [u for u in follow if u["ids"]] if aligned[-1]["target"] else aligned
+    order = aligned + [u for u in follow if u["ids"]]
     following = len(aligned)  # order[following:] is the text after the selection
     y, words, tok_word = [], [], []
     for n, u in enumerate(order):
@@ -1993,6 +2306,9 @@ def _reading_path(emission, units, env, follow=(), wav=None, words_by_ayah=None)
     hop = FRAME_SEC / ENV_HOP_SEC
     arrive, no_span = {}, set()
     runs = _pause_runs(env, int(r0 * hop), min(len(env), int(r1 * hop)))
+    paused = np.zeros(r1 - r0, dtype=bool)
+    for i, j, _ in runs:
+        paused[max(0, int(i / hop) - r0):max(0, int(j / hop) - r0)] = True
     for pid, (i, j, depth) in enumerate(runs):
         end = int(j / hop)
         for f in range(end - int(RETURN_ARRIVE_BEFORE_SEC / FRAME_SEC), end + int(RETURN_ARRIVE_AFTER_SEC / FRAME_SEC) + 1):
@@ -2039,7 +2355,7 @@ def _reading_path(emission, units, env, follow=(), wav=None, words_by_ayah=None)
         path, jumps = _path_search(em, y, words, start_words, np.array(end_words), arrive, no_span,
                                    landable=landable, **limits)
         occ = _path_occurrences(path, jumps, em, y, tok_word, consonant)
-        checks = _verify_jumps(occ, order, heard)
+        checks = _verify_jumps(occ, order, heard, paused)
         for c in checks:
             t = (r0 + c["frame"]) * FRAME_SEC
             if any(w == c["to"] and lo <= c["frame"] <= hi and not _from_as_heard(c["from"], last)
@@ -2134,6 +2450,7 @@ def _reading_path(emission, units, env, follow=(), wav=None, words_by_ayah=None)
     suspects += [a for a, _ in unexplained]
     if not jumps:
         return None, suspects, unexplained
+    _retime_readings(emission, env, occ, order, r0, len(path))
     # A restart (see RETURN_RESTART_*) is one reading of the word, from the
     # first time he says it to the end of the second.
     kept = []
@@ -2716,6 +3033,7 @@ def _restarted_words(emission, env, units, readings, wav=None):
             if pr is not None and pen < later:
                 pidx, ps, _ = pr["words"][pk2]
                 pr["words"][pk2] = (pidx, ps, later)
+            u["restarted"] = True
             moved = True
             continue
         found = by_ear(n, st, en, u) or heard_before(n, st, en, u)
@@ -2739,16 +3057,29 @@ def _restarted_words(emission, env, units, readings, wav=None):
             if pu["f1"] * FRAME_SEC > stop and pu["f0"] * FRAME_SEC < stop:
                 pu["f1"] = max(pu["f0"], int(stop / FRAME_SEC) - 1)
                 pu["spans"] = [(pu["f0"], pu["f1"])]
+        u["restarted"] = True
         moved = True
     return moved
+
+
+def _unexplained_suspects(suspects, units):
+    """The suspected repeats (seconds) a word said twice doesn't explain: the
+    reading path suspects one there and turns it down (Maher 44:8,
+    "رَبُّكُمْ" said twice), and _restarted_words finds the restart."""
+    return [t for t in suspects if not any(u.get("restarted") and u["start"] - 0.5 <= t <= u["end"]
+                                           for u in _aligned(units, target_only=True))]
 
 
 def _weak_word_reason(units):
     """A review reason for the target word aligned with the least confidence,
     when that is almost none (WORD_MISMATCH_CONF), or None. Words Whisper
     timed inside a stretch the model can't hear (_hear_deaf_stretches) are
-    left out -- they were checked another way."""
-    weak = [u for u in _aligned(units, target_only=True) if u["conf"] < WORD_MISMATCH_CONF and not u.get("deaf_checked")]
+    left out -- they were checked another way -- and so are words Whisper's
+    reading track heard within WEAK_HEARD_SEC of where they are aligned (a
+    word starting with a hamza the model barely hears: 44:7 "إِن" after the
+    madd of "بَيْنَهُمَآ", heard 0.06, Whisper heard it right there)."""
+    weak = [u for u in _aligned(units, target_only=True) if u["conf"] < WORD_MISMATCH_CONF and not u.get("deaf_checked")
+            and not any(abs(h - u.get("start", u["f0"] * FRAME_SEC)) <= WEAK_HEARD_SEC for h in u.get("whisper_at", ()))]
     if not weak:
         return None
     u = min(weak, key=lambda u: u["conf"])
@@ -2812,6 +3143,21 @@ def _has_second_occurrence(emission, units, surah_id, words_by_ayah, start_ayah,
 
 # ========== PUBLIC API (same signatures as extract_precise_clip) ==========
 
+def _with_basmala(words_by_ayah):
+    """words_by_ayah with the basmala as BASMALA_AYAH, in a new dict (the
+    cached one is shared). Its words are Al-Fatiha's ayah 1 -- the same
+    Uthmani text the frontend shows for it."""
+    fatiha = fetch_surah_words(1)[1]
+    return {BASMALA_AYAH: {"tokens": list(fatiha["tokens"]), "clean": list(fatiha["clean"])}, **words_by_ayah}
+
+
+def _first_ayah(surah_id, start_ayah, basmala):
+    """The first ayah to cut: BASMALA_AYAH when the video starts with it."""
+    if basmala and start_ayah == 1 and surah_id not in NO_BASMALA_SURAHS:
+        return BASMALA_AYAH
+    return start_ayah
+
+
 def _validate_range(words_by_ayah, surah_id, start_ayah, end_ayah):
     if start_ayah not in words_by_ayah or end_ayah not in words_by_ayah or start_ayah > end_ayah:
         _fail(f"Ayah bounds error: surah {surah_id} has no ayah range {start_ayah}-{end_ayah}.")
@@ -2835,19 +3181,29 @@ def _cached_clip(clip_name, pad_seconds):
     return None
 
 
-def extract_clip(reciter_id, surah_id, start_ayah, end_ayah, pad_seconds=0.0):
+def extract_clip(reciter_id, surah_id, start_ayah, end_ayah, pad_seconds=0.0, basmala=False):
     if reciter_id not in RECITERS_MP3QURAN:
         _fail(f"Reciter '{reciter_id}' not found.")
+    check_reciter_has_surah(reciter_id, surah_id)
 
-    clip_name = f"{reciter_id}_{surah_id:03d}_{start_ayah}-{end_ayah}"
+    first = _first_ayah(surah_id, start_ayah, basmala)
+    # Cut from a better-quality copy of the recording (RECITERS_HQ): named
+    # apart, so clips cached from mp3quran's low-bitrate file aren't reused.
+    plain_name = f"{reciter_id}_{surah_id:03d}_{first}-{end_ayah}"
+    hq = has_hq_copy(reciter_id, surah_id)
+    clip_name = f"{reciter_id}-hq_{surah_id:03d}_{first}-{end_ayah}" if hq else plain_name
     cached = _cached_clip(clip_name, pad_seconds)
     if cached:
         return cached
 
     words_by_ayah = fetch_surah_words(surah_id)
     _validate_range(words_by_ayah, surah_id, start_ayah, end_ayah)
+    if first == BASMALA_AYAH:
+        words_by_ayah = _with_basmala(words_by_ayah)
 
     full_audio = download_full_surah(reciter_id, surah_id, allow_backup=True)
+    if hq and not str(full_audio).endswith(HQ_CACHE_SUFFIX):
+        clip_name = plain_name
     backup = is_backup_recording(full_audio)
     approx = None
     if backup:
@@ -2864,7 +3220,7 @@ def extract_clip(reciter_id, surah_id, start_ayah, end_ayah, pad_seconds=0.0):
             logger.warning(f"mp3quran timing unavailable ({e}); locating ayahs from the audio itself.")
 
     return _extract_from_long_audio(
-        full_audio, surah_id, start_ayah, end_ayah, pad_seconds, words_by_ayah, clip_name,
+        full_audio, surah_id, first, end_ayah, pad_seconds, words_by_ayah, clip_name,
         {"surah": surah_id, "reciter": reciter_id, "source": "backup" if backup else "mp3quran"},
         approx=approx, use_context=True,
     )
@@ -2878,7 +3234,7 @@ def _file_hash(path):
     return digest.hexdigest()[:16]
 
 
-def extract_custom_clip(audio_path_str, surah_id, start_ayah, end_ayah, pad_seconds=0.0, **_ignored):
+def extract_custom_clip(audio_path_str, surah_id, start_ayah, end_ayah, pad_seconds=0.0, basmala=False, **_ignored):
     audio_path = Path(audio_path_str)
     if not audio_path.exists():
         _fail(f"Custom audio file not found: {audio_path}")
@@ -2886,15 +3242,18 @@ def extract_custom_clip(audio_path_str, surah_id, start_ayah, end_ayah, pad_seco
     # Named after the file's content: preparing the same upload and range again
     # (switching back to it, say) reuses the result instead of taking minutes,
     # and two different uploads still never overwrite each other's output.
-    clip_name = f"custom_{surah_id:03d}_{start_ayah}-{end_ayah}_{_file_hash(audio_path)}"
+    first = _first_ayah(surah_id, start_ayah, basmala)
+    clip_name = f"custom_{surah_id:03d}_{first}-{end_ayah}_{_file_hash(audio_path)}"
     cached = _cached_clip(clip_name, pad_seconds)
     if cached:
         return cached
 
     words_by_ayah = fetch_surah_words(surah_id)
     _validate_range(words_by_ayah, surah_id, start_ayah, end_ayah)
+    if first == BASMALA_AYAH:
+        words_by_ayah = _with_basmala(words_by_ayah)
     return _extract_from_long_audio(
-        audio_path, surah_id, start_ayah, end_ayah, pad_seconds, words_by_ayah, clip_name,
+        audio_path, surah_id, first, end_ayah, pad_seconds, words_by_ayah, clip_name,
         {"surah": surah_id, "reciter": "custom", "source": "custom"},
         approx=None, use_context=False,
     )
@@ -2908,8 +3267,9 @@ if __name__ == "__main__":
     parser.add_argument("--start", required=True, type=int)
     parser.add_argument("--end", required=True, type=int)
     parser.add_argument("--pad", type=float, default=0.0)
+    parser.add_argument("--basmala", action="store_true", help="start with the basmala before ayah 1")
     args = parser.parse_args()
     if args.audio:
-        print(extract_custom_clip(args.audio, args.surah, args.start, args.end, pad_seconds=args.pad))
+        print(extract_custom_clip(args.audio, args.surah, args.start, args.end, pad_seconds=args.pad, basmala=args.basmala))
     else:
-        print(extract_clip(args.reciter, args.surah, args.start, args.end, pad_seconds=args.pad))
+        print(extract_clip(args.reciter, args.surah, args.start, args.end, pad_seconds=args.pad, basmala=args.basmala))

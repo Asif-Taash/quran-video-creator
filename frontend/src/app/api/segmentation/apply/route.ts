@@ -4,6 +4,7 @@ import path from "path";
 import quranData from "@/data/quran.json";
 import { getVerseWordMap } from "@/lib/quranWordMap";
 import { fitWordCounts } from "@/remotion/timing";
+import { BASMALA_VERSE_ID, BASMALA_WORD_COUNT, surahHasBasmala } from "@/lib/basmala";
 
 export async function POST(req: Request) {
   try {
@@ -31,7 +32,9 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: `Surah ${item.surah} not found in database.` }, { status: 400 });
       }
 
-      if (typeof item.ayah !== "number" || item.ayah < 1 || item.ayah > surahData.total_verses) {
+      // The basmala before ayah 1, when the video starts with it (lib/basmala.ts).
+      const isBasmala = item.ayah === BASMALA_VERSE_ID && surahHasBasmala(item.surah);
+      if (!isBasmala && (typeof item.ayah !== "number" || item.ayah < 1 || item.ayah > surahData.total_verses)) {
         return NextResponse.json({ error: `Invalid ayah number: ${item.ayah} for surah ${item.surah}.` }, { status: 400 });
       }
 
@@ -78,21 +81,25 @@ export async function POST(req: Request) {
         if (typeof mapping.repeat_of_part !== "number") totalUnits += mapping.word_count;
       }
 
-      const verseData = surahData.verses.find((v: any) => v.id === item.ayah);
-      if (!verseData) {
-        return NextResponse.json({ error: `Verse ${item.ayah} not found in Surah ${item.surah}.` }, { status: 400 });
-      }
-
-      // Validate against the REAL Uthmani word count (same basis wordTimings
-      // is indexed by at render time), not the QCF glyph-token count.
-      const puaWordCount = verseData.text.trim().split(/\s+/).length;
       let actualWordCount: number;
-      try {
-        const wordMap = await getVerseWordMap(item.surah, item.ayah, puaWordCount);
-        actualWordCount = wordMap.realWordCount;
-      } catch (e) {
-        console.warn(`[Segmentation Apply] Failed to resolve real word count for Surah ${item.surah} Ayah ${item.ayah}, falling back to PUA count:`, e);
-        actualWordCount = puaWordCount;
+      if (isBasmala) {
+        actualWordCount = BASMALA_WORD_COUNT;
+      } else {
+        const verseData = surahData.verses.find((v: any) => v.id === item.ayah);
+        if (!verseData) {
+          return NextResponse.json({ error: `Verse ${item.ayah} not found in Surah ${item.surah}.` }, { status: 400 });
+        }
+
+        // Validate against the REAL Uthmani word count (same basis wordTimings
+        // is indexed by at render time), not the QCF glyph-token count.
+        const puaWordCount = verseData.text.trim().split(/\s+/).length;
+        try {
+          const wordMap = await getVerseWordMap(item.surah, item.ayah, puaWordCount);
+          actualWordCount = wordMap.realWordCount;
+        } catch (e) {
+          console.warn(`[Segmentation Apply] Failed to resolve real word count for Surah ${item.surah} Ayah ${item.ayah}, falling back to PUA count:`, e);
+          actualWordCount = puaWordCount;
+        }
       }
 
       // Never silently reshuffle word_count when every mapping already

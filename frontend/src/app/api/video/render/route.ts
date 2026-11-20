@@ -40,6 +40,7 @@ import {
 import { buildVerseTimeline, holdWordsThroughRepeats, repeatWordWindows, shiftReadingsToTrim, shiftWordsToTrim } from "@/remotion/timing";
 import type { VideoConfig } from "remotion";
 import { getSurahWordMap } from "@/lib/quranWordMap";
+import { BASMALA_GLYPHS, BASMALA_GLYPH_COUNTS, BASMALA_VERSE_ID, basmalaMeaning, canStartWithBasmala } from "@/lib/basmala";
 import { formatVerseGroupPrefix, getTranslationOption, isRtlTranslation } from "@/lib/translationOptions";
 import { surahEnglishName } from "@/lib/surahEnglishNames";
 
@@ -604,6 +605,8 @@ export async function POST(req: Request) {
     if (!localSurah || startVerse < 1 || endVerse < startVerse || endVerse > localSurah.total_verses) {
       return NextResponse.json({ error: "Invalid surah or verse range" }, { status: 400 });
     }
+    // The video starts with the basmala before ayah 1 (lib/basmala.ts).
+    const basmala = formData.get("basmala") === "true" && canStartWithBasmala(surahId, startVerse);
 
     // Fetch specific translation if required.
     // diyanet_yeni and ahmet_varol are bundled locally (LOCAL_TRANSLATIONS
@@ -634,46 +637,68 @@ export async function POST(req: Request) {
     const translationOption = getTranslationOption(translationId);
 
     const isNoneTranslation = translationId === "none" || !translationOption;
-    const translationCacheKey = `${translationId}:${surahId}`;
-    let translationMap = translationCache.get(translationCacheKey) ?? new Map<number, string>();
+    // No translation means none in any part of a split ayah either. A
+    // project saved before this fix may still hold its parts' texts: the
+    // translation picker used to clear only the first part (see
+    // lib/segmentTranslations.ts).
+    if (isNoneTranslation) {
+      segmentationData = segmentationData.map((entry) =>
+        Array.isArray(entry?.mappings)
+          ? { ...entry, mappings: entry.mappings.map((m: any) => ({ ...m, translation_text: "" })) }
+          : entry
+      );
+    }
+    // One surah's translation (cached), by ayah number.
+    const loadTranslationMap = async (sid: number): Promise<Map<number, string>> => {
+      const translationCacheKey = `${translationId}:${sid}`;
+      const translationMap = translationCache.get(translationCacheKey) ?? new Map<number, string>();
 
-    if (!isNoneTranslation && translationOption && !translationCache.has(translationCacheKey)) {
-      if (LOCAL_TRANSLATIONS[translationId]) {
-        const data = LOCAL_TRANSLATIONS[translationId];
-        const prefix = `${surahId}:`;
-        for (const [key, text] of Object.entries(data)) {
-          if (key.startsWith(prefix)) {
-            translationMap.set(parseInt(key.slice(prefix.length), 10), text);
-          }
-        }
-        translationCache.set(translationCacheKey, translationMap);
-      } else {
-        const { source, ref } = translationOption;
-        try {
-          if (source === "alquran") {
-            const res = await fetch(`https://api.alquran.cloud/v1/surah/${surahId}/${ref}`);
-            if (res.ok) {
-              const data = await res.json();
-              (data.data?.ayahs || []).forEach((a: { numberInSurah: number; text: string }) => {
-                translationMap.set(a.numberInSurah, formatVerseGroupPrefix(a.text));
-              });
-            }
-          } else {
-            const res = await fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/quran-api@1/editions/${ref}.min.json`);
-            if (res.ok) {
-              const data = await res.json();
-              (data.quran || []).forEach((v: { chapter: number; verse: number; text: string }) => {
-                if (v.chapter === surahId) {
-                  translationMap.set(v.verse, v.text);
-                }
-              });
+      if (!isNoneTranslation && translationOption && !translationCache.has(translationCacheKey)) {
+        if (LOCAL_TRANSLATIONS[translationId]) {
+          const data = LOCAL_TRANSLATIONS[translationId];
+          const prefix = `${sid}:`;
+          for (const [key, text] of Object.entries(data)) {
+            if (key.startsWith(prefix)) {
+              translationMap.set(parseInt(key.slice(prefix.length), 10), text);
             }
           }
           translationCache.set(translationCacheKey, translationMap);
-        } catch (err) {
-          console.error("Failed to fetch translation:", err);
+        } else {
+          const { source, ref } = translationOption;
+          try {
+            if (source === "alquran") {
+              const res = await fetch(`https://api.alquran.cloud/v1/surah/${sid}/${ref}`);
+              if (res.ok) {
+                const data = await res.json();
+                (data.data?.ayahs || []).forEach((a: { numberInSurah: number; text: string }) => {
+                  translationMap.set(a.numberInSurah, formatVerseGroupPrefix(a.text));
+                });
+              }
+            } else {
+              const res = await fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/quran-api@1/editions/${ref}.min.json`);
+              if (res.ok) {
+                const data = await res.json();
+                (data.quran || []).forEach((v: { chapter: number; verse: number; text: string }) => {
+                  if (v.chapter === sid) {
+                    translationMap.set(v.verse, v.text);
+                  }
+                });
+              }
+            }
+            translationCache.set(translationCacheKey, translationMap);
+          } catch (err) {
+            console.error("Failed to fetch translation:", err);
+          }
         }
       }
+      return translationMap;
+    };
+    let translationMap = await loadTranslationMap(surahId);
+    // The basmala's translation is Al-Fatiha's ayah 1 (a copy: the cached
+    // map stays this surah's own).
+    if (basmala && !isNoneTranslation) {
+      const basmalaTranslation = basmalaMeaning((await loadTranslationMap(1)).get(1) ?? "", translationOption?.language);
+      translationMap = new Map(translationMap).set(BASMALA_VERSE_ID, basmalaTranslation);
     }
 
     const bgImage = formData.get("bgImage") as File | null;
@@ -850,7 +875,10 @@ export async function POST(req: Request) {
       globalAudioDurationInFrames = await estimateAudioDurationInFrames(absolutePath);
     }
 
-    const selectedVerses = localSurah.verses.filter((verse) => verse.id >= startVerse && verse.id <= endVerse);
+    const selectedVerses: LocalVerse[] = [
+      ...(basmala ? [{ id: BASMALA_VERSE_ID, text: BASMALA_GLYPHS.text, page: BASMALA_GLYPHS.page }] : []),
+      ...localSurah.verses.filter((verse) => verse.id >= startVerse && verse.id <= endVerse),
+    ];
 
     // The real-word <-> PUA-glyph-token map slices `text` by real-word
     // ranges, which only verses with a segmentation applied need (puaTokenCounts)
@@ -860,7 +888,11 @@ export async function POST(req: Request) {
     const segmentedAyahIds = selectedVerses
       .filter((verse) => segmentationData.some((s) => s.surah === surahId && s.ayah === verse.id))
       .map((verse) => verse.id);
-    const wordMapAyahIds = wordHighlight ? selectedVerses.map((verse) => verse.id) : segmentedAyahIds;
+    // The basmala's map is fixed (one glyph per word) -- quran.com has no
+    // ayah 0 to ask.
+    const wordMapAyahIds = (wordHighlight ? selectedVerses.map((verse) => verse.id) : segmentedAyahIds).filter(
+      (id) => id !== BASMALA_VERSE_ID
+    );
     let puaWordMapByAyah: Record<number, { realWordCount: number; puaTokenCounts: number[] }> = {};
     if (wordMapAyahIds.length > 0) {
       try {
@@ -874,6 +906,9 @@ export async function POST(req: Request) {
       } catch (e) {
         console.warn("[Video Render] Failed to fetch real-word/PUA word map:", e);
       }
+    }
+    if (basmala) {
+      puaWordMapByAyah[BASMALA_VERSE_ID] = { realWordCount: BASMALA_GLYPH_COUNTS.length, puaTokenCounts: BASMALA_GLYPH_COUNTS };
     }
 
     const shortReciterKey = getReciter(reciterId)?.backendKey || "mishary";
@@ -893,8 +928,19 @@ export async function POST(req: Request) {
       if (preparedAudioFileExists && preparedJsonStr) {
         wordTimingsData = JSON.parse(preparedJsonStr);
 
-        if (trimStart > 0 || trimEnd > 0) {
-          console.log(`[Video Render] Using prepared audio and trimming from ${trimStart}s to ${trimEnd}s...`);
+        // A cleaner copy of the clip, when the project has one: the same
+        // cut and timing as FLAC (no MP3 step), with any repair made to it
+        // -- Ajmi 2:136-137's harsh «شِقَاقٍ», the user, 2026-11-17 (see
+        // quran_aligner.write_lossless_cut). It is trimmed to WAV, so the
+        // export's own encode is the only lossy one. Without it, nothing
+        // changes below.
+        const improvedAudioPath = preparedAudioLocalPath.replace(/\.[^./\\]+$/, "") + ".flac";
+        const improvedStat = await fs.stat(improvedAudioPath).catch(() => null);
+        const hasImprovedAudio = improvedStat?.isFile() === true;
+        // Part of the trimmed file's name: a replaced copy is trimmed anew.
+        const improvedTag = improvedStat ? `${improvedStat.size.toString(36)}${Math.round(improvedStat.mtimeMs).toString(36)}` : "";
+        if (trimStart > 0 || trimEnd > 0 || hasImprovedAudio) {
+          console.log(`[Video Render] Using prepared audio${hasImprovedAudio ? " (improved copy)" : ""} and trimming from ${trimStart}s to ${trimEnd}s...`);
           const uploadsDir = path.join(process.cwd(), "public", "render-assets", "trimmed-audio");
           await fs.mkdir(uploadsDir, { recursive: true });
           // Deterministic filename (source file + exact trim boundaries)
@@ -917,7 +963,9 @@ export async function POST(req: Request) {
           // "-v2": re-encoded since 2026-11-02 (see the ffmpeg call below) --
           // a new name, so the stream-copied files made before, which start
           // late, are never reused.
-          const trimmedFilename = `trimmed-${sourceBasename}-${trimStart.toFixed(2)}-${trimEnd.toFixed(2)}-v2.mp3`;
+          const trimmedFilename = hasImprovedAudio
+            ? `trimmed-${sourceBasename}-${trimStart.toFixed(2)}-${trimEnd.toFixed(2)}-improved-${improvedTag}.wav`
+            : `trimmed-${sourceBasename}-${trimStart.toFixed(2)}-${trimEnd.toFixed(2)}-v2.mp3`;
           const trimmedAbsolutePath = path.join(uploadsDir, trimmedFilename);
 
           try {
@@ -935,7 +983,11 @@ export async function POST(req: Request) {
               // that much ahead of its timing. Encoding to a file (not a pipe)
               // keeps LAME's delay header: measured 0 ms off, at 320k the
               // second encode isn't audible.
-              await execAsync(`ffmpeg -y -i "${preparedAudioLocalPath}" -ss ${trimStart} ${toArg} -c:a libmp3lame -b:a 320k "${trimmedAbsolutePath}"`);
+              await execAsync(
+                hasImprovedAudio
+                  ? `ffmpeg -y -i "${improvedAudioPath}" -ss ${trimStart} ${toArg} -c:a pcm_s16le "${trimmedAbsolutePath}"`
+                  : `ffmpeg -y -i "${preparedAudioLocalPath}" -ss ${trimStart} ${toArg} -c:a libmp3lame -b:a 320k "${trimmedAbsolutePath}"`
+              );
             }
 
             // We must serve it relative to the public folder
@@ -983,6 +1035,7 @@ export async function POST(req: Request) {
         backendFormData.append("surah", surahId.toString());
         backendFormData.append("start", startVerse.toString());
         backendFormData.append("end", endVerse.toString());
+        if (basmala) backendFormData.append("basmala", "true");
         backendFormData.append("audio_file", customAudio);
 
         const extractRes = await fetch(`${baseUrl}/api/extraction/custom`, {
@@ -1033,7 +1086,8 @@ export async function POST(req: Request) {
             surah: surahId,
             start: startVerse,
             end: endVerse,
-            reciter: shortReciterKey
+            reciter: shortReciterKey,
+            basmala,
           }),
         });
 
@@ -1186,7 +1240,8 @@ export async function POST(req: Request) {
           }
         } else {
           const audioRelPathToSave = `renders/temp_audio/${reciterId}_${formatNumber(surahId)}_${formatNumber(verse.id)}.mp3`;
-          const audioUrl = audioUrlFor(reciterId, surahId, verse.id);
+          // Per-ayah files have no basmala of their own: Al-Fatiha's ayah 1 is it.
+          const audioUrl = verse.id === BASMALA_VERSE_ID ? audioUrlFor(reciterId, 1, 1) : audioUrlFor(reciterId, surahId, verse.id);
           try {
             if (!audioUrl) throw new Error(`No per-ayah audio for reciter ${reciterId}`);
             localAudioFile = await downloadAudioToPublic(audioUrl, audioRelPathToSave);
@@ -1247,7 +1302,10 @@ export async function POST(req: Request) {
         // same reasoning as translationFont's own fields -- so switching the
         // choice in the live preview is instant and client-side only, no
         // server round-trip needed.
-        const qcfV1 = qcfV1TextBySurahAyah.get(`${surahId}:${verse.id}`);
+        const qcfV1 =
+          verse.id === BASMALA_VERSE_ID
+            ? { text: BASMALA_GLYPHS.textV1, page: BASMALA_GLYPHS.pageV1 }
+            : qcfV1TextBySurahAyah.get(`${surahId}:${verse.id}`);
 
         const verseData: QuranVerse = {
           id: verse.id,

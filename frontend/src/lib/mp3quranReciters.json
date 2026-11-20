@@ -1,0 +1,1260 @@
+[
+ {
+  "id": "mq_ahmad_hudhaifi",
+  "backendKey": "mq_ahmad_hudhaifi",
+  "nameAr": "أحمد الحذيفي",
+  "nameLatin": "Ahmad Al-Huthaifi",
+  "surahs": "1-32,34-36,38-39,41-45,47-114"
+ },
+ {
+  "id": "mq_ahmad_hawashi",
+  "backendKey": "mq_ahmad_hawashi",
+  "nameAr": "أحمد الحواشي",
+  "nameLatin": "Ahmad Al-Hawashi",
+  "timed": true
+ },
+ {
+  "id": "mq_ahmad_suwailem",
+  "backendKey": "mq_ahmad_suwailem",
+  "nameAr": "أحمد السويلم",
+  "nameLatin": "Ahmed Al-Swailem"
+ },
+ {
+  "id": "mq_ahmad_tarabulsi_r2",
+  "backendKey": "mq_ahmad_tarabulsi_r2",
+  "nameAr": "أحمد الطرابلسي",
+  "nameLatin": "Ahmed Al-Trabulsi",
+  "timed": true
+ },
+ {
+  "id": "mq_ahmad_shaheen",
+  "backendKey": "mq_ahmad_shaheen",
+  "nameAr": "أحمد خليل شاهين",
+  "nameLatin": "Ahmad Shaheen",
+  "timed": true
+ },
+ {
+  "id": "mq_ahmad_deeban",
+  "backendKey": "mq_ahmad_deeban",
+  "nameAr": "أحمد ديبان",
+  "nameLatin": "Ahmad Deban",
+  "timed": true
+ },
+ {
+  "id": "mq_ahmad_saud",
+  "backendKey": "mq_ahmad_saud",
+  "nameAr": "أحمد سعود",
+  "nameLatin": "Ahmad Saud",
+  "surahs": "85-114"
+ },
+ {
+  "id": "mq_ahmad_saber",
+  "backendKey": "mq_ahmad_saber",
+  "nameAr": "أحمد صابر",
+  "nameLatin": "Ahmad Saber",
+  "timed": true
+ },
+ {
+  "id": "mq_ahmad_humaid",
+  "backendKey": "mq_ahmad_humaid",
+  "nameAr": "أحمد طالب بن حميد",
+  "nameLatin": "Ahmad Talib bin Humaid",
+  "surahs": "1-8,10-13,15,18-22,25-32,34-114",
+  "timed": true
+ },
+ {
+  "id": "mq_ahmad_amer",
+  "backendKey": "mq_ahmad_amer",
+  "nameAr": "أحمد عامر",
+  "nameLatin": "Ahmed Amer",
+  "timed": true
+ },
+ {
+  "id": "mq_ahmad_masarawi",
+  "backendKey": "mq_ahmad_masarawi",
+  "nameAr": "أحمد عيسى المعصراوي",
+  "nameLatin": "Ahmad Issa Al Maasaraawi",
+  "timed": true
+ },
+ {
+  "id": "mq_ahmad_naina",
+  "backendKey": "mq_ahmad_naina",
+  "nameAr": "أحمد نعينع",
+  "nameLatin": "Ahmad Nuaina",
+  "timed": true
+ },
+ {
+  "id": "mq_akram_alaqmi",
+  "backendKey": "mq_akram_alaqmi",
+  "nameAr": "أكرم العلاقمي",
+  "nameLatin": "Akram Al-Alaqmi",
+  "timed": true
+ },
+ {
+  "id": "mq_anas_emadi",
+  "backendKey": "mq_anas_emadi",
+  "nameAr": "أنس العمادي",
+  "nameLatin": "Anas Al-Emadi",
+  "timed": true
+ },
+ {
+  "id": "mq_ibrahim_akhdar",
+  "backendKey": "mq_ibrahim_akhdar",
+  "nameAr": "إبراهيم الأخضر",
+  "nameLatin": "Ibrahim Al-Akhdar",
+  "timed": true
+ },
+ {
+  "id": "mq_ibrahim_jibreen",
+  "backendKey": "mq_ibrahim_jibreen",
+  "nameAr": "إبراهيم الجبرين",
+  "nameLatin": "Ibrahim Al-Jebreen",
+  "surahs": "1-4,6-8,10,12-27,30-41,44-114"
+ },
+ {
+  "id": "mq_ibrahim_jormy",
+  "backendKey": "mq_ibrahim_jormy",
+  "nameAr": "إبراهيم الجرمي",
+  "nameLatin": "Ibrahim Al-Jormy"
+ },
+ {
+  "id": "mq_ibrahim_dosari_r2",
+  "backendKey": "mq_ibrahim_dosari_r2",
+  "nameAr": "إبراهيم الدوسري",
+  "nameLatin": "Ibrahim Al-Dosari",
+  "timed": true
+ },
+ {
+  "id": "mq_ibrahim_saadan",
+  "backendKey": "mq_ibrahim_saadan",
+  "nameAr": "إبراهيم السعدان",
+  "nameLatin": "Ibrahim Al-Saadan",
+  "surahs": "1,4-9,11-12,15-16,19-20,78-114"
+ },
+ {
+  "id": "mq_ibrahim_shahri",
+  "backendKey": "mq_ibrahim_shahri",
+  "nameAr": "إبراهيم الشهري",
+  "nameLatin": "Ibrahim Al-Shahri",
+  "surahs": "1-14,16-114"
+ },
+ {
+  "id": "mq_ibrahim_asiri",
+  "backendKey": "mq_ibrahim_asiri",
+  "nameAr": "إبراهيم العسيري",
+  "nameLatin": "Ibrahim Al-Asiri",
+  "timed": true
+ },
+ {
+  "id": "mq_islam_sobhi",
+  "backendKey": "mq_islam_sobhi",
+  "nameAr": "إسلام صبحي",
+  "nameLatin": "Islam Sobhi",
+  "surahs": "1-36,38,41-44,46-64,66-114"
+ },
+ {
+  "id": "mq_zain_ahmad",
+  "backendKey": "mq_zain_ahmad",
+  "nameAr": "الزين محمد أحمد",
+  "nameLatin": "Alzain Mohammad Ahmad",
+  "timed": true
+ },
+ {
+  "id": "mq_ashri_omran",
+  "backendKey": "mq_ashri_omran",
+  "nameAr": "العشري عمران",
+  "nameLatin": "Alashri Omran",
+  "surahs": "1-64,66-114"
+ },
+ {
+  "id": "mq_waleed_shamsan",
+  "backendKey": "mq_waleed_shamsan",
+  "nameAr": "الوليد الشمسان",
+  "nameLatin": "Alwaleed Al-Shamsan",
+  "surahs": "1,8,17,19-20,24-26,29-33,35-37,41-45,47-60,62-68,70,75-76,81-82,85-86,93-114"
+ },
+ {
+  "id": "mq_badr_turki",
+  "backendKey": "mq_badr_turki",
+  "nameAr": "بدر التركي",
+  "nameLatin": "Bader Al-Turki"
+ },
+ {
+  "id": "mq_peshawa_kurdi",
+  "backendKey": "mq_peshawa_kurdi",
+  "nameAr": "بيشه وا قادر الكردي",
+  "nameLatin": "Peshawa Qadr Al-Kurdi",
+  "timed": true
+ },
+ {
+  "id": "mq_tawfeeq_sayegh",
+  "backendKey": "mq_tawfeeq_sayegh",
+  "nameAr": "توفيق الصايغ",
+  "nameLatin": "Tawfeeq As-Sayegh",
+  "timed": true
+ },
+ {
+  "id": "mq_jamal_abdullah",
+  "backendKey": "mq_jamal_abdullah",
+  "nameAr": "جمال شاكر عبدالله",
+  "nameLatin": "Jamal Shaker Abdullah"
+ },
+ {
+  "id": "mq_jamaan_osaimi",
+  "backendKey": "mq_jamaan_osaimi",
+  "nameAr": "جمعان العصيمي",
+  "nameLatin": "Jamaan Al-Osaimi",
+  "timed": true
+ },
+ {
+  "id": "mq_junaid_abdullah",
+  "backendKey": "mq_junaid_abdullah",
+  "nameAr": "جنيد آدم عبدالله",
+  "nameLatin": "Junaid Adam Abdullah"
+ },
+ {
+  "id": "mq_hatem_waer",
+  "backendKey": "mq_hatem_waer",
+  "nameAr": "حاتم فريد الواعر",
+  "nameLatin": "Hatem Fareed Al-Waer"
+ },
+ {
+  "id": "mq_hassan_daghriri",
+  "backendKey": "mq_hassan_daghriri",
+  "nameAr": "حسن الدغريري",
+  "nameLatin": "Hassan Al-Daghriri",
+  "timed": true
+ },
+ {
+  "id": "mq_hassan_saleh",
+  "backendKey": "mq_hassan_saleh",
+  "nameAr": "حسن صالح",
+  "nameLatin": "Hasan Saleh",
+  "timed": true
+ },
+ {
+  "id": "mq_hussain_sheikh",
+  "backendKey": "mq_hussain_sheikh",
+  "nameAr": "حسين آل الشيخ",
+  "nameLatin": "Hussain Al-Shaik",
+  "surahs": "2,8,13-14,22,32,36,38,44-45,49-50,54-57,62-66,72-73,75-82,85,87,89-114"
+ },
+ {
+  "id": "mq_hamad_daghriri",
+  "backendKey": "mq_hamad_daghriri",
+  "nameAr": "حمد الدغريري",
+  "nameLatin": "Hamad Al Daghriri",
+  "surahs": "1-2,12-13,19,21,23,27,29,31,36,38-114"
+ },
+ {
+  "id": "mq_khalid_ziyadi",
+  "backendKey": "mq_khalid_ziyadi",
+  "nameAr": "خالد الزيادي",
+  "nameLatin": "Khalid Al-Ziyadi"
+ },
+ {
+  "id": "mq_khalid_sharekh",
+  "backendKey": "mq_khalid_sharekh",
+  "nameAr": "خالد الشارخ",
+  "nameLatin": "Khalid Al-Sharekh",
+  "surahs": "2-19,68-98,100-114"
+ },
+ {
+  "id": "mq_khalid_shuraimi",
+  "backendKey": "mq_khalid_shuraimi",
+  "nameAr": "خالد الشريمي",
+  "nameLatin": "Khalid Al-Shoraimy",
+  "surahs": "1,43-114"
+ },
+ {
+  "id": "mq_khalid_ghamdi",
+  "backendKey": "mq_khalid_ghamdi",
+  "nameAr": "خالد الغامدي",
+  "nameLatin": "Khalid Al-Gamdi",
+  "surahs": "1-37,39-43,45-47,49-55,57-71,73,75-77,80,82-83,85-95,97-99,101-114"
+ },
+ {
+  "id": "mq_khalid_qahtani",
+  "backendKey": "mq_khalid_qahtani",
+  "nameAr": "خالد القحطاني",
+  "nameLatin": "Khaled Al-Qahtani",
+  "timed": true
+ },
+ {
+  "id": "mq_khalid_mohanna",
+  "backendKey": "mq_khalid_mohanna",
+  "nameAr": "خالد المهنا",
+  "nameLatin": "Khalid Al-Mohana",
+  "timed": true
+ },
+ {
+  "id": "mq_khalid_wahaibi",
+  "backendKey": "mq_khalid_wahaibi",
+  "nameAr": "خالد الوهيبي",
+  "nameLatin": "Khalid Al-Wehabi",
+  "surahs": "1,3-20,24-25,29-32"
+ },
+ {
+  "id": "mq_khalid_abdulkafi",
+  "backendKey": "mq_khalid_abdulkafi",
+  "nameAr": "خالد عبدالكافي",
+  "nameLatin": "Khalid Abdulkafi",
+  "timed": true
+ },
+ {
+  "id": "mq_khalid_mohammadi",
+  "backendKey": "mq_khalid_mohammadi",
+  "nameAr": "خالد كريم محمدي",
+  "nameLatin": "Khalid Mohammadi",
+  "timed": true
+ },
+ {
+  "id": "mq_khalifa_tunaiji",
+  "backendKey": "mq_khalifa_tunaiji",
+  "nameAr": "خليفة الطنيجي",
+  "nameLatin": "Khalifa Al-Tunaiji",
+  "timed": true
+ },
+ {
+  "id": "mq_dawood_hamza",
+  "backendKey": "mq_dawood_hamza",
+  "nameAr": "داود حمزة",
+  "nameLatin": "Dawood Hamza",
+  "timed": true
+ },
+ {
+  "id": "mq_rami_duais",
+  "backendKey": "mq_rami_duais",
+  "nameAr": "رامي الدعيس",
+  "nameLatin": "Rami Al-Deais"
+ },
+ {
+  "id": "mq_ramadan_shakoor",
+  "backendKey": "mq_ramadan_shakoor",
+  "nameAr": "رمضان شكور",
+  "nameLatin": "Ramadan Shakoor",
+  "surahs": "1-3,9-10,12-14,23-24,26,29,35-36,39-40,42-43,47-51,57-60,63,68-72,82-109,111-114"
+ },
+ {
+  "id": "mq_zaki_daghistani",
+  "backendKey": "mq_zaki_daghistani",
+  "nameAr": "زكي داغستاني",
+  "nameLatin": "Zaki Daghistani",
+  "timed": true
+ },
+ {
+  "id": "mq_sami_hassan",
+  "backendKey": "mq_sami_hassan",
+  "nameAr": "سامي الحسن",
+  "nameLatin": "Sami Al-Hassan",
+  "surahs": "1,19-20,24,26-27,32,34,50,55,81-82,86-88,91-95,97,102,104-105,109-112"
+ },
+ {
+  "id": "mq_sami_dosari",
+  "backendKey": "mq_sami_dosari",
+  "nameAr": "سامي الدوسري",
+  "nameLatin": "Sami Al-Dosari",
+  "surahs": "2,8-9,12-14,29-35,39-41,78-114"
+ },
+ {
+  "id": "mq_saad_muqrin",
+  "backendKey": "mq_saad_muqrin",
+  "nameAr": "سعد المقرن",
+  "nameLatin": "Saad Al-Muqrin"
+ },
+ {
+  "id": "mq_salman_siddiq",
+  "backendKey": "mq_salman_siddiq",
+  "nameAr": "سلمان الصديق",
+  "nameLatin": "Salman Al-Siddiq"
+ },
+ {
+  "id": "mq_salman_otaibi",
+  "backendKey": "mq_salman_otaibi",
+  "nameAr": "سلمان العتيبي",
+  "nameLatin": "Salman Al-Otaibi",
+  "surahs": "1-3,10-11,14,19,23,25,32,36,38-40,46,48,50,52,55-56,58-59,61-64,66-114"
+ },
+ {
+  "id": "mq_sahl_yassin",
+  "backendKey": "mq_sahl_yassin",
+  "nameAr": "سهل ياسين",
+  "nameLatin": "Sahl Yassin",
+  "timed": true
+ },
+ {
+  "id": "mq_sayed_hashemi",
+  "backendKey": "mq_sayed_hashemi",
+  "nameAr": "سيد أحمد هاشمي",
+  "nameLatin": "Sayed Ahmad Hashemi",
+  "timed": true
+ },
+ {
+  "id": "mq_sayed_ramadan",
+  "backendKey": "mq_sayed_ramadan",
+  "nameAr": "سيد رمضان",
+  "nameLatin": "Sayeed Ramadan"
+ },
+ {
+  "id": "mq_shaban_sayyad",
+  "backendKey": "mq_shaban_sayyad",
+  "nameAr": "شعبان الصياد",
+  "nameLatin": "Shaban Al-Sayyad",
+  "surahs": "2-7,9-13,16-17,19-22,24,26-29,32-33,35,38,40-43,45-47,52-54,59-60,67-69,77-82,87-92,94-105"
+ },
+ {
+  "id": "mq_shirzad_taher",
+  "backendKey": "mq_shirzad_taher",
+  "nameAr": "شيرزاد عبدالرحمن طاهر",
+  "nameLatin": "Shirzad Taher",
+  "timed": true
+ },
+ {
+  "id": "mq_saber_abdulhakam_r5",
+  "backendKey": "mq_saber_abdulhakam_r5",
+  "nameAr": "صابر عبدالحكم",
+  "nameLatin": "Saber Abdulhakam",
+  "labelAr": "صابر عبدالحكم (مجوّد)",
+  "labelLatin": "Saber Abdulhakam (Mujawwad)"
+ },
+ {
+  "id": "mq_saber_abdulhakam",
+  "backendKey": "mq_saber_abdulhakam",
+  "nameAr": "صابر عبدالحكم",
+  "nameLatin": "Saber Abdulhakam",
+  "labelAr": "صابر عبدالحكم (مرتّل)",
+  "labelLatin": "Saber Abdulhakam (Murattal)",
+  "timed": true
+ },
+ {
+  "id": "mq_saber_abdulhakam_r2",
+  "backendKey": "mq_saber_abdulhakam_r2",
+  "nameAr": "صابر عبدالحكم",
+  "nameLatin": "Saber Abdulhakam",
+  "labelAr": "صابر عبدالحكم (مرتّل 2)",
+  "labelLatin": "Saber Abdulhakam (Murattal 2)"
+ },
+ {
+  "id": "mq_saleh_talib",
+  "backendKey": "mq_saleh_talib",
+  "nameAr": "صالح آل طالب",
+  "nameLatin": "Saleh Al-Talib",
+  "surahs": "1,25,34,38-39,44-47,55-61,70,72-86"
+ },
+ {
+  "id": "mq_saleh_shamrani",
+  "backendKey": "mq_saleh_shamrani",
+  "nameAr": "صالح الشمراني",
+  "nameLatin": "Saleh Al-Shamrani",
+  "timed": true
+ },
+ {
+  "id": "mq_saleh_sahood",
+  "backendKey": "mq_saleh_sahood",
+  "nameAr": "صالح الصاهود",
+  "nameLatin": "Saleh Al-Sahood",
+  "timed": true
+ },
+ {
+  "id": "mq_saleh_quraishi",
+  "backendKey": "mq_saleh_quraishi",
+  "nameAr": "صالح القريشي",
+  "nameLatin": "Saleh Al-Quraishi"
+ },
+ {
+  "id": "mq_saleh_habdan",
+  "backendKey": "mq_saleh_habdan",
+  "nameAr": "صالح الهبدان",
+  "nameLatin": "Saleh Al-Habdan",
+  "timed": true
+ },
+ {
+  "id": "mq_salah_budair",
+  "backendKey": "mq_salah_budair",
+  "nameAr": "صلاح البدير",
+  "nameLatin": "Salah Al-Budair",
+  "timed": true
+ },
+ {
+  "id": "mq_salah_hashim",
+  "backendKey": "mq_salah_hashim",
+  "nameAr": "صلاح الهاشم",
+  "nameLatin": "Salah Al-Hashim",
+  "timed": true
+ },
+ {
+  "id": "mq_salah_bukhatir",
+  "backendKey": "mq_salah_bukhatir",
+  "nameAr": "صلاح بو خاطر",
+  "nameLatin": "Salah Bukhatir",
+  "timed": true
+ },
+ {
+  "id": "mq_salah_musalli",
+  "backendKey": "mq_salah_musalli",
+  "nameAr": "صلاح مصلي",
+  "nameLatin": "Salah Musali",
+  "surahs": "50,67-114"
+ },
+ {
+  "id": "mq_adel_kalbani",
+  "backendKey": "mq_adel_kalbani",
+  "nameAr": "عادل الكلباني",
+  "nameLatin": "Adel Al-Kalbani"
+ },
+ {
+  "id": "mq_adel_rayyan",
+  "backendKey": "mq_adel_rayyan",
+  "nameAr": "عادل ريان",
+  "nameLatin": "Adel Rayyan",
+  "timed": true
+ },
+ {
+  "id": "mq_asim_luhaidan",
+  "backendKey": "mq_asim_luhaidan",
+  "nameAr": "عاصم اللحیدان",
+  "nameLatin": "Asim Al-Luhaidan"
+ },
+ {
+  "id": "mq_abdulelah_aoun",
+  "backendKey": "mq_abdulelah_aoun",
+  "nameAr": "عبدالإله بن عون",
+  "nameLatin": "Abdulelah bin Aoun"
+ },
+ {
+  "id": "mq_abdulbari_thubaiti",
+  "backendKey": "mq_abdulbari_thubaiti",
+  "nameAr": "عبدالبارئ الثبيتي",
+  "nameLatin": "Abdulbari Al-Thubaiti",
+  "timed": true
+ },
+ {
+  "id": "mq_abdulbari_muhammad",
+  "backendKey": "mq_abdulbari_muhammad",
+  "nameAr": "عبدالبارئ محمد",
+  "nameLatin": "Abdulbari Mohammad",
+  "timed": true
+ },
+ {
+  "id": "mq_abdulbadi_ghailan",
+  "backendKey": "mq_abdulbadi_ghailan",
+  "nameAr": "عبدالبديع غيلان",
+  "nameLatin": "Abdulbadi Ghailan"
+ },
+ {
+  "id": "mq_abdulrahman_suwayid",
+  "backendKey": "mq_abdulrahman_suwayid",
+  "nameAr": "عبدالرحمن السويّد",
+  "nameLatin": "Abdulrahman Al-Suwayid",
+  "surahs": "1-9,11-114",
+  "timed": true
+ },
+ {
+  "id": "mq_abdulrahman_shahat",
+  "backendKey": "mq_abdulrahman_shahat",
+  "nameAr": "عبدالرحمن الشحات",
+  "nameLatin": "Abdulrahman Al-Shahhat"
+ },
+ {
+  "id": "mq_abdulrahman_oosi",
+  "backendKey": "mq_abdulrahman_oosi",
+  "nameAr": "عبدالرحمن العوسي",
+  "nameLatin": "Abdulrahman Al-Oosi",
+  "timed": true
+ },
+ {
+  "id": "mq_abdulrahman_majed",
+  "backendKey": "mq_abdulrahman_majed",
+  "nameAr": "عبدالرحمن الماجد",
+  "nameLatin": "Abdulrahman Al-Majed",
+  "timed": true
+ },
+ {
+  "id": "mq_abdulrahman_badr",
+  "backendKey": "mq_abdulrahman_badr",
+  "nameAr": "عبدالرحمن بن عبدالرزاق البدر",
+  "nameLatin": "Abdul Rahman bin Abdul Razzaq Al Badr"
+ },
+ {
+  "id": "mq_abdulrasheed_sufi_r3",
+  "backendKey": "mq_abdulrasheed_sufi_r3",
+  "nameAr": "عبدالرشيد صوفي",
+  "nameLatin": "Abdulrasheed Soufi",
+  "timed": true
+ },
+ {
+  "id": "mq_abdulaziz_ahmad",
+  "backendKey": "mq_abdulaziz_ahmad",
+  "nameAr": "عبدالعزيز الأحمد",
+  "nameLatin": "Abdul Aziz Al-Ahmad",
+  "timed": true
+ },
+ {
+  "id": "mq_abdulaziz_turki",
+  "backendKey": "mq_abdulaziz_turki",
+  "nameAr": "عبدالعزيز التركي",
+  "nameLatin": "Abdulaziz Al-Turki",
+  "timed": true
+ },
+ {
+  "id": "mq_abdulaziz_zahrani",
+  "backendKey": "mq_abdulaziz_zahrani",
+  "nameAr": "عبدالعزيز الزهراني",
+  "nameLatin": "Abdulaziz Az-Zahrani",
+  "timed": true
+ },
+ {
+  "id": "mq_abdulaziz_asiri",
+  "backendKey": "mq_abdulaziz_asiri",
+  "nameAr": "عبدالعزيز العسيري",
+  "nameLatin": "Abdulaziz Al-Asiri",
+  "surahs": "1-28,30-32,35-37,39-41,45,49-57,63,66-67,69-73,75-78,80-81,83,86-89,93,99,101,107,110,112"
+ },
+ {
+  "id": "mq_abdulghani_abdullah",
+  "backendKey": "mq_abdulghani_abdullah",
+  "nameAr": "عبدالغني عبدالله",
+  "nameLatin": "Abdulghani Abdullah",
+  "surahs": "1-2,5-6,9,67,87,91-92,94-95,97,114"
+ },
+ {
+  "id": "mq_abdulkareem_hazmi",
+  "backendKey": "mq_abdulkareem_hazmi",
+  "nameAr": "عبدالكريم الحازمي",
+  "nameLatin": "Abdulkareem Al-Hazmi"
+ },
+ {
+  "id": "mq_abdullah_buraimi",
+  "backendKey": "mq_abdullah_buraimi",
+  "nameAr": "عبدالله البريمي",
+  "nameLatin": "Abdullah Al-Burimi",
+  "surahs": "1,19,23-25,31-32,36,49-50,55,57-114"
+ },
+ {
+  "id": "mq_abdullah_buaijan",
+  "backendKey": "mq_abdullah_buaijan",
+  "nameAr": "عبدالله البعيجان",
+  "nameLatin": "Abdullah Al-Buajan",
+  "timed": true
+ },
+ {
+  "id": "mq_abdullah_khalaf",
+  "backendKey": "mq_abdullah_khalaf",
+  "nameAr": "عبدالله الخلف",
+  "nameLatin": "Abdullah Al-Khalaf",
+  "timed": true
+ },
+ {
+  "id": "mq_abdullah_qarafi",
+  "backendKey": "mq_abdullah_qarafi",
+  "nameAr": "عبدالله القرافي",
+  "nameLatin": "Abdullah Al-Qarafi"
+ },
+ {
+  "id": "mq_abdullah_kandari",
+  "backendKey": "mq_abdullah_kandari",
+  "nameAr": "عبدالله الكندري",
+  "nameLatin": "Abdullah Al-Kandari"
+ },
+ {
+  "id": "mq_abdullah_mishal",
+  "backendKey": "mq_abdullah_mishal",
+  "nameAr": "عبدالله المشعل",
+  "nameLatin": "Abdullah Al-Mishal",
+  "surahs": "8,14,41,49-56"
+ },
+ {
+  "id": "mq_abdullah_matrood",
+  "backendKey": "mq_abdullah_matrood",
+  "nameAr": "عبدالله المطرود",
+  "nameLatin": "Abdullah Al-Matrood",
+  "timed": true
+ },
+ {
+  "id": "mq_abdullah_bukhari",
+  "backendKey": "mq_abdullah_bukhari",
+  "nameAr": "عبدالله بخاري",
+  "nameLatin": "Abdullah Bukhari",
+  "surahs": "1-2,36-40,42-57,59-114"
+ },
+ {
+  "id": "mq_abdullah_basfar",
+  "backendKey": "mq_abdullah_basfar",
+  "nameAr": "عبدالله بصفر",
+  "nameLatin": "Abdullah Basfar",
+  "timed": true
+ },
+ {
+  "id": "mq_abdullah_khayyat",
+  "backendKey": "mq_abdullah_khayyat",
+  "nameAr": "عبدالله خياط",
+  "nameLatin": "Abdullah Khayyat",
+  "timed": true
+ },
+ {
+  "id": "mq_abdullah_abdal",
+  "backendKey": "mq_abdullah_abdal",
+  "nameAr": "عبدالله عبدل",
+  "nameLatin": "Abdullah Abdal"
+ },
+ {
+  "id": "mq_abdullah_ghailan",
+  "backendKey": "mq_abdullah_ghailan",
+  "nameAr": "عبدالله غيلان",
+  "nameLatin": "Abdullah Ghailan"
+ },
+ {
+  "id": "mq_abdullah_kamel",
+  "backendKey": "mq_abdullah_kamel",
+  "nameAr": "عبدالله كامل",
+  "nameLatin": "Abdullah Kamel"
+ },
+ {
+  "id": "mq_abdulmajeed_arkani",
+  "backendKey": "mq_abdulmajeed_arkani",
+  "nameAr": "عبدالمجيد الأركاني",
+  "nameLatin": "Abdulmajeed Al-Arkani",
+  "surahs": "1,12,14-15,18-19,21-22,40,50,56,76,78-114"
+ },
+ {
+  "id": "mq_abdulmohsen_harthi",
+  "backendKey": "mq_abdulmohsen_harthi",
+  "nameAr": "عبدالمحسن الحارثي",
+  "nameLatin": "Abdulmohsin Al-Harthy",
+  "timed": true
+ },
+ {
+  "id": "mq_abdulmohsen_obaikan",
+  "backendKey": "mq_abdulmohsen_obaikan",
+  "nameAr": "عبدالمحسن العبيكان",
+  "nameLatin": "Abdulmohsin Al-Obaikan",
+  "timed": true
+ },
+ {
+  "id": "mq_abdulmohsen_qasim",
+  "backendKey": "mq_abdulmohsen_qasim",
+  "nameAr": "عبدالمحسن القاسم",
+  "nameLatin": "Abdulmohsen Al-Qasim",
+  "timed": true
+ },
+ {
+  "id": "mq_abdulhadi_kanakeri",
+  "backendKey": "mq_abdulhadi_kanakeri",
+  "nameAr": "عبدالهادي أحمد كناكري",
+  "nameLatin": "Abdulhadi Kanakeri",
+  "timed": true
+ },
+ {
+  "id": "mq_abdulwadood_haneef",
+  "backendKey": "mq_abdulwadood_haneef",
+  "nameAr": "عبدالودود حنيف",
+  "nameLatin": "Abdulwadood Haneef",
+  "timed": true
+ },
+ {
+  "id": "mq_abdulwali_arkani",
+  "backendKey": "mq_abdulwali_arkani",
+  "nameAr": "عبدالولي الأركاني",
+  "nameLatin": "Abdulwali Al-Arkani",
+  "timed": true
+ },
+ {
+  "id": "mq_othman_ansari",
+  "backendKey": "mq_othman_ansari",
+  "nameAr": "عثمان الأنصاري",
+  "nameLatin": "Othman Al-Ansary",
+  "surahs": "1-7,40-44,46-56,58-69,74-114"
+ },
+ {
+  "id": "mq_ali_abuhashim",
+  "backendKey": "mq_ali_abuhashim",
+  "nameAr": "علي أبو هاشم",
+  "nameLatin": "Ali Abo-Hashim",
+  "surahs": "11-12,18-19,21,25,50-57"
+ },
+ {
+  "id": "mq_ali_hudhaifi",
+  "backendKey": "mq_ali_hudhaifi",
+  "nameAr": "علي بن عبدالرحمن الحذيفي",
+  "nameLatin": "Ali Al-Huthaifi",
+  "timed": true
+ },
+ {
+  "id": "mq_ali_souissi",
+  "backendKey": "mq_ali_souissi",
+  "nameAr": "علي حجاج السويسي",
+  "nameLatin": "Ali Hajjaj Al-Souissi",
+  "timed": true
+ },
+ {
+  "id": "mq_alijon_hamdan",
+  "backendKey": "mq_alijon_hamdan",
+  "nameAr": "عليجان قوري حمدان",
+  "nameLatin": "Alijon Qori"
+ },
+ {
+  "id": "mq_imad_hafez",
+  "backendKey": "mq_imad_hafez",
+  "nameAr": "عماد زهير حافظ",
+  "nameLatin": "Emad Hafez",
+  "timed": true
+ },
+ {
+  "id": "mq_omar_duraiwiz",
+  "backendKey": "mq_omar_duraiwiz",
+  "nameAr": "عمر الدريويز",
+  "nameLatin": "Omar Al Darweez"
+ },
+ {
+  "id": "mq_issa_sanankoua",
+  "backendKey": "mq_issa_sanankoua",
+  "nameAr": "عيسى عمر سناكو",
+  "nameLatin": "Issa Omar Sanankoua",
+  "timed": true
+ },
+ {
+  "id": "mq_fouad_khamiri",
+  "backendKey": "mq_fouad_khamiri",
+  "nameAr": "فؤاد الخامري",
+  "nameLatin": "Fouad Al-Khamery"
+ },
+ {
+  "id": "mq_fahad_kandari",
+  "backendKey": "mq_fahad_kandari",
+  "nameAr": "فهد الكندري",
+  "nameLatin": "Fahad Al-Kandari",
+  "surahs": "1-2,6,12,14,17-19,22-23,30-31,36,42,51-64,66-114"
+ },
+ {
+  "id": "mq_fawaz_kaabi",
+  "backendKey": "mq_fawaz_kaabi",
+  "nameAr": "فواز الكعبي",
+  "nameLatin": "Fawaz Al-Kabi",
+  "surahs": "1-18,21-23,25-30,33,35-36,39-41,49,54-59,62-63,66-67,73,78,87,109,112"
+ },
+ {
+  "id": "mq_faisal_hajri",
+  "backendKey": "mq_faisal_hajri",
+  "nameAr": "فيصل الهاجري",
+  "nameLatin": "Faisal Al-Hajry"
+ },
+ {
+  "id": "mq_lafi_oni",
+  "backendKey": "mq_lafi_oni",
+  "nameAr": "لافي العوني",
+  "nameLatin": "Lafi Al-Oni",
+  "surahs": "3,8-24,27-33,35-45,67-114"
+ },
+ {
+  "id": "mq_majed_zamil",
+  "backendKey": "mq_majed_zamil",
+  "nameAr": "ماجد الزامل",
+  "nameLatin": "Majed Al-Zamil",
+  "timed": true
+ },
+ {
+  "id": "mq_majed_anazi",
+  "backendKey": "mq_majed_anazi",
+  "nameAr": "ماجد العنزي",
+  "nameLatin": "Majed Al-Enezi",
+  "surahs": "1,3-114"
+ },
+ {
+  "id": "mq_malallah_jaber",
+  "backendKey": "mq_malallah_jaber",
+  "nameAr": "مال الله عبدالرحمن الجابر",
+  "nameLatin": "Mal-Allah Abdulrhman Al-Jaber"
+ },
+ {
+  "id": "mq_maher_muaiqly_r3",
+  "backendKey": "mq_maher_muaiqly_r3",
+  "nameAr": "ماهر المعيقلي",
+  "nameLatin": "Maher Al-Muaiqly",
+  "labelAr": "ماهر المعيقلي (مجوّد)",
+  "labelLatin": "Maher Al-Muaiqly (Mujawwad)",
+  "timed": true
+ },
+ {
+  "id": "mq_maher_shakhashiro",
+  "backendKey": "mq_maher_shakhashiro",
+  "nameAr": "ماهر شخاشيرو",
+  "nameLatin": "Maher Shakhashero"
+ },
+ {
+  "id": "mq_muhammad_ayyub_r2",
+  "backendKey": "mq_muhammad_ayyub_r2",
+  "nameAr": "محمد أيوب",
+  "nameLatin": "Muhammad Ayyub",
+  "labelAr": "محمد أيوب (تلاوة مميزة)",
+  "labelLatin": "Muhammad Ayyub (Special)"
+ },
+ {
+  "id": "mq_muhammad_bukhait",
+  "backendKey": "mq_muhammad_bukhait",
+  "nameAr": "محمد البخيت",
+  "nameLatin": "Mohammad Al-Bukheet",
+  "timed": true
+ },
+ {
+  "id": "mq_muhammad_barrak",
+  "backendKey": "mq_muhammad_barrak",
+  "nameAr": "محمد البراك",
+  "nameLatin": "Mohammed Al-Barrak",
+  "surahs": "1,12,14,36-37,44-45,50-57,67-114"
+ },
+ {
+  "id": "mq_muhammad_zubaidi",
+  "backendKey": "mq_muhammad_zubaidi",
+  "nameAr": "محمد الزبيدي",
+  "nameLatin": "Mohammed Al-Zubaidi"
+ },
+ {
+  "id": "mq_muhammad_tablawi_r2",
+  "backendKey": "mq_muhammad_tablawi_r2",
+  "nameAr": "محمد الطبلاوي",
+  "nameLatin": "Mohammad Al-Tablawi",
+  "labelAr": "محمد الطبلاوي (مجوّد)",
+  "labelLatin": "Mohammad Al-Tablawi (Mujawwad)"
+ },
+ {
+  "id": "mq_muhammad_tablawi",
+  "backendKey": "mq_muhammad_tablawi",
+  "nameAr": "محمد الطبلاوي",
+  "nameLatin": "Mohammad Al-Tablawi",
+  "labelAr": "محمد الطبلاوي (مرتّل)",
+  "labelLatin": "Mohammad Al-Tablawi (Murattal)",
+  "timed": true
+ },
+ {
+  "id": "mq_muhammad_faqih",
+  "backendKey": "mq_muhammad_faqih",
+  "nameAr": "محمد الفقيه",
+  "nameLatin": "Muhammad Al Faqih"
+ },
+ {
+  "id": "mq_muhammad_luhaidan",
+  "backendKey": "mq_muhammad_luhaidan",
+  "nameAr": "محمد اللحيدان",
+  "nameLatin": "Mohammed Al-Luhaidan"
+ },
+ {
+  "id": "mq_muhammad_muhaisni",
+  "backendKey": "mq_muhammad_muhaisni",
+  "nameAr": "محمد المحيسني",
+  "nameLatin": "Mohammed Al-Muhasny"
+ },
+ {
+  "id": "mq_muhammad_monshed",
+  "backendKey": "mq_muhammad_monshed",
+  "nameAr": "محمد المنشد",
+  "nameLatin": "Mohammad AlMonshed",
+  "surahs": "1-77,80-88,90-99,101-114"
+ },
+ {
+  "id": "mq_muhammad_burhaji",
+  "backendKey": "mq_muhammad_burhaji",
+  "nameAr": "محمد برهجي",
+  "nameLatin": "Muhammad Burhaji",
+  "timed": true
+ },
+ {
+  "id": "mq_muhammad_jibreel",
+  "backendKey": "mq_muhammad_jibreel",
+  "nameAr": "محمد جبريل",
+  "nameLatin": "Mohammed Jibreel"
+ },
+ {
+  "id": "mq_muhammad_khalil",
+  "backendKey": "mq_muhammad_khalil",
+  "nameAr": "محمد خليل القارئ",
+  "nameLatin": "Mohammad Khalil Al-Qari",
+  "timed": true
+ },
+ {
+  "id": "mq_muhammad_dibirov",
+  "backendKey": "mq_muhammad_dibirov",
+  "nameAr": "محمد ديبيروف",
+  "nameLatin": "Mohammad Dibirov",
+  "surahs": "2,12-13,17-20,24,26-27,31-32,36-37,41,44,53,55-56,67,70,72,76,79"
+ },
+ {
+  "id": "mq_muhammad_shareef",
+  "backendKey": "mq_muhammad_shareef",
+  "nameAr": "محمد رشاد الشريف",
+  "nameLatin": "Mohammad Rashad Al-Shareef",
+  "timed": true
+ },
+ {
+  "id": "mq_muhammad_refaat",
+  "backendKey": "mq_muhammad_refaat",
+  "nameAr": "محمد رفعت",
+  "nameLatin": "Mohammad Refat",
+  "surahs": "1,10-12,17-20,48,54-56,69,72-73,75-79,81-83,85-89,96,98,100"
+ },
+ {
+  "id": "mq_muhammad_shah",
+  "backendKey": "mq_muhammad_shah",
+  "nameAr": "محمد صالح عالم شاه",
+  "nameLatin": "Mohammad Saleh Alim Shah",
+  "timed": true
+ },
+ {
+  "id": "mq_muhammad_minshawi_r4",
+  "backendKey": "mq_muhammad_minshawi_r4",
+  "nameAr": "محمد صديق المنشاوي",
+  "nameLatin": "Muhammad Siddiq Al-Minshawi",
+  "labelAr": "محمد صديق المنشاوي (تسجيل 1967)",
+  "labelLatin": "Muhammad Siddiq Al-Minshawi (1967)",
+  "surahs": "1-15,17-22,25-34,36-114"
+ },
+ {
+  "id": "mq_muhammad_abdulkareem",
+  "backendKey": "mq_muhammad_abdulkareem",
+  "nameAr": "محمد عبدالكريم",
+  "nameLatin": "Mohammad Abdulkarim",
+  "timed": true
+ },
+ {
+  "id": "mq_muhammad_khan",
+  "backendKey": "mq_muhammad_khan",
+  "nameAr": "محمد عثمان خان",
+  "nameLatin": "Mohammed Osman Khan"
+ },
+ {
+  "id": "mq_mahmoud_rifai",
+  "backendKey": "mq_mahmoud_rifai",
+  "nameAr": "محمود الرفاعي",
+  "nameLatin": "Mahmoud Al-Rifai"
+ },
+ {
+  "id": "mq_mahmoud_harfoush",
+  "backendKey": "mq_mahmoud_harfoush",
+  "nameAr": "محمود حرفوش",
+  "nameLatin": "Mahmoud Harfoush"
+ },
+ {
+  "id": "mq_mahmoud_husary_r2",
+  "backendKey": "mq_mahmoud_husary_r2",
+  "nameAr": "محمود خليل الحصري",
+  "nameLatin": "Mahmoud Khalil Al-Husary",
+  "labelAr": "محمود خليل الحصري (مجوّد)",
+  "labelLatin": "Mahmoud Khalil Al-Husary (Mujawwad)",
+  "timed": true
+ },
+ {
+  "id": "mq_mahmoud_abdulhakam",
+  "backendKey": "mq_mahmoud_abdulhakam",
+  "nameAr": "محمود عبدالحكم",
+  "nameLatin": "Mahmoud Abdul Hakam"
+ },
+ {
+  "id": "mq_mahmoud_banna_r2",
+  "backendKey": "mq_mahmoud_banna_r2",
+  "nameAr": "محمود علي البنا",
+  "nameLatin": "Mahmoud Ali Al-Banna",
+  "labelAr": "محمود علي البنا (مجوّد)",
+  "labelLatin": "Mahmoud Ali Al-Banna (Mujawwad)",
+  "timed": true
+ },
+ {
+  "id": "mq_mahmoud_banna",
+  "backendKey": "mq_mahmoud_banna",
+  "nameAr": "محمود علي البنا",
+  "nameLatin": "Mahmoud Ali Al-Banna",
+  "labelAr": "محمود علي البنا (مرتّل)",
+  "labelLatin": "Mahmoud Ali Al-Banna (Murattal)"
+ },
+ {
+  "id": "mq_mukhtar_haj",
+  "backendKey": "mq_mukhtar_haj",
+  "nameAr": "مختار الحاج",
+  "nameLatin": "Mukhtar Al-Haj"
+ },
+ {
+  "id": "mq_mustafa_ismail_r2",
+  "backendKey": "mq_mustafa_ismail_r2",
+  "nameAr": "مصطفى إسماعيل",
+  "nameLatin": "Mustafa Ismail",
+  "labelAr": "مصطفى إسماعيل (مجوّد)",
+  "labelLatin": "Mustafa Ismail (Mujawwad)",
+  "timed": true
+ },
+ {
+  "id": "mq_mustafa_ismail",
+  "backendKey": "mq_mustafa_ismail",
+  "nameAr": "مصطفى إسماعيل",
+  "nameLatin": "Mustafa Ismail",
+  "labelAr": "مصطفى إسماعيل (مرتّل)",
+  "labelLatin": "Mustafa Ismail (Murattal)"
+ },
+ {
+  "id": "mq_mustafa_lahouni",
+  "backendKey": "mq_mustafa_lahouni",
+  "nameAr": "مصطفى اللاهوني",
+  "nameLatin": "Mustafa Al-Lahoni"
+ },
+ {
+  "id": "mq_mustafa_azzawi",
+  "backendKey": "mq_mustafa_azzawi",
+  "nameAr": "مصطفى رعد العزاوي",
+  "nameLatin": "Mustafa Raad Al-Azzawi"
+ },
+ {
+  "id": "mq_moeedh_harthi",
+  "backendKey": "mq_moeedh_harthi",
+  "nameAr": "معيض الحارثي",
+  "nameLatin": "Moeedh Al-Harthi"
+ },
+ {
+  "id": "mq_muftah_saltani_r3",
+  "backendKey": "mq_muftah_saltani_r3",
+  "nameAr": "مفتاح السلطني",
+  "nameLatin": "Muftah Al-Saltany"
+ },
+ {
+  "id": "mq_musa_bilal",
+  "backendKey": "mq_musa_bilal",
+  "nameAr": "موسى بلال",
+  "nameLatin": "Mousa Bilal"
+ },
+ {
+  "id": "mq_nasser_obaid",
+  "backendKey": "mq_nasser_obaid",
+  "nameAr": "ناصر العبيد",
+  "nameLatin": "Nasser Al-Obaid",
+  "surahs": "3,7,10,13-15,19,21,25-27,32,35-41,67-114"
+ },
+ {
+  "id": "mq_nasser_asfour",
+  "backendKey": "mq_nasser_asfour",
+  "nameAr": "ناصر العصفور",
+  "nameLatin": "Nasser Al-Osfor"
+ },
+ {
+  "id": "mq_nasser_majed",
+  "backendKey": "mq_nasser_majed",
+  "nameAr": "ناصر الماجد",
+  "nameLatin": "Nasser Al-Majed"
+ },
+ {
+  "id": "mq_nabil_rifai",
+  "backendKey": "mq_nabil_rifai",
+  "nameAr": "نبيل الرفاعي",
+  "nameLatin": "Nabil Al-Rifai",
+  "timed": true
+ },
+ {
+  "id": "mq_nadhir_maliki",
+  "backendKey": "mq_nadhir_maliki",
+  "nameAr": "نذير المالكي",
+  "nameLatin": "Nadhir Al-Maliki"
+ },
+ {
+  "id": "mq_neama_hassan",
+  "backendKey": "mq_neama_hassan",
+  "nameAr": "نعمة الحسان",
+  "nameLatin": "Neamah Al-Hassan",
+  "timed": true
+ },
+ {
+  "id": "mq_haroon_baqai",
+  "backendKey": "mq_haroon_baqai",
+  "nameAr": "هارون بقائي",
+  "nameLatin": "Haroon Baqai",
+  "surahs": "1,56,62,67-114"
+ },
+ {
+  "id": "mq_hashim_abudalal",
+  "backendKey": "mq_hashim_abudalal",
+  "nameAr": "هاشم أبو دلال",
+  "nameLatin": "Hashim Abu Dalal"
+ },
+ {
+  "id": "mq_hani_rifai",
+  "backendKey": "mq_hani_rifai",
+  "nameAr": "هاني الرفاعي",
+  "nameLatin": "Hani Al-Rifai",
+  "timed": true
+ },
+ {
+  "id": "mq_hazza_balushi",
+  "backendKey": "mq_hazza_balushi",
+  "nameAr": "هزاع البلوشي",
+  "nameLatin": "Hazza Al-Balushi",
+  "surahs": "1,6,8,12-15,17-22,25,29-32,34-47,49-57,61,63,67-114"
+ },
+ {
+  "id": "mq_haitham_jadani",
+  "backendKey": "mq_haitham_jadani",
+  "nameAr": "هيثم الجدعاني",
+  "nameLatin": "Haitham Al-Jadani",
+  "surahs": "1-4,6-17,19-21,23-41,43-57,61-64,67-70,72,75-85,87-114"
+ },
+ {
+  "id": "mq_wadee_yamani",
+  "backendKey": "mq_wadee_yamani",
+  "nameAr": "وديع اليمني",
+  "nameLatin": "Wadeea Al-Yamani",
+  "timed": true
+ },
+ {
+  "id": "mq_waleed_dulaimi",
+  "backendKey": "mq_waleed_dulaimi",
+  "nameAr": "وليد الدليمي",
+  "nameLatin": "Walid Al-Dulaimi",
+  "surahs": "1,8,11-12,17,19,31,37,39,41,45,48-54,63,70,75,78-114"
+ },
+ {
+  "id": "mq_yasser_faylakawi",
+  "backendKey": "mq_yasser_faylakawi",
+  "nameAr": "ياسر الفيلكاوي",
+  "nameLatin": "Yasser Al-Faylakawi",
+  "surahs": "1-12,14-37,39,41,44,56,67-111,113-114"
+ },
+ {
+  "id": "mq_yasser_qurashi",
+  "backendKey": "mq_yasser_qurashi",
+  "nameAr": "ياسر القرشي",
+  "nameLatin": "Yasser Al-Qurashi"
+ },
+ {
+  "id": "mq_yasser_salama",
+  "backendKey": "mq_yasser_salama",
+  "nameAr": "ياسر سلامة",
+  "nameLatin": "Yasser Salamah"
+ },
+ {
+  "id": "mq_yahya_hawwa",
+  "backendKey": "mq_yahya_hawwa",
+  "nameAr": "يحيى حوا",
+  "nameLatin": "Yahya Hawwa"
+ },
+ {
+  "id": "mq_youssef_edghouch",
+  "backendKey": "mq_youssef_edghouch",
+  "nameAr": "يوسف الدغوش",
+  "nameLatin": "Youssef Edghouch",
+  "surahs": "1,3,55,67,71,73,75,78,82,85,87-88,90-92,100,105-114"
+ },
+ {
+  "id": "mq_yousef_shoaey",
+  "backendKey": "mq_yousef_shoaey",
+  "nameAr": "يوسف الشويعي",
+  "nameLatin": "Yousef Al-Shoaey"
+ },
+ {
+  "id": "mq_yousef_aidarous",
+  "backendKey": "mq_yousef_aidarous",
+  "nameAr": "يوسف العيدروس",
+  "nameLatin": "Yousef Al-Aidarous",
+  "labelAr": "يوسف العيدروس (تلاوة مميزة)",
+  "labelLatin": "Yousef Al-Aidarous (Special)"
+ },
+ {
+  "id": "mq_yousef_ahmad",
+  "backendKey": "mq_yousef_ahmad",
+  "nameAr": "يوسف بن نوح أحمد",
+  "nameLatin": "Yousef Bin Noah Ahmad",
+  "timed": true
+ }
+]
