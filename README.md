@@ -10,11 +10,19 @@ Her şey bilgisayarınızda, ücretsiz ve açık araçlarla çalışır; ücretl
 
 ## Özellikler
 
+- **Ayet bulma:**
+  - Kelimeyle arama: Osmanî hattın yazımına takılmadan; bir kelime yanlış ya da eksik olsa da en yakın ayet bulunur.
+  - Anlam ve konuyla arama: "sabır", "cennet", "anne" gibi; Arapça, Türkçe ve İngilizce (multilingual-e5).
+  - "Bakara 255" ya da "2:255" yazınca doğrudan o ayete gidilir.
+  - **Sesle arama:** Mikrofon düğmesine basıp ayeti okursunuz, okuduğunuz ayetler (birkaç ayet de olabilir) bulunur ve seçilir.
 - **Ayetlerin tam kesimi:**
-  - 26 kârinin tam sure kayıtları kullanılır (mp3quran.net, yedek olarak QuranicAudio). Murattal ve mücevved kayıtlar ayrı listelenir.
+  - 210 kârinin tam sure kayıtları kullanılır (mp3quran.net Hafs kayıtları, yedek olarak QuranicAudio). Kâri listesinde anında dinleme (▶), favoriler (★) ve kayıt kalitesi notu vardır.
+  - Bazı kâriler için aynı kaydın daha yüksek kaliteli kopyası kullanılır.
   - Kayıtlar CTC zorlamalı hizalama ile ayet ayet kesilir (torchaudio MMS_FA).
   - Kârinin geri dönüp tekrar okuduğu yerler, Kur'an tilavetine göre eğitilmiş bir faster-whisper modeliyle bulunur ve doğrulanır.
-- **Kendi sesiniz:** Kendi kaydınızı yükleyebilir ya da herkese açık bir YouTube, TikTok veya Instagram videosunun bağlantısını yapıştırabilirsiniz (yt-dlp). Bu ses de aynı şekilde hizalanır.
+- **Kendi sesiniz:** Tek bir alana herkese açık bir YouTube, TikTok veya Instagram bağlantısı yapıştırırsınız (yt-dlp) ya da bir ses veya video dosyası seçer/sürüklersiniz. Bu ses de aynı şekilde hizalanır.
+  - **Reels için:** Kısa bir kayıtta (4 dakikaya kadar) hangi sure ve ayetlerin okunduğu sesten bulunur ve kendiliğinden seçilir; ardından ses hazırlanır, ayetler bölünür ve arka plan konur. Uzun bir kayıttan ise sizin seçtiğiniz ayetler kesilir.
+- **Tek adımda video:** Yeni projede favori kâri kendiliğinden seçilir, uzun ayetler bölünür ve ayetlerin konusuna uygun bir arka plan konur.
 - **Mushaf metni:**
   - Kral Fahd Kompleksi'nin sayfa fontları (QCF v1 2005 / v2 2013), Osmanî hatla Hafs ve başka Arapça fontlar.
   - Okunan kelime, isteğe bağlı olarak kelime kelime vurgulanır.
@@ -30,7 +38,12 @@ Her şey bilgisayarınızda, ücretsiz ve açık araçlarla çalışır; ücretl
   - **Efektler:** Karartma, bulanıklık, yavaş yakınlaşma ve kenar gölgesi.
   - Fotoğraflar Real-ESRGAN ile otomatik olarak keskinleştirilir.
   - Kısa videolar yumuşak geçişle döngüye girer.
-- **Çıktı:** Dikey, yatay veya kare; 720p ya da 1080p. Oluşturma sırasında ilerleme gösterilir.
+  - Arka plan önerileri ayetlerin konusuna göre gelir ve en güzelleri öne çıkar (LAION estetik modeli).
+- **Çıktı:**
+  - Dikey, yatay veya kare; 720p ya da 1080p. Oluşturma sırasında ilerleme gösterilir.
+  - Ses, her videoda orijinal kayıttan kayıpsız kesilir (tekrar tekrar sıkıştırma yok).
+  - Dışa aktarma arka planda sürer: beklemeden yeni bir videoya başlayabilirsiniz.
+  - Videonun altında kopyalanmaya hazır başlık ve sitenin dilinde etiketler (hashtag) bulunur.
 - **Projelerim:**
   - Her proje otomatik olarak kaydedilir: ses, zamanlama, arka plan ve metin ayarları.
   - Projeler "Projelerim" altında listelenir.
@@ -65,6 +78,7 @@ Aşağıdaki dosyaların yayın hakları sahiplerine aittir. Bu yüzden depoya k
 - **Video fontları:**
   - Amiri, Cairo, Inter, Noto Naskh Arabic, Noto Sans, Poppins, Aref Ruqaa, Sansita, Tajawal: SIL Open Font License 1.1.
   - Aileron: hakları saklı değildir (CC0).
+- **Kâri listesi** (`backend/scripts/mp3quran_reciters.json`, `frontend/src/lib/mp3quranReciters.json`): [mp3quran.net](https://mp3quran.net) API'sinden; `backend/scripts/build_reciter_catalog.py` ile oluşturulur.
 - **Depoda bulunmayanlar:** Kâri sesleri, internetten alınan mealler ve stok arka planlar uygulama çalışırken kaynaklarından indirilir.
 
 ## Gereksinimler
@@ -106,7 +120,17 @@ docker compose up --build
 
 İlk derleme biraz sürer (CUDA'lı PyTorch yaklaşık 3 GB).
 
-**3. Açma**
+**3. Arama dizini (bir kez)**
+
+Anlamla arama, sesle arama ve reels kliplerinin tanınması bir dizin kullanır. Diyanet Vakfı meali (`frontend/src/data/translations/diyanet_vakfi.json`, yukarıya bakın) yerindeyken bir kez oluşturun (ekran kartıyla yaklaşık bir dakika):
+
+```bash
+mkdir -p backend/data/ayah_search
+cp frontend/src/data/translations/diyanet_vakfi.json backend/data/ayah_search/
+docker compose exec -T backend python -I scripts/ayah_search.py --build
+```
+
+**4. Açma**
 
 Uygulama [http://localhost:3000](http://localhost:3000) adresinde açılır. Sunucu API belgeleri [http://localhost:8000/docs](http://localhost:8000/docs) adresindedir.
 
@@ -122,8 +146,9 @@ frontend/
   public/fonts/         Mushaf sayfa fontları ve video fontları
   scripts/              meal dosyalarını oluşturan betikler
 backend/
-  app/routers/          FastAPI uç noktaları (extraction, segmentation, vision, enhance, ai)
-  scripts/              quran_aligner.py (geçerli hizalayıcı), extract_precise_clip.py (eski
+  app/routers/          FastAPI uç noktaları (extraction, segmentation, vision, enhance, search, ai)
+  scripts/              quran_aligner.py (geçerli hizalayıcı), ayah_search.py (anlamla arama),
+                        recite_search.py (sesle arama ve klip tanıma), extract_precise_clip.py (eski
                         Whisper akışı; ALIGN_ENGINE=legacy ve ortak yardımcılar için duruyor),
                         segment_align.py, eval_* betikleri
   data/                 (git dışında) model önbellekleri, indirilen sure sesleri, test sesleri
