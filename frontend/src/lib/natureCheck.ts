@@ -20,6 +20,9 @@ export type ThumbnailVerdict = {
   // The thumbnail's fingerprint, for lib/usedBackgrounds.ts; null when the
   // backend couldn't take it.
   hash: string | null;
+  // Beauty score (LAION aesthetic predictor, roughly 1-10); null when the
+  // backend has no score for it.
+  aesthetic: number | null;
 };
 
 // For every image the backend has judged by its thumbnail. The first call
@@ -36,7 +39,11 @@ export async function checkThumbnails(items: { key: string; url: string }[]): Pr
   const data = await res.json();
   const verdicts: Record<string, ThumbnailVerdict> = {};
   for (const [key, v] of Object.entries<any>(data.results ?? {})) {
-    verdicts[key] = { ok: Boolean(v?.ok), hash: typeof v?.hash === "string" && FINGERPRINT.test(v.hash) ? v.hash : null };
+    verdicts[key] = {
+      ok: Boolean(v?.ok),
+      hash: typeof v?.hash === "string" && FINGERPRINT.test(v.hash) ? v.hash : null,
+      aesthetic: typeof v?.aesthetic === "number" && Number.isFinite(v.aesthetic) ? v.aesthetic : null,
+    };
   }
   return verdicts;
 }

@@ -449,20 +449,43 @@ async function pixabayListingPage(listing: PixabayListing, type: StockMediaType,
         .filter((item: StockItem) => !!item.thumbUrl && !!item.previewVideoUrl);
 }
 
+// Plan entries fetched at once (2026-11-20): one after another, a search
+// that met several missing or off-subject pages took 10-20 s. The extra
+// pages fetched are the plan's next ones, so the response cache (24 h)
+// serves them to the following load.
+const PIXABAY_PARALLEL = 3;
+
 async function searchPixabay(queries: string[], type: StockMediaType, orientation: StockOrientation, logicalPage: number, perPage: number, language: StockSearchLanguage, seed: number, relevant?: RelevanceCheck): Promise<ProviderPage> {
   const plan = pixabayPlan(queries, perPage, seed, type);
   let n = logicalPage;
   // A page a listing is already known not to have costs nothing to pass;
   // only fetches count against PIXABAY_MAX_SKIPS. With pages walked in a
   // random order, most of a short listing's entries are such pages.
-  for (let fetched = 0; n <= plan.length && fetched < PIXABAY_MAX_SKIPS; n++) {
-    const { listing, page } = plan[n - 1];
-    const known = pageCountCache.get(pixabayCountKey(listing, type, orientation, perPage, language));
-    if (known !== undefined && page > known) continue;
-    fetched++;
-    const items = await pixabayListingPage(listing, type, orientation, perPage, language, page, relevant);
-    // A page left with nothing on the subject is passed like a missing one.
-    if (items && items.length > 0) return { items, hasMore: n < plan.length, lastPage: n };
+  let fetched = 0;
+  while (n <= plan.length && fetched < PIXABAY_MAX_SKIPS) {
+    const batch: number[] = [];
+    for (let m = n; m <= plan.length && batch.length < PIXABAY_PARALLEL && fetched + batch.length < PIXABAY_MAX_SKIPS; m++) {
+      const { listing, page } = plan[m - 1];
+      const known = pageCountCache.get(pixabayCountKey(listing, type, orientation, perPage, language));
+      if (known === undefined || page <= known) batch.push(m);
+      n = m + 1;
+    }
+    if (batch.length === 0) break;
+    fetched += batch.length;
+    const pages = await Promise.all(
+      batch.map((m) =>
+        pixabayListingPage(plan[m - 1].listing, type, orientation, perPage, language, plan[m - 1].page, relevant).catch((err) => {
+          // The first page of the batch failing is the search failing;
+          // a later one only means trying on.
+          if (m === batch[0]) throw err;
+          return null;
+        })
+      )
+    );
+    // The first page in plan order with something on the subject; a page
+    // left with nothing is passed like a missing one.
+    const hit = pages.findIndex((items) => items && items.length > 0);
+    if (hit >= 0) return { items: pages[hit]!, hasMore: batch[hit] < plan.length, lastPage: batch[hit] };
   }
   const lastPage = Math.min(n, plan.length);
   return { items: [], hasMore: lastPage < plan.length, lastPage };

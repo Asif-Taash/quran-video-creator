@@ -94,6 +94,18 @@ function rememberUsed(key: string) {
 
 // More results load on their own once the list is scrolled to within this
 // distance of its end -- no "load more" button (the user, 2026-11-01).
+// The last library tab (videos or photos) the user picked from, offered
+// first next time -- the user mostly takes photos (2026-11-20).
+const MEDIA_TYPE_KEY = "kurannuru:bgMediaType";
+
+function readMediaType(): MediaType {
+  try {
+    return localStorage.getItem(MEDIA_TYPE_KEY) === "photo" ? "photo" : "video";
+  } catch {
+    return "video";
+  }
+}
+
 const AUTO_LOAD_MARGIN_PX = 1200;
 // Loads in a row that brought nothing new before the automatic loading
 // stops and a button takes over (so it can't loop on an exhausted search).
@@ -189,6 +201,11 @@ interface BackgroundPickerProps {
   onBackgroundZoomChange: (v: boolean) => void;
   backgroundVignette: number;
   onBackgroundVignetteChange: (v: number) => void;
+  // The chosen ayahs: the topics that suit them come first, and the first
+  // one loads by itself while the user looks at the video (2026-11-20).
+  surahId?: number | null;
+  startVerse?: number | null;
+  endVerse?: number | null;
 }
 
 export default function BackgroundPicker({
@@ -212,6 +229,9 @@ export default function BackgroundPicker({
   onBackgroundZoomChange,
   backgroundVignette,
   onBackgroundVignetteChange,
+  surahId = null,
+  startVerse = null,
+  endVerse = null,
 }: BackgroundPickerProps) {
   const tx = useT();
   const { language } = useLanguage();
@@ -231,7 +251,16 @@ export default function BackgroundPicker({
     };
   }, []);
 
-  const [mediaType, setMediaType] = useState<MediaType>("video");
+  const [mediaType, setMediaTypeState] = useState<MediaType>("video");
+  useEffect(() => setMediaTypeState(readMediaType()), []);
+  const setMediaType = useCallback((t: MediaType) => {
+    setMediaTypeState(t);
+    try {
+      localStorage.setItem(MEDIA_TYPE_KEY, t);
+    } catch {
+      // Blocked storage: the choice lasts for this visit only.
+    }
+  }, []);
   const [searchText, setSearchText] = useState("");
   // What the results below are for -- set by typing (debounced), Enter, or
   // a suggestion. Empty: nothing searched yet, so no results are shown.
@@ -240,6 +269,25 @@ export default function BackgroundPicker({
   // in the box but searches its own (English) query, so the typing debounce
   // must not then re-search the label.
   const [searchedText, setSearchedText] = useState("");
+  // Topic ids that suit the chosen ayahs (api/backgrounds/suggest), best first.
+  const [suggested, setSuggested] = useState<string[]>([]);
+  const selectionKey = surahId && startVerse && endVerse ? `${surahId}:${startVerse}-${endVerse}` : "";
+  useEffect(() => {
+    if (!selectionKey) {
+      setSuggested([]);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/backgrounds/suggest?surah=${surahId}&from=${startVerse}&to=${endVerse}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && Array.isArray(data?.topics)) setSuggested(data.topics.filter((t: unknown) => typeof t === "string"));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [selectionKey, surahId, startVerse, endVerse]);
   const [items, setItems] = useState<StockItem[]>([]);
   // This search's results already used in a video (see USED_STORAGE_KEY):
   // held back until everything else has been shown.
@@ -363,6 +411,23 @@ export default function BackgroundPicker({
   useEffect(() => {
     if (activeQuery) runSearch(activeQuery, mediaType, 1);
   }, [activeQuery, mediaType, runSearch]);
+
+  // The first suggested topic loads by itself -- once per ayah selection,
+  // only while the video has no background and nothing was searched -- so
+  // its results are ready by the time the user opens this section (the
+  // first batch takes several seconds).
+  const autoLoadedForRef = useRef("");
+  useEffect(() => {
+    if (!libraryEnabled || !selectionKey || suggested.length === 0) return;
+    if (hasBackground || activeQuery || autoLoadedForRef.current === selectionKey) return;
+    autoLoadedForRef.current = selectionKey;
+    const topic = BACKGROUND_TOPICS.find((t) => t.id === suggested[0]);
+    if (!topic) return;
+    const label = tx(topic.ar, topic.tr, topic.en);
+    setSearchText(label);
+    setSearchedText(label);
+    setActiveQuery(`${TOPIC_PREFIX}${topic.id}`);
+  }, [libraryEnabled, selectionKey, suggested, hasBackground, activeQuery, tx]);
 
   const loadMore = useCallback(() => {
     countAtLoadRef.current = items.length + usedItems.length;
@@ -575,7 +640,11 @@ export default function BackgroundPicker({
           </p>
 
           <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-            {BACKGROUND_TOPICS.map((c) => {
+            {[
+              ...suggested.map((id) => BACKGROUND_TOPICS.find((t) => t.id === id)).filter((t): t is (typeof BACKGROUND_TOPICS)[number] => Boolean(t)),
+              ...BACKGROUND_TOPICS.filter((t) => !suggested.includes(t.id)),
+            ].map((c) => {
+              const isSuggested = suggested.includes(c.id);
               const label = tx(c.ar, c.tr, c.en);
               const q = `${TOPIC_PREFIX}${c.id}`;
               return (
@@ -588,12 +657,16 @@ export default function BackgroundPicker({
                     if (q === activeQuery) runSearch(q, mediaType, 1);
                     else setActiveQuery(q);
                   }}
+                  title={isSuggested ? tx("مقترح لآياتك", "Ayetlerinize uygun", "Suits your ayahs") : undefined}
                   className={`flex-shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                     q === activeQuery
                       ? "border-primary bg-primary/15 text-primary"
-                      : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                      : isSuggested
+                        ? "border-primary/40 bg-primary/5 text-foreground hover:border-primary"
+                        : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"
                   }`}
                 >
+                  {isSuggested && "✨ "}
                   {label}
                 </button>
               );

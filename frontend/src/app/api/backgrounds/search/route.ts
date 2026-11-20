@@ -100,6 +100,9 @@ export async function GET(req: Request) {
   // Only what the image check passes is shown -- natural scenery only, see
   // lib/natureCheck.ts -- and never a picture already used in an exported
   // video, see lib/usedBackgrounds.ts. Fails closed: no check, no results.
+  // Each result's beauty score (see backend vision.py): every batch shows
+  // its most beautiful results first.
+  const beauty = new Map<string, number>();
   const onlyNatural = async (list: typeof items) => {
     const [verdicts, isUsed] = await Promise.all([
       checkThumbnails(list.map((it) => ({ key: it.key, url: it.thumbUrl }))),
@@ -107,9 +110,12 @@ export async function GET(req: Request) {
     ]);
     return list.filter((it) => {
       const verdict = verdicts[it.key];
+      if (verdict?.aesthetic != null) beauty.set(it.key, verdict.aesthetic);
       return verdict?.ok === true && verdict.hash !== null && !isUsed(it.key, verdict.hash);
     });
   };
+  const byBeauty = (list: typeof items) =>
+    [...list].sort((a, b) => (beauty.get(b.key) ?? 0) - (beauty.get(a.key) ?? 0));
   // A new search (page 1) starts over; its later pages skip what it sent.
   const searchKey = `${seed}|${type}|${orientation}|${topic ? `topic:${topic.id}` : resolved.queries[0]}`;
   if (page === 1) sentBySearch.delete(searchKey);
@@ -145,7 +151,8 @@ export async function GET(req: Request) {
       const seen = new Set(natural.map((it) => it.key));
       natural = [...natural, ...capAuthors(neverShown(await onlyNatural(next.items.filter((it) => !seen.has(it.key) && !sent.has(it.key)))))];
     }
-    if (natural.length < MIN_RESULTS) natural = [...natural, ...capAuthors(held).slice(0, MIN_RESULTS - natural.length)];
+    natural = byBeauty(natural);
+    if (natural.length < MIN_RESULTS) natural = [...natural, ...byBeauty(capAuthors(held)).slice(0, MIN_RESULTS - natural.length)];
   } catch (err) {
     console.error("[Backgrounds] Image check failed:", err);
     return NextResponse.json({ error: "Background check is unavailable right now." }, { status: 503 });

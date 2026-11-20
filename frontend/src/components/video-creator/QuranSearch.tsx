@@ -13,7 +13,32 @@ interface SearchResult {
   surahNumber: number;
   ayahNumber: number;
   text: string;
+  // Meaning search: the ayah's translation in the UI language, if any.
+  translation?: string | null;
 }
+
+// "text": the words themselves (word-start match). "meaning": ayahs ABOUT
+// the query in any language -- الصبر / sabır / patience -- by the backend's
+// meaning search (2026-11-20, backend/scripts/ayah_search.py).
+type SearchMode = "text" | "meaning";
+
+// Quick topics under the box in meaning mode: one tap fills the search.
+const THEMES: { ar: string; tr: string; en: string }[] = [
+  { ar: "الصبر", tr: "Sabır", en: "Patience" },
+  { ar: "الرحمة", tr: "Rahmet", en: "Mercy" },
+  { ar: "التوبة", tr: "Tevbe", en: "Repentance" },
+  { ar: "الدعاء", tr: "Dua", en: "Supplication" },
+  { ar: "الجنة", tr: "Cennet", en: "Paradise" },
+  { ar: "الموت", tr: "Ölüm", en: "Death" },
+  { ar: "يوم القيامة", tr: "Kıyamet", en: "Day of Judgement" },
+  { ar: "الشكر", tr: "Şükür", en: "Gratitude" },
+  { ar: "التوكل على الله", tr: "Tevekkül", en: "Trust in Allah" },
+  { ar: "الوالدان", tr: "Anne baba", en: "Parents" },
+  { ar: "الرزق", tr: "Rızık", en: "Provision" },
+  { ar: "لا تيأسوا من رحمة الله", tr: "Ümit", en: "Hope" },
+  { ar: "آيات الله في الكون", tr: "Kâinattaki ayetler", en: "Signs in creation" },
+  { ar: "الأنبياء", tr: "Peygamberler", en: "Prophets" },
+];
 
 export default function QuranSearch({ onSelectVerse, getSurahName }: QuranSearchProps) {
   const tx = useT();
@@ -25,6 +50,15 @@ export default function QuranSearch({ onSelectVerse, getSurahName }: QuranSearch
   const [isLoading, setIsLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<SearchMode>("text");
+  // The meaning model loads on its first query (a few seconds): started as
+  // soon as the mode is picked, while the user is still typing.
+  const warmedRef = useRef(false);
+  useEffect(() => {
+    if (mode !== "meaning" || warmedRef.current) return;
+    warmedRef.current = true;
+    fetch(`/api/quran/search?mode=meaning&q=${encodeURIComponent("رحمة")}&lang=${language}`).catch(() => {});
+  }, [mode, language]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [dropdownMaxHeight, setDropdownMaxHeight] = useState(420);
@@ -90,17 +124,30 @@ export default function QuranSearch({ onSelectVerse, getSurahName }: QuranSearch
       setIsOpen(true);
 
       try {
-        const response = await fetch(`/api/quran/search?q=${encodeURIComponent(debouncedQuery)}`);
+        const params = new URLSearchParams({ q: debouncedQuery });
+        if (mode === "meaning") {
+          params.set("mode", "meaning");
+          params.set("lang", language);
+        }
+        const response = await fetch(`/api/quran/search?${params}`);
         const data = await response.json();
         if (requestId !== searchRequestIdRef.current) return; // superseded by a newer search
 
-        if (data.search && data.search.results) {
+        if (mode === "meaning" && !response.ok) {
+          setResults([]);
+          setError(tx(
+            "البحث بالمعنى غير متاح الآن، جرّب البحث بالنص.",
+            "Anlama göre arama şu an kullanılamıyor, metinle aramayı deneyin.",
+            "Search by meaning isn't available right now, try searching the text."
+          ));
+        } else if (data.search && data.search.results) {
           const mappedResults: SearchResult[] = data.search.results.map((r: any) => {
             const [surah, ayah] = r.verse_key.split(':').map(Number);
             return {
               surahNumber: surah,
               ayahNumber: ayah,
               text: r.text, // Text with full diacritics
+              translation: r.translation ?? null,
             };
           });
           setResults(mappedResults);
@@ -119,13 +166,19 @@ export default function QuranSearch({ onSelectVerse, getSurahName }: QuranSearch
     }
 
     fetchResults();
-  }, [debouncedQuery, isArabic]);
+  }, [debouncedQuery, isArabic, mode, language]);
 
   const handleClear = () => {
     setQuery("");
     setDebouncedQuery("");
     setResults([]);
     setIsOpen(false);
+  };
+
+  const pickTheme = (text: string) => {
+    setQuery(text);
+    setDebouncedQuery(text);
+    setIsOpen(true);
   };
 
   const handleSelect = (result: SearchResult) => {
@@ -182,7 +235,11 @@ export default function QuranSearch({ onSelectVerse, getSurahName }: QuranSearch
         <input
           type="text"
           className={`block w-full rounded-xl border-0 py-3 ${isArabic ? 'pr-10 pl-10' : 'pl-10 pr-10'} text-foreground ring-1 ring-inset ring-border placeholder:text-muted-foreground focus:ring-2 focus:ring-inset focus:ring-primary sm:text-sm sm:leading-6 bg-surface shadow-sm`}
-          placeholder={tx("ابحث عن آية أو كلمة في القرآن...", "Kur'an'da bir ayet veya kelime arayın...", "Search the Quran for an ayah or word...")}
+          placeholder={
+            mode === "meaning"
+              ? tx("اكتب موضوعاً: الصبر، الجنة، الأم...", "Bir konu yazın: sabır, cennet, anne...", "Type a topic: patience, paradise, mother...")
+              : tx("ابحث عن آية أو كلمة في القرآن...", "Kur'an'da bir ayet veya kelime arayın...", "Search the Quran for an ayah or word...")
+          }
           value={query}
           onChange={(e) => {
              setQuery(e.target.value);
@@ -205,6 +262,42 @@ export default function QuranSearch({ onSelectVerse, getSurahName }: QuranSearch
           </button>
         )}
       </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-2" dir={isArabic ? "rtl" : "ltr"}>
+        <div className="flex rounded-lg border border-border bg-background p-0.5 text-xs font-medium">
+          {(["text", "meaning"] as SearchMode[]).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMode(m)}
+              className={`rounded-md px-3 py-1.5 transition-colors ${mode === m ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              {m === "text" ? tx("بالنص", "Metne göre", "By text") : tx("بالمعنى والموضوع", "Anlama / konuya göre", "By meaning / topic")}
+            </button>
+          ))}
+        </div>
+      </div>
+      {mode === "meaning" && (
+        <div className="-mx-1 mt-2 flex gap-2 overflow-x-auto px-1 pb-1" dir={isArabic ? "rtl" : "ltr"}>
+          {THEMES.map((t) => {
+            const label = tx(t.ar, t.tr, t.en);
+            return (
+              <button
+                key={t.ar}
+                type="button"
+                onClick={() => pickTheme(label)}
+                className={`flex-shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  debouncedQuery === label
+                    ? "border-primary bg-primary/15 text-primary"
+                    : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {isOpen && (query.length > 1) && (
         <div
@@ -233,7 +326,12 @@ export default function QuranSearch({ onSelectVerse, getSurahName }: QuranSearch
                     </span>
                   </div>
                   <div className="flex-1 text-foreground">
-                    {renderHighlightedText(result.text)}
+                    {mode === "meaning" ? <span className="font-arabic leading-loose text-lg">{result.text}</span> : renderHighlightedText(result.text)}
+                    {result.translation && (
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground" dir="ltr">
+                        {result.translation}
+                      </p>
+                    )}
                   </div>
                 </li>
               ))}
@@ -241,6 +339,11 @@ export default function QuranSearch({ onSelectVerse, getSurahName }: QuranSearch
           ) : (
             <div className="p-4 text-sm text-muted-foreground text-center">
               {tx("لا توجد نتائج مطابقة", "Eşleşen sonuç bulunamadı", "No matching results found")}
+              {mode === "text" && (
+                <button type="button" onClick={() => setMode("meaning")} className="mt-2 block w-full font-medium text-primary hover:underline">
+                  {tx("ابحث بالمعنى بدلاً من ذلك", "Bunun yerine anlama göre ara", "Search by meaning instead")}
+                </button>
+              )}
             </div>
           )}
         </div>

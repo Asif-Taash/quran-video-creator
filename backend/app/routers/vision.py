@@ -19,6 +19,11 @@ turns away some clean images, never the other way round as far as the
 calibration showed. Verdicts are cached on disk by item key, so an image is
 only ever checked once.
 
+Each image also gets a beauty score (2026-11-20): the LAION "improved
+aesthetic predictor" (Apache-2.0, a small linear head on the same CLIP
+ViT-L/14 image embedding, so it costs almost nothing extra), roughly 1-10.
+The search shows the most beautiful results of each batch first.
+
 Each image also gets a fingerprint (see fingerprint()), which the frontend
 compares with the backgrounds of exported videos so the library never offers
 one again (frontend/src/lib/usedBackgrounds.ts).
@@ -48,6 +53,8 @@ CACHE_PATH = "/app/data/vision_cache.json"
 CLIP_MODEL = "openai/clip-vit-large-patch14"
 DETECTOR_MODEL = "PekingU/rtdetr_v2_r50vd"
 CLIP_REJECT = 0.30
+AESTHETIC_PATH = "/app/data/aesthetic/sac+logos+ava1-l14-linearMSE.pth"
+AESTHETIC_SHA256 = "21dd590f3ccdc646f0d53120778b296013b096a035a2718c9cb0d511bff0f1e0"
 
 NATURE = [
     "the sky", "clouds", "the sea", "waves", "mountains", "a forest", "trees", "a desert", "sand dunes",
@@ -103,9 +110,43 @@ def _load_models():
                 _models = {
                     "torch": torch, "device": device, "dtype": dtype, "clip": clip, "text": text,
                     "logit_scale": clip.logit_scale.exp(), "det": det, "det_proc": det_proc,
+                    "aesthetic": _load_aesthetic(torch, device),
                 }
                 logger.info(f"Vision models ready on {device} in {time.time() - t0:.1f}s.")
     return _models
+
+
+def _load_aesthetic(torch, device):
+    """The aesthetic head: 768 -> 1024 -> 128 -> 64 -> 16 -> 1, all linear
+    (the published model has no activations). None when the weights are
+    missing or not the expected file -- results are then simply unranked."""
+    import hashlib
+
+    try:
+        with open(AESTHETIC_PATH, "rb") as f:
+            raw = f.read()
+        if hashlib.sha256(raw).hexdigest() != AESTHETIC_SHA256:
+            logger.warning("Aesthetic weights don't match the expected file; results stay unranked.")
+            return None
+        sd = torch.load(io.BytesIO(raw), map_location="cpu", weights_only=True)
+        head = torch.nn.Sequential(
+            torch.nn.Linear(768, 1024), torch.nn.Identity(), torch.nn.Linear(1024, 128), torch.nn.Identity(),
+            torch.nn.Linear(128, 64), torch.nn.Identity(), torch.nn.Linear(64, 16), torch.nn.Linear(16, 1),
+        )
+        head.load_state_dict({k.replace("layers.", ""): v for k, v in sd.items()})
+        return head.to(device).float().eval()
+    except FileNotFoundError:
+        logger.warning(f"No aesthetic weights at {AESTHETIC_PATH}; results stay unranked.")
+    except Exception:
+        logger.exception("Aesthetic weights unreadable; results stay unranked.")
+    return None
+
+
+def _aesthetic_scores(m, full_emb):
+    """Scores for L2-normalised full-image CLIP embeddings [n, 768]."""
+    if m["aesthetic"] is None:
+        return [None] * len(full_emb)
+    return [round(float(x), 2) for x in m["aesthetic"](full_emb.float()).flatten()]
 
 
 def _clip_views(m, img_u8):
@@ -135,7 +176,7 @@ CHUNK = 8
 
 
 def _classify(images):
-    """[(ok, reason)] for decoded PIL images."""
+    """[(ok, reason, aesthetic)] for decoded PIL images."""
     m = _load_models()
     results = []
     with _gpu_lock:
@@ -159,12 +200,16 @@ def _classify_chunk(m, images):
         # CLIP on 5 views per image.
         views = [v for t in tensors for v in _clip_views(m, t)]
         best = []
+        embs = []
         for i in range(0, len(views), 64):
             pix = torch.stack(views[i:i + 64]).to(dtype)
             emb = m["clip"].visual_projection(m["clip"].vision_model(pixel_values=pix).pooler_output)
             emb = emb / emb.norm(dim=-1, keepdim=True)
+            embs.append(emb)
             best.append((m["logit_scale"] * emb @ m["text"].T).float())
         logits = torch.cat(best).view(len(images), 5, -1)
+        # The full image is each image's first view.
+        aesthetic = _aesthetic_scores(m, torch.cat(embs)[0::5])
         nat = torch.logsumexp(logits[:, :, :nn], -1)
         bad_logit, bad_idx = logits[:, :, nn:].max(-1)
         p_bad = torch.sigmoid(bad_logit - nat)  # [image, view]
@@ -196,8 +241,30 @@ def _classify_chunk(m, images):
                 if need is not None and float(score) >= need:
                     reason = f"object:{name}:{float(score):.2f}"
                     break
-        results.append((reason is None, reason))
+        results.append((reason is None, reason, aesthetic[k]))
     return results
+
+
+def _score_only(images):
+    """Aesthetic scores alone (CLIP on the full image), for images judged
+    before scores existed."""
+    import numpy as np
+
+    m = _load_models()
+    torch, device, dtype = m["torch"], m["device"], m["dtype"]
+    out = []
+    with _gpu_lock:
+        try:
+            with torch.no_grad():
+                for i in range(0, len(images), 32):
+                    views = [_clip_views(m, torch.from_numpy(np.asarray(im.convert("RGB"))).to(device).permute(2, 0, 1))[0]
+                             for im in images[i:i + 32]]
+                    emb = m["clip"].visual_projection(m["clip"].vision_model(pixel_values=torch.stack(views).to(dtype)).pooler_output)
+                    out.extend(_aesthetic_scores(m, emb / emb.norm(dim=-1, keepdim=True)))
+        finally:
+            if device == "cuda":
+                torch.cuda.empty_cache()
+    return out
 
 
 # --- Fingerprints -------------------------------------------------------------
@@ -287,22 +354,23 @@ class CheckRequest(BaseModel):
 
 @router.post("/check")
 def check_urls(req: CheckRequest):
-    """{key: {"ok": bool, "reason": str|None, "hash": str|None}} for each
-    item's image URL, hash being its fingerprint(). An image that can't be
+    """{key: {"ok": bool, "reason": str|None, "hash": str|None,
+    "aesthetic": float|None}} for each item's image URL, hash being its
+    fingerprint() and aesthetic its beauty score. An image that can't be
     fetched/decoded is reported not ok (and not cached), so nothing unchecked
     is ever shown; an ok one whose fingerprint couldn't be taken has hash
     None, and the frontend doesn't show it either."""
     cache = _load_cache()
     out = {}
     todo = []
-    # Judged before fingerprints existed: only the fingerprint is missing.
+    # Judged before fingerprints/scores existed: only those are missing.
     unhashed = []
     with _cache_lock:
         for it in req.items:
             hit = cache.get(it.key)
             if hit and hit.get("v") == VISION_VERSION:
-                out[it.key] = {"ok": hit["ok"], "reason": hit.get("reason"), "hash": hit.get("h")}
-                if hit["ok"] and not hit.get("h"):
+                out[it.key] = {"ok": hit["ok"], "reason": hit.get("reason"), "hash": hit.get("h"), "aesthetic": hit.get("a")}
+                if hit["ok"] and (not hit.get("h") or ("a" not in hit and os.path.exists(AESTHETIC_PATH))):
                     unhashed.append(it)
             else:
                 todo.append(it)
@@ -312,13 +380,23 @@ def check_urls(req: CheckRequest):
         images = list(ex.map(lambda it: _fetch(it.url), todo + unhashed))
     todo_images, unhashed_images = images[:len(todo)], images[len(todo):]
 
-    fingerprinted = [(it, fingerprint(im)) for it, im in zip(unhashed, unhashed_images) if im is not None]
+    found = [(it, im) for it, im in zip(unhashed, unhashed_images) if im is not None]
+    try:
+        scores = _score_only([im for _, im in found]) if found else []
+    except Exception:
+        logger.exception("Aesthetic scoring failed")
+        scores = [None] * len(found)
     with _cache_lock:
-        for it, h in fingerprinted:
+        for (it, im), score in zip(found, scores):
+            entry = cache.get(it.key)
+            h = (entry or {}).get("h") or fingerprint(im)
             out[it.key]["hash"] = h
-            if it.key in cache:
-                cache[it.key]["h"] = h
-        if fingerprinted:
+            out[it.key]["aesthetic"] = score
+            if entry is not None:
+                entry["h"] = h
+                if score is not None:
+                    entry["a"] = score
+        if found:
             _save_cache()
 
     if todo:
@@ -334,12 +412,13 @@ def check_urls(req: CheckRequest):
                 logger.exception("Vision check failed")
                 raise HTTPException(status_code=503, detail=f"Vision check failed: {e}")
             logger.info(f"Vision check: {len(good)} images in {time.time() - t0:.2f}s, "
-                        f"{sum(1 for ok, _ in verdicts if not ok)} rejected.")
+                        f"{sum(1 for ok, _, _ in verdicts if not ok)} rejected.")
             hashes = [fingerprint(im) for _, im in good]
             with _cache_lock:
-                for (it, _), (ok, reason), h in zip(good, verdicts, hashes):
-                    out[it.key] = {"ok": ok, "reason": reason, "hash": h}
-                    cache[it.key] = {"ok": ok, "reason": reason, "v": VISION_VERSION, "h": h}
+                for (it, _), (ok, reason, score), h in zip(good, verdicts, hashes):
+                    out[it.key] = {"ok": ok, "reason": reason, "hash": h, "aesthetic": score}
+                    cache[it.key] = {"ok": ok, "reason": reason, "v": VISION_VERSION, "h": h,
+                                     **({"a": score} if score is not None else {})}
                 _save_cache()
     return {"results": out}
 
@@ -386,13 +465,14 @@ def check_frames(key: str = Form(...), frames: list[UploadFile] = File(...)):
     except Exception as e:
         logger.exception("Vision frame check failed")
         raise HTTPException(status_code=503, detail=f"Vision check failed: {e}")
-    reason = next((r for ok, r in verdicts if not ok), None)
+    reason = next((r for ok, r, _ in verdicts if not ok), None)
     ok = reason is None
     cache = _load_cache()
     with _cache_lock:
-        # The thumbnail's fingerprint stays: searches compare thumbnails.
-        h = (cache.get(key) or {}).get("h")
-        cache[key] = {"ok": ok, "reason": reason, "v": VISION_VERSION, "full": True, **({"h": h} if h else {})}
+        # The thumbnail's fingerprint and score stay: searches compare thumbnails.
+        prev = cache.get(key) or {}
+        cache[key] = {"ok": ok, "reason": reason, "v": VISION_VERSION, "full": True,
+                      **({"h": prev["h"]} if prev.get("h") else {}), **({"a": prev["a"]} if "a" in prev else {})}
         _save_cache()
     logger.info(f"Vision frame check {key}: {len(images)} frames, ok={ok} {reason or ''}")
     return {"ok": ok, "reason": reason}

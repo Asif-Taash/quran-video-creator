@@ -3489,6 +3489,9 @@ export default function VideoCreatorForm() {
                     onBackgroundZoomChange={setBackgroundZoom}
                     backgroundVignette={backgroundVignette}
                     onBackgroundVignetteChange={setBackgroundVignette}
+                    surahId={selectedSurah?.id ?? null}
+                    startVerse={startVerse}
+                    endVerse={endVerse}
                   />
                 }
                 backgroundKind={bgVideoPreview ? "video" : bgPreview ? "image" : "none"}

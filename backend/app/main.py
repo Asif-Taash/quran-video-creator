@@ -27,7 +27,7 @@ app.add_middleware(
 app.add_middleware(idle_recycle.Middleware)
 idle_recycle.start()
 
-from app.routers import extraction, ai, vision, segmentation, enhance
+from app.routers import extraction, ai, vision, segmentation, enhance, search
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(extraction.router, prefix="/api/extraction", tags=["Extraction"])
@@ -35,6 +35,7 @@ app.include_router(ai.router, prefix="/api/ai", tags=["AI"])
 app.include_router(vision.router, prefix="/api/vision", tags=["Vision"])
 app.include_router(segmentation.router, prefix="/api/segmentation", tags=["Segmentation"])
 app.include_router(enhance.router, prefix="/api/enhance", tags=["Enhance"])
+app.include_router(search.router, prefix="/api/search", tags=["Search"])
 
 
 @app.get("/", tags=["Root"])
