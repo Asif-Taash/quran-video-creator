@@ -1568,6 +1568,47 @@ export default function VideoCreatorForm() {
     return `${surahName} Suresi${verseRange}${reciterPart}`;
   })();
 
+  // Hashtags under the suggested title, in the page's language like it
+  // (2026-11-20, the user), copied together with it: the Quran, the surah,
+  // the reciter when there's a name, recitation, and the platforms' explore
+  // tag. Not in the download's file name (that stays the title).
+  const suggestedHashtags = (() => {
+    if (!selectedSurah || !startVerse || !endVerse) return null;
+    const fromList = audioSourceMode === "reciter" && Boolean(selectedReciter);
+    // "Maher Al-Muaiqly (Murattal)" -> "Maher Al-Muaiqly".
+    const plain = (text: string) => text.replace(/\s*\([^)]*\)/g, "").trim();
+    if (isArabic) {
+      const tag = (text: string) =>
+        plain(text)
+          .replace(/[\u064B-\u065F\u0670\u0640]/g, "")
+          .replace(/[^\p{L}\p{N}]+/gu, "_")
+          .replace(/^_+|_+$/g, "");
+      const reciter = fromList ? RECITER_ARABIC_NAMES[selectedReciter] ?? "" : reciterNameText.trim();
+      return ["#قرآن", "#القرآن_الكريم", `#سورة_${tag(fixMojibake(selectedSurah.name))}`, reciter && `#${tag(reciter)}`, "#تلاوة", "#تلاوة_خاشعة", "#اكسبلور"]
+        .filter(Boolean)
+        .join(" ");
+    }
+    const word = (text: string, locale: string) =>
+      plain(text)
+        .toLocaleLowerCase(locale)
+        .replace(/[âáà]/g, "a")
+        .replace(/[îíì]/g, "i")
+        .replace(/[ûúù]/g, "u")
+        .replace(/[^\p{L}\p{N}]+/gu, "");
+    const reciterLatin = fromList ? RECITER_DISPLAY_NAMES[selectedReciter] ?? "" : "";
+    if (language === "en") {
+      const name = surahEnglishName(selectedSurah.id) ?? fixMojibake(selectedSurah.transliteration);
+      return ["#quran", "#islam", "#quranrecitation", `#surah${word(name, "en")}`, reciterLatin && `#${word(reciterLatin, "en")}`, "#reels"]
+        .filter(Boolean)
+        .join(" ");
+    }
+    const turkishName = surahTurkishNames.get(selectedSurah.id);
+    const name = turkishName ? fixMojibake(turkishName) : fixMojibake(selectedSurah.transliteration);
+    return ["#kuran", "#kuranıkerim", `#${word(name, "tr")}suresi`, reciterLatin && `#${word(reciterLatin, "tr")}`, "#ayet", "#tilavet", "#keşfet"]
+      .filter(Boolean)
+      .join(" ");
+  })();
+
   // What the preview shows: the saved segmentation, with the open timing
   // editor's unsaved state on top (built exactly as saving it would).
   const effectiveSegmentation = useMemo(
@@ -3643,6 +3684,7 @@ export default function VideoCreatorForm() {
                 isLoadingPreview={isLoadingPreview}
                 previewError={previewError}
                 suggestedTitle={suggestedTitle}
+                suggestedHashtags={suggestedHashtags}
                 fontPickers={
                   <TextFontPickers
                     isArabic={isArabic}

@@ -37,6 +37,8 @@ interface Step5Props {
   // VideoCreatorForm's own suggestedTitle) -- null until a surah/verse
   // range is actually selected.
   suggestedTitle: string | null;
+  // Hashtags shown under it and copied with it (VideoCreatorForm).
+  suggestedHashtags?: string | null;
   // The video's font pickers (TextFontPickers), shown in the Text section.
   fontPickers?: React.ReactNode;
   // The running render's progress while renderState is "rendering" -- null
@@ -253,6 +255,7 @@ export default function Step5Generate({
   isLoadingPreview,
   previewError,
   suggestedTitle,
+  suggestedHashtags,
   fontPickers,
   renderProgress,
   aspectRatio,
@@ -294,7 +297,7 @@ export default function Step5Generate({
   const handleCopyTitle = async () => {
     if (!suggestedTitle) return;
     try {
-      await navigator.clipboard.writeText(suggestedTitle);
+      await navigator.clipboard.writeText([suggestedTitle, suggestedHashtags].filter(Boolean).join(" "));
       setTitleCopied(true);
       setTimeout(() => setTitleCopied(false), 2000);
     } catch (err) {
@@ -461,13 +464,18 @@ export default function Step5Generate({
             {tx("عنوان مقترح:", "Önerilen Başlık:", "Suggested Title:")}
           </span>
           <div className="flex items-center gap-2">
-            <span className="flex-1 min-w-0 truncate text-sm font-medium text-foreground" title={suggestedTitle}>
-              {suggestedTitle}
-            </span>
+            <div className="flex-1 min-w-0 space-y-1">
+              <p className="truncate text-sm font-medium text-foreground" title={suggestedTitle}>
+                {suggestedTitle}
+              </p>
+              {suggestedHashtags && (
+                <p className="text-xs leading-relaxed text-primary-dark dark:text-primary-light">{suggestedHashtags}</p>
+              )}
+            </div>
             <button
               type="button"
               onClick={handleCopyTitle}
-              title={tx("نسخ العنوان", "Başlığı kopyala", "Copy title")}
+              title={tx("نسخ العنوان مع الهاشتاغات", "Başlığı etiketlerle kopyala", "Copy the title with the hashtags")}
               className={`flex flex-shrink-0 items-center justify-center h-8 w-8 rounded-lg border transition-colors ${
                 titleCopied
                   ? "border-primary bg-primary/10 text-primary"
