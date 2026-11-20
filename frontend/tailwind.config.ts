@@ -41,6 +41,10 @@ const config: Config = {
           strong: withOpacity("--border-strong-rgb"),
         },
         muted: withOpacity("--foreground-muted-rgb"),
+        // The secondary text color most components ask for as
+        // "text-muted-foreground" (the shadcn name): it was never defined, so
+        // all of that text came out as dark as the headings (2026-11-20).
+        "muted-foreground": withOpacity("--foreground-muted-rgb"),
         subtle: withOpacity("--foreground-subtle-rgb"),
         // Fix for ThemeToggle 'text-textDark' usage → now properly mapped
         textDark: withOpacity("--foreground-rgb"),
@@ -65,7 +69,7 @@ const config: Config = {
         // build time -- cast needed to satisfy the type checker only.
       } as any,
       fontFamily: {
-        sans: ["var(--font-inter)", "system-ui", "sans-serif"],
+        sans: ["var(--font-inter)", "var(--font-ui-arabic)", "system-ui", "sans-serif"],
         arabic: ["var(--font-amiri)", "Amiri", "Georgia", "serif"],
         // Authentic KFGQPC Uthman Taha Naskh — Madinah Mushaf style
         uthmani: ["var(--font-uthmani)", "KFGQPC Uthman Taha Naskh", "Amiri Quran", "Scheherazade New", "Noto Naskh Arabic", "serif"],

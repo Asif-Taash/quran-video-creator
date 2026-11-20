@@ -1,4 +1,5 @@
-"""Find the ayahs someone recites into the microphone (2026-11-20): the
+"""Find the ayahs someone recites into the microphone (2026-11-20; also
+typed words with mistakes, see match_text): the
 search box's 🎤 records a part of an ayah or several ayahs, this hears it
 and returns the closest places in the Quran -- even when the reading (or
 the hearing) has mistakes.
@@ -39,7 +40,11 @@ MIN_LETTERS = 10
 # A piece found in more places than this tells nothing (الله, الذين...).
 MAX_PLACES = 1500
 BUCKET = 16
+# Places looked at closely: more for a short reading, whose few pieces are
+# common ("قل هو الله واحد" shares as many with every "إله واحد" as with
+# 112:1), and each look costs little then.
 CANDIDATES = 24
+MAX_CANDIDATES = 120
 # Places scoring within this of the best are shown too: the same words
 # come in more than one place (فبأي آلاء ربكما تكذبان, 31 times).
 NEAR_BEST = 0.12
@@ -133,7 +138,7 @@ def match(words, limit=LIMIT):
 
     taken = []
     for b in np.argsort(-near):
-        if near[b] <= 0 or len(taken) >= CANDIDATES:
+        if near[b] <= 0 or len(taken) >= max(CANDIDATES, min(MAX_CANDIDATES, 2400 // size)):
             break
         if all(abs(int(b) - t) > 2 for t in taken):
             taken.append(int(b))
@@ -189,6 +194,12 @@ def match(words, limit=LIMIT):
         if len(out) >= limit:
             break
     return out
+
+
+def match_text(text, limit=LIMIT):
+    """match() for typed words: the search box's text search finds nothing
+    when a word is misremembered ("وكفر عنا خطايانا" for 3:193)."""
+    return match(_norm_words(text[:600]), limit)
 
 
 def _decode(path):

@@ -11,6 +11,7 @@ import {
   PhotoIcon,
 } from "@heroicons/react/24/outline";
 import Spinner from "@/components/ui/Spinner";
+import Segmented from "@/components/ui/Segmented";
 import type { RenderProgress, RenderState } from "../VideoCreatorForm";
 import { WORD_HIGHLIGHT_COLORS, type AspectRatio, type QualityTier, type QuranVideoProps } from "@/remotion/types";
 import VideoPreviewPlayer from "../VideoPreviewPlayer";
@@ -39,6 +40,8 @@ interface Step5Props {
   // The post the video goes out with (lib/postCaption.ts): surah, reciter,
   // the ayahs, their meaning and hashtags -- null until it is ready.
   postCaption: string | null;
+  // The video's font pickers (TextFontPickers), shown in the Text section.
+  fontPickers?: React.ReactNode;
   // The running render's progress while renderState is "rendering" -- null
   // until the server reports any (e.g. still applying segmentation).
   renderProgress: RenderProgress | null;
@@ -101,45 +104,39 @@ const ASPECT_RATIO_OPTIONS: { value: AspectRatio; shape: string; labelAr: string
 ];
 
 function AspectRatioPicker({
+  isArabic,
   aspectRatio,
   onAspectRatioChange,
 }: {
+  isArabic: boolean;
   aspectRatio: AspectRatio;
   onAspectRatioChange: (ratio: AspectRatio) => void;
 }) {
   const tx = useT();
   return (
-    <div className="flex items-center gap-2">
-      {ASPECT_RATIO_OPTIONS.map((option) => {
-        const active = aspectRatio === option.value;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onAspectRatioChange(option.value)}
-            className={`flex flex-1 flex-col items-center gap-1.5 rounded-lg border py-2.5 transition-colors ${
-              active
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-border bg-background text-muted-foreground hover:bg-surface"
-            }`}
-          >
-            <div
-              className={`rounded-[3px] border-2 ${active ? "border-primary" : "border-muted-foreground/60"}`}
-              style={{ aspectRatio: option.shape, height: 18 }}
-            />
-            <span className="text-xs font-medium">{tx(option.labelAr, option.labelTr, option.labelEn)}</span>
-          </button>
-        );
-      })}
-    </div>
+    <Segmented
+      size="sm"
+      dir={isArabic ? "rtl" : "ltr"}
+      value={aspectRatio}
+      onChange={onAspectRatioChange}
+      options={ASPECT_RATIO_OPTIONS.map((option) => ({
+        value: option.value,
+        label: (
+          <>
+            <span className="rounded-[3px] border-2 border-current opacity-80" style={{ aspectRatio: option.shape, height: 14 }} />
+            {tx(option.labelAr, option.labelTr, option.labelEn)}
+          </>
+        ),
+      }))}
+    />
   );
 }
 
 // The two sizes platforms play (see QualityTier), with the export time each
-// costs said right on it. Same button style as AspectRatioPicker above.
+// costs said right on it.
 const QUALITY_CHOICES: { value: QualityTier; name: [string, string, string]; note: [string, string, string] }[] = [
-  { value: "720p", name: ["عادية", "Normal", "Standard"], note: ["720p · أسرع", "720p · daha hızlı", "720p · faster"] },
-  { value: "1080p", name: ["عالية", "Yüksek", "High"], note: ["1080p · أبطأ", "1080p · daha yavaş", "1080p · slower"] },
+  { value: "720p", name: ["عادية", "Normal", "Standard"], note: ["أسرع", "daha hızlı", "faster"] },
+  { value: "1080p", name: ["عالية", "Yüksek", "High"], note: ["أوضح", "daha net", "sharper"] },
 ];
 
 function QualityPicker({
@@ -153,27 +150,23 @@ function QualityPicker({
 }) {
   const tx = useT();
   return (
-    <div className="flex items-center gap-2" dir={isArabic ? "rtl" : "ltr"}>
-      {QUALITY_CHOICES.map((choice) => {
-        const active = quality === choice.value;
-        return (
-          <button
-            key={choice.value}
-            type="button"
-            onClick={() => onQualityChange(choice.value)}
-            aria-pressed={active}
-            className={`flex flex-1 flex-col items-center gap-0.5 rounded-lg border py-2 transition-colors ${
-              active
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-border bg-background text-muted-foreground hover:bg-surface"
-            }`}
-          >
-            <span className="text-xs font-semibold">{tx(...choice.name)}</span>
-            <span className="text-[10px]">{tx(...choice.note)}</span>
-          </button>
-        );
-      })}
-    </div>
+    <Segmented
+      size="sm"
+      dir={isArabic ? "rtl" : "ltr"}
+      value={quality}
+      onChange={onQualityChange}
+      options={QUALITY_CHOICES.map((choice) => ({
+        value: choice.value,
+        label: (
+          <>
+            <span className="font-semibold">{tx(...choice.name)}</span>
+            <span className="text-[11px] opacity-70" dir="ltr">
+              {choice.value} · {tx(...choice.note)}
+            </span>
+          </>
+        ),
+      }))}
+    />
   );
 }
 
@@ -264,6 +257,7 @@ export default function Step5Generate({
   previewError,
   suggestedTitle,
   postCaption,
+  fontPickers,
   renderProgress,
   aspectRatio,
   onAspectRatioChange,
@@ -342,7 +336,7 @@ export default function Step5Generate({
     // (isArabic ? ... : ...) -- only the LAYOUT direction is pinned here,
     // not the copy.
     <div className="space-y-4" dir="ltr">
-      <AspectRatioPicker aspectRatio={aspectRatio} onAspectRatioChange={onAspectRatioChange} />
+      <AspectRatioPicker isArabic={isArabic} aspectRatio={aspectRatio} onAspectRatioChange={onAspectRatioChange} />
 
       {/* The actual rendered/downloaded file is never shown here -- the live
           preview (auto-refreshing on every relevant change, see
@@ -528,9 +522,19 @@ export default function Step5Generate({
               {captionCopied ? tx("نُسخ", "Kopyalandı", "Copied") : tx("نسخ", "Kopyala", "Copy")}
             </button>
           </div>
-          <p dir="auto" className="max-h-32 overflow-y-auto whitespace-pre-line text-sm leading-relaxed text-foreground">
-            {postCaption}
-          </p>
+          {/* Line by line, each in its own direction: the Arabic ayahs right
+              to left even under a Turkish or English heading. */}
+          <div className="max-h-36 space-y-1 overflow-y-auto text-sm leading-relaxed text-foreground">
+            {postCaption.split("\n").map((line, i) =>
+              line ? (
+                <p key={i} dir={/^[^\p{L}]*\p{Script=Arabic}/u.test(line) ? "rtl" : "ltr"} className="text-start">
+                  {line}
+                </p>
+              ) : (
+                <div key={i} className="h-1.5" />
+              )
+            )}
+          </div>
         </div>
       )}
 
@@ -573,6 +577,7 @@ export default function Step5Generate({
                   this for a one-off exception. */}
               {openSection === "text" && (
                 <div className="flex flex-col gap-4 rounded-xl border border-border bg-surface px-4 py-3">
+                  {fontPickers && <div className="border-b border-border/60 pb-4">{fontPickers}</div>}
                   <TextSizeSlider
                     label={tx("حجم نص الآية", "Ayet Yazı Boyutu", "Ayah Text Size")}
                     value={arabicTextScale}

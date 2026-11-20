@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Amiri } from "next/font/google";
+import { Inter, Amiri, IBM_Plex_Sans_Arabic } from "next/font/google";
 import "./globals.css";
 import "./pua-fonts.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -16,6 +16,16 @@ const amiri = Amiri({
   subsets: ["arabic"],
   weight: ["400", "700"],
   variable: "--font-amiri",
+  display: "swap",
+});
+
+// The interface's Arabic (labels, buttons, messages): Inter has no Arabic
+// letters, so every browser picked its own fallback -- a plain system font,
+// or a typewriter one on some machines. One modern Arabic UI face for all.
+const uiArabic = IBM_Plex_Sans_Arabic({
+  subsets: ["arabic"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-ui-arabic",
   display: "swap",
 });
 
@@ -98,7 +108,7 @@ export default function RootLayout({
     <html
       lang="tr"
       suppressHydrationWarning
-      className={`${inter.variable} ${amiri.variable}`}
+      className={`${inter.variable} ${amiri.variable} ${uiArabic.variable}`}
     >
       <body className="font-sans bg-background text-foreground antialiased min-h-screen">
         <LanguageProvider>

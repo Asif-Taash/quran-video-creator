@@ -58,12 +58,37 @@ async function meaningSearch(q: string, lang: string) {
   return NextResponse.json({ search: { results } });
 }
 
+// mode=fuzzy (2026-11-20): the ayahs closest to typed words even with a
+// wrong or missing word (backend scripts/recite_search.py) -- what the text
+// search falls back to when no ayah has the words as typed. A result may
+// cover more than one ayah ("to").
+async function fuzzySearch(q: string) {
+  const res = await fetch(`${backendUrl()}/api/search/fuzzy?${new URLSearchParams({ q })}`, { cache: "no-store", signal: AbortSignal.timeout(30_000) });
+  if (!res.ok) return NextResponse.json({ error: "failed" }, { status: 502 });
+  const data = await res.json();
+  const results = (data.results ?? [])
+    .map((r: { surah: number; from: number; to: number; score: number }) => {
+      const text = uthmaniText(r.surah, r.from);
+      return text ? { verse_key: `${r.surah}:${r.from}`, to: r.to, score: r.score, text } : null;
+    })
+    .filter(Boolean);
+  return NextResponse.json({ search: { results } });
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const q = searchParams.get("q");
 
   if (!q) {
     return NextResponse.json({ error: "Missing query" }, { status: 400 });
+  }
+
+  if (searchParams.get("mode") === "fuzzy") {
+    try {
+      return await fuzzySearch(q.trim().slice(0, 600));
+    } catch {
+      return NextResponse.json({ error: "unavailable" }, { status: 503 });
+    }
   }
 
   if (searchParams.get("mode") === "meaning") {

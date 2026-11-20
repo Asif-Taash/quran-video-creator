@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowPathIcon, FolderOpenIcon } from "@heroicons/react/24/outline";
+import { ArrowPathIcon, ExclamationTriangleIcon, FilmIcon, FolderOpenIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { useLanguage, useT } from "@/lib/LanguageContext";
 import { fixMojibake } from "@/lib/textEncoding";
 import { RECITER_DISPLAY_NAMES, RECITER_ARABIC_NAMES, getReciter, reciterHasSurah } from "@/lib/reciterNames";
@@ -37,6 +37,7 @@ import Step1SurahVerse from "./wizard/Step1SurahVerse";
 import BackgroundPicker from "./BackgroundPicker";
 import Step3Audio from "./wizard/Step3Audio";
 import Step5Generate from "./wizard/Step5Generate";
+import TextFontPickers from "./wizard/TextFontPickers";
 import ProjectsDialog from "./ProjectsDialog";
 import AudioChangeDialog from "./AudioChangeDialog";
 import { keepPieces, ownParts, restorePieces, withPieces } from "@/lib/segmentTranslations";
@@ -3459,12 +3460,8 @@ export default function VideoCreatorForm() {
                     onToggleBasmala={() => guardAudioChange(() => setIncludeBasmala(!startsWithBasmala))}
                     lowConfidenceAyahs={lowConfidenceAyahs}
                     arabicFont={arabicFont}
-                    onArabicFontChange={setArabicFont}
                     translationFont={translationFont}
-                    onTranslationFontChange={setTranslationFont}
-                    customTranslationFontName={customTranslationFontName}
                     customTranslationFontUrl={customTranslationFontUrl}
-                    onCustomTranslationFontUpload={handleCustomTranslationFontUpload}
                   />
                 )}
 
@@ -3508,11 +3505,11 @@ export default function VideoCreatorForm() {
                 here it's real Arabic/Turkish prose someone actually reads. */}
             <div className="relative rounded-2xl p-4 sm:p-6 md:p-8 space-y-6 shadow-lg" dir="ltr">
               <div className="absolute inset-0 bg-surface-2/80 backdrop-blur-md border border-primary/10 rounded-2xl overflow-hidden -z-10" />
-              <h2 className="text-xl font-semibold flex items-center gap-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary-light/30 via-primary/20 to-primary-dark/20 text-sm text-primary ring-1 ring-primary/20">
-                  🎬
+              <h2 className="text-xl font-semibold flex items-center gap-2" dir={isArabic ? "rtl" : "ltr"}>
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary-light/30 via-primary/20 to-primary-dark/20 text-primary ring-1 ring-primary/20">
+                  <FilmIcon className="h-4 w-4" />
                 </span>
-                {tx("الفيديو والتعديل", "Video ve Düzenleme", "Video and Editing")}
+                {tx("الفيديو", "Video", "The Video")}
               </h2>
 
               {translationSyncNotice && (
@@ -3533,43 +3530,56 @@ export default function VideoCreatorForm() {
                 </div>
               )}
 
-              {preparedJsonData?.needsReview && !reviewNoticeDismissed && (
-                <div
-                  className="animate-fade-in flex items-start justify-between gap-3 rounded-xl border border-accent-amber/30 bg-accent-amber-bg/20 px-3 py-2.5"
-                  dir={isArabic ? "rtl" : "ltr"}
-                >
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-semibold text-accent-amber">
-                      {tx("⚠️ لم يتمكن النظام من التحقق من هذا المقطع الصوتي بالكامل -- استمع إليه واضبط البداية/النهاية من لوحة التوقيت إن لزم:", "⚠️ Bu ses klibi tam olarak doğrulanamadı -- dinleyin ve gerekirse başlangıcı/bitişi Zamanlama panelinden ayarlayın:", "⚠️ This audio clip couldn't be fully verified -- listen to it and adjust the start/end in the Timing panel if needed:")}
-                    </p>
-                    <ul className="list-disc ps-5 text-xs text-accent-amber">
-                      {(preparedJsonData.reviewReasons || []).map((r: any, i: number) => {
+              {/* One short line (2026-11-20, was a paragraph and a list): where
+                  to listen; the reasons are in its tooltip. */}
+              {preparedJsonData?.needsReview && !reviewNoticeDismissed && (() => {
+                const reasons: any[] = preparedJsonData.reviewReasons || [];
+                const times = Array.from(
+                  new Set(
+                    reasons
+                      .filter((r) => typeof r.atMs === "number")
+                      .map((r) => {
                         // Where in the video (the played audio starts audioTrimStart into the clip).
-                        const atSec = typeof r.atMs === "number" ? Math.max(0, r.atMs / 1000 - audioTrimStart) : null;
-                        const at =
-                          atSec === null ? "" : ` (${Math.floor(atSec / 60)}:${String(Math.floor(atSec % 60)).padStart(2, "0")})`;
-                        return <li key={`${r.code}-${i}`}>{tx(r.ar, r.tr, r.en ?? r.tr)}{at}</li>;
-                      })}
-                    </ul>
+                        const atSec = Math.max(0, r.atMs / 1000 - audioTrimStart);
+                        return `${Math.floor(atSec / 60)}:${String(Math.floor(atSec % 60)).padStart(2, "0")}`;
+                      })
+                  )
+                ).sort();
+                return (
+                  <div
+                    className="animate-fade-in flex items-center gap-2.5 rounded-xl border border-accent-amber/30 bg-accent-amber-bg/20 px-3 py-2"
+                    dir={isArabic ? "rtl" : "ltr"}
+                  >
+                    <ExclamationTriangleIcon className="h-4 w-4 flex-shrink-0 text-accent-amber" />
+                    <p className="flex-1 text-xs font-medium text-accent-amber" title={reasons.map((r) => tx(r.ar, r.tr, r.en ?? r.tr)).join("\n")}>
+                      {tx("استمع وتأكد من التوقيت", "Dinleyip zamanlamayı kontrol edin", "Listen and check the timing")}
+                      {times.length > 0 && (
+                        <>
+                          {tx(" عند ", ": ", " at ")}
+                          <span className="tabular-nums">{times.join(tx(" و ", " ve ", " and "))}</span>
+                        </>
+                      )}
+                    </p>
                     {!showTimingEditor && (
                       <button
                         type="button"
                         onClick={handleOpenTimingEditor}
-                        className="text-xs font-semibold text-accent-amber underline underline-offset-2 hover:opacity-80 transition-opacity"
+                        className="flex-shrink-0 rounded-lg bg-accent-amber/15 px-2.5 py-1 text-xs font-semibold text-accent-amber transition-colors hover:bg-accent-amber/25"
                       >
-                        {tx("افتح لوحة التوقيت", "Zamanlama panelini aç", "Open the Timing panel")}
+                        {tx("افتح التوقيت", "Zamanlamayı aç", "Open timing")}
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => setReviewNoticeDismissed(true)}
+                      aria-label={tx("إخفاء", "Gizle", "Dismiss")}
+                      className="flex-shrink-0 rounded-md p-0.5 text-accent-amber/70 transition-colors hover:text-accent-amber"
+                    >
+                      <XMarkIcon className="h-4 w-4" />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setReviewNoticeDismissed(true)}
-                    className="flex-shrink-0 text-accent-amber/70 hover:text-accent-amber transition-colors text-xs font-bold"
-                  >
-                    ✕
-                  </button>
-                </div>
-              )}
+                );
+              })()}
 
               <Step5Generate
                 isArabic={isArabic}
@@ -3585,6 +3595,18 @@ export default function VideoCreatorForm() {
                 previewError={previewError}
                 suggestedTitle={suggestedTitle}
                 postCaption={postCaption}
+                fontPickers={
+                  <TextFontPickers
+                    isArabic={isArabic}
+                    arabicFont={arabicFont}
+                    onArabicFontChange={setArabicFont}
+                    translationFont={translationFont}
+                    onTranslationFontChange={setTranslationFont}
+                    customTranslationFontName={customTranslationFontName}
+                    hasCustomFont={Boolean(customTranslationFontUrl)}
+                    onCustomTranslationFontUpload={handleCustomTranslationFontUpload}
+                  />
+                }
                 renderProgress={renderProgress}
                 aspectRatio={aspectRatio}
                 onAspectRatioChange={setAspectRatio}

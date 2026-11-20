@@ -1,17 +1,16 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import DropdownSelect from "@/components/ui/DropdownSelect";
 import TranslationSelector from "@/components/quran/TranslationSelector";
 import QuranSearch from "../QuranSearch";
-import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
+import { ExclamationTriangleIcon, MinusIcon, PlusIcon } from "@heroicons/react/24/outline";
 import { fixMojibake } from "@/lib/textEncoding";
+import { findSurahJump } from "@/lib/surahJump";
 import {
-  ARABIC_FONT_OPTIONS,
   TRANSLATION_FONT_OPTIONS,
   resolveTranslationFont,
   translationFontStack,
-  translationFontSupports,
   type ArabicFontKey,
   type TranslationFontKey,
 } from "@/remotion/types";
@@ -44,27 +43,77 @@ interface Step1Props {
   startsWithBasmala: boolean;
   onToggleBasmala: () => void;
   lowConfidenceAyahs: Set<number>;
-  // Which Arabic verse script to use -- see ARABIC_FONT_OPTIONS in
-  // types.ts. Applied instantly to the live preview client-side (see
-  // VideoCreatorForm's own effect), no server round-trip needed.
+  // The fonts the ayah list below previews in (chosen under the video, in
+  // its Text section -- see TextFontPickers).
   arabicFont: ArabicFontKey;
-  onArabicFontChange: (font: ArabicFontKey) => void;
-  // Which translation font to use -- one of TRANSLATION_FONT_OPTIONS' keys,
-  // or "custom" for a user-uploaded font file (see
-  // onCustomTranslationFontUpload below). Same instant client-side
-  // switching as arabicFont above.
   translationFont: TranslationFontKey | "custom";
-  onTranslationFontChange: (font: TranslationFontKey | "custom") => void;
-  // The uploaded custom font's own original filename, for display only
-  // (null until one has actually been uploaded this session or restored
-  // from a saved draft) -- see VideoCreatorForm's customTranslationFontName.
-  customTranslationFontName: string | null;
-  // The uploaded custom font's actual URL (blob: preview or a restored
-  // draft's served path) -- needed here (unlike customTranslationFontName)
-  // to declare the @font-face that lets the verse-list preview below
-  // render it, same as QuranVideo.tsx's own PageFontStyles.
+  // The uploaded custom font's URL (blob: preview or a restored draft's
+  // served path), to declare the @font-face that lets the list render it,
+  // same as QuranVideo.tsx's own PageFontStyles.
   customTranslationFontUrl: string | null;
-  onCustomTranslationFontUpload: (file: File) => void;
+}
+
+const ARABIC_INDIC = "٠١٢٣٤٥٦٧٨٩";
+
+// An ayah number box: what is typed is taken once it's done -- on Enter,
+// on leaving the box, or after a short pause -- not digit by digit (typing
+// 13 would otherwise pick ayah 1 first and start preparing its audio).
+function AyahNumberField({
+  value,
+  min,
+  max,
+  disabled,
+  placeholder,
+  onCommit,
+  ariaLabel,
+}: {
+  value: number | null;
+  min: number;
+  max: number;
+  disabled: boolean;
+  placeholder: string;
+  onCommit: (n: number) => void;
+  ariaLabel: string;
+}) {
+  const [text, setText] = useState(value === null ? "" : String(value));
+  const timerRef = useRef<number | null>(null);
+  useEffect(() => setText(value === null ? "" : String(value)), [value]);
+  useEffect(() => () => {
+    if (timerRef.current) window.clearTimeout(timerRef.current);
+  }, []);
+  const commit = (raw: string) => {
+    if (timerRef.current) window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+    const n = parseInt(raw, 10);
+    if (!Number.isFinite(n)) {
+      setText(value === null ? "" : String(value));
+      return;
+    }
+    const clamped = Math.min(Math.max(n, min), max);
+    setText(String(clamped));
+    if (clamped !== value) onCommit(clamped);
+  };
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      aria-label={ariaLabel}
+      value={text}
+      disabled={disabled}
+      placeholder={placeholder}
+      onChange={(e) => {
+        const typed = e.target.value.replace(/[٠-٩]/g, (d) => String(ARABIC_INDIC.indexOf(d))).replace(/\D/g, "");
+        setText(typed);
+        if (timerRef.current) window.clearTimeout(timerRef.current);
+        timerRef.current = window.setTimeout(() => commit(typed), 1000);
+      }}
+      onBlur={() => commit(text)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit(text);
+      }}
+      className="h-full w-full min-w-0 bg-transparent text-center text-base font-semibold tabular-nums text-foreground outline-none placeholder:text-sm placeholder:font-normal placeholder:text-muted-foreground disabled:cursor-not-allowed"
+    />
+  );
 }
 
 const CUSTOM_TRANSLATION_FONT_FAMILY = "CustomTranslationFont";
@@ -100,42 +149,16 @@ export default function Step1SurahVerse({
   onToggleBasmala,
   lowConfidenceAyahs,
   arabicFont,
-  onArabicFontChange,
   translationFont,
-  onTranslationFontChange,
-  customTranslationFontName,
   customTranslationFontUrl,
-  onCustomTranslationFontUpload,
 }: Step1Props) {
   const tx = useT();
-  const customFontInputRef = useRef<HTMLInputElement>(null);
-  const { selectedTranslation, translationLanguage } = useTranslationContext();
+  const { selectedTranslation } = useTranslationContext();
   // The translation preview's direction follows the TRANSLATION's language,
   // not the interface's (an English translation stays LTR in the Arabic UI).
   const translationRtl = selectedTranslation.language === "ar";
   const hasCustomFont = Boolean(customTranslationFontUrl);
   const { language } = useLanguage();
-
-  // "custom" itself is only ever a REAL selectable option once a file has
-  // actually been uploaded (this session or restored from a saved draft --
-  // see customTranslationFontName) -- picking it before that just opens the
-  // file picker instead of selecting a family nothing has been given yet.
-  //
-  // Only fonts whose glyphs cover the selected translation language are
-  // listed (Arabic fonts for an Arabic tafsir, Latin ones for Turkish/
-  // English -- see TRANSLATION_FONT_OPTIONS' languages); VideoCreatorForm
-  // switches to that language's default font when the language changes.
-  const translationFontOptions = [
-    ...(Object.keys(TRANSLATION_FONT_OPTIONS) as TranslationFontKey[])
-      .filter((key) => translationFontSupports(key, translationLanguage))
-      .map((key) => ({
-        value: key,
-        label: TRANSLATION_FONT_OPTIONS[key].label,
-      })),
-    customTranslationFontName
-      ? { value: "custom", label: tx("الخط المخصص", "Özel Yazı Tipi", "Custom Font"), subtitle: customTranslationFontName }
-      : { value: "custom", label: tx("خط خارجي (تحميل ملف)...", "Özel Yazı Tipi (Dosya Yükle)...", "Custom Font (Upload File)...") },
-  ];
 
   // Joined into strings first so the memo below only recomputes when the
   // pages/font actually change, not on every new selectedVersesContent array.
@@ -190,216 +213,178 @@ export default function Step1SurahVerse({
     [v2Pages, v1Pages, customTranslationFontUrl]
   );
 
-  const handleTranslationFontSelect = (value: string | number) => {
-    if (value === "custom" && !customTranslationFontName) {
-      customFontInputRef.current?.click();
-      return;
-    }
-    onTranslationFontChange(value as TranslationFontKey | "custom");
+  const surahName = (id: number) => {
+    const surah = surahs.find((s) => s.id === id);
+    if (!surah) return "";
+    if (isArabic) return fixMojibake(surah.name);
+    if (language === "en") return surahEnglishName(id) ?? fixMojibake(surah.transliteration);
+    const turkishName = surahTurkishNames.get(id);
+    return turkishName ? fixMojibake(turkishName) : fixMojibake(surah.transliteration);
   };
+  // Every name a surah goes by, for going straight to it from the search box.
+  const jumpSurahs = useMemo(
+    () =>
+      surahs.map((surah) => ({
+        id: surah.id,
+        totalVerses: surah.total_verses,
+        names: [
+          fixMojibake(surah.name),
+          fixMojibake(surah.transliteration),
+          surahEnglishName(surah.id) ?? "",
+          fixMojibake(surahTurkishNames.get(surah.id) ?? ""),
+        ].filter(Boolean),
+      })),
+    [surahs, surahTurkishNames]
+  );
+  const selectRange = (surahId: number, fromAyah: number, toAyah: number) => {
+    const surah = surahs.find((s) => s.id === surahId);
+    if (!surah) return;
+    setSelectedSurah(surah);
+    setStartVerse(fromAyah);
+    setEndVerse(toAyah);
+    setRenderError("");
+    setRenderState("idle");
+  };
+  const total = selectedSurah?.total_verses ?? 1;
+  const fieldShell =
+    "flex h-[50px] items-stretch overflow-hidden rounded-xl border border-border bg-background shadow-sm transition-colors focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20";
+  const stepButton =
+    "flex w-10 flex-shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary disabled:pointer-events-none disabled:opacity-30";
 
   return (
-    <div className="space-y-4">
-      {/* Surah / translation / first ayah at 4:6:2 -- the translation cell
-          holds two pickers (language + edition), the ayah cell just a
-          number. */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,4fr)_minmax(0,6fr)_minmax(0,2fr)]">
-        <DropdownSelect
-          label={tx("السورة", "Sure", "Surah")}
-          placeholder={tx("اختر السورة...", "Sure seçin...", "Choose a surah...")}
-          options={surahs.map((surah) => {
-            const turkishName = surahTurkishNames.get(surah.id);
-            let label: string;
-            if (isArabic) {
-              label = `سورة ${fixMojibake(surah.name)}`;
-            } else if (language === "en") {
-              label = `Surah ${surahEnglishName(surah.id) ?? fixMojibake(surah.transliteration)}`;
-            } else if (turkishName) {
-              label = `${fixMojibake(turkishName)} Suresi`;
-            } else {
-              label = `${fixMojibake(surah.transliteration)} Suresi`;
-            }
-            return {
-              value: String(surah.id),
-              label,
-            };
-          })}
-          value={selectedSurah ? String(selectedSurah.id) : null}
-          onChange={(val) => {
-            const surah = surahs.find((s) => String(s.id) === val);
-            setSelectedSurah(surah || null);
-            if (surah) {
-              setStartVerse(1);
-              setEndVerse(1);
-            }
-          }}
-          isRtl={isArabic}
-          showNumberBadge
-          disabled={false}
-          enableSearch={true}
-          searchPlaceholder={tx("ابحث عن سورة...", "Sure ara...", "Search surahs...")}
-        />
+    <div className="space-y-5">
+      {/* The quickest way in first: find the ayah by its words, its meaning,
+          its surah and number ("البقرة 255"), or by reciting it (🎤). */}
+      <QuranSearch
+        getSurahName={surahName}
+        resolveJump={(q) => findSurahJump(q, jumpSurahs)}
+        onSelectVerse={(surahId, ayahNumber) => selectRange(surahId, ayahNumber, ayahNumber)}
+        onSelectRange={selectRange}
+      />
 
-        <div className="space-y-1.5 flex flex-col justify-end">
-          <label className="text-sm font-medium text-foreground">
-            {tx("الترجمة", "Çeviri", "Translation")}
-          </label>
-          <div className="h-[50px] flex items-center w-full">
-            <TranslationSelector className="w-full" forceShow={true} />
+      <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden>
+        <span className="h-px flex-1 bg-border" />
+        {tx("أو اختر بنفسك", "ya da kendiniz seçin", "or choose yourself")}
+        <span className="h-px flex-1 bg-border" />
+      </div>
+
+      {/* Surah, then the range: from (a new start is one ayah again, as
+          before) and to (with − / + beside it). */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-[minmax(0,1fr)_9.5rem_11rem]">
+        <div className="col-span-2 md:col-span-1">
+          <DropdownSelect
+            label={tx("السورة", "Sure", "Surah")}
+            placeholder={tx("اختر السورة...", "Sure seçin...", "Choose a surah...")}
+            options={surahs.map((surah) => ({
+              value: String(surah.id),
+              label: isArabic
+                ? `سورة ${fixMojibake(surah.name)}`
+                : language === "en"
+                  ? `Surah ${surahEnglishName(surah.id) ?? fixMojibake(surah.transliteration)}`
+                  : `${surahName(surah.id)} Suresi`,
+            }))}
+            value={selectedSurah ? String(selectedSurah.id) : null}
+            onChange={(val) => {
+              const surah = surahs.find((s) => String(s.id) === val);
+              setSelectedSurah(surah || null);
+              if (surah) {
+                setStartVerse(1);
+                setEndVerse(1);
+              }
+            }}
+            isRtl={isArabic}
+            showNumberBadge
+            disabled={false}
+            enableSearch={true}
+            searchPlaceholder={tx("ابحث عن سورة...", "Sure ara...", "Search surahs...")}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium">{tx("من الآية", "Başlangıç ayeti", "From ayah")}</label>
+          <div className={fieldShell}>
+            <AyahNumberField
+              ariaLabel={tx("من الآية", "Başlangıç ayeti", "From ayah")}
+              value={startVerse}
+              min={1}
+              max={total}
+              disabled={!selectedSurah}
+              placeholder={selectedSurah ? "1" : tx("السورة أولاً", "Önce sure", "Surah first")}
+              onCommit={(n) => selectRange(selectedSurah!.id, n, n)}
+            />
           </div>
         </div>
 
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-foreground">
-            {tx("الآية الأولى", "İlk Ayet", "First Ayah")}
-          </label>
-          <input
-            type="number"
-            min={1}
-            max={selectedSurah?.total_verses ?? 1}
-            value={startVerse ?? ""}
-            onChange={(e) => {
-              const val = e.target.valueAsNumber;
-              if (!isNaN(val)) {
-                let num = Number(val);
-                if (isNaN(num) || num < 1) num = 1;
-                if (selectedSurah && num > selectedSurah.total_verses) num = selectedSurah.total_verses;
-                setStartVerse(num);
-                setEndVerse(num);
+        <div className="space-y-2">
+          <label className="text-sm font-medium">{tx("إلى الآية", "Bitiş ayeti", "To ayah")}</label>
+          <div className={fieldShell} dir="ltr">
+            <button
+              type="button"
+              onClick={handleRemoveLastVerse}
+              disabled={!selectedSurah || endVerse === null || startVerse === null || endVerse <= startVerse}
+              aria-label={tx("إزالة آخر آية", "Son ayeti çıkar", "Remove the last ayah")}
+              className={`${stepButton} border-r border-border/70`}
+            >
+              <MinusIcon className="h-4 w-4" />
+            </button>
+            <AyahNumberField
+              ariaLabel={tx("إلى الآية", "Bitiş ayeti", "To ayah")}
+              value={endVerse}
+              min={startVerse ?? 1}
+              max={total}
+              disabled={!selectedSurah || startVerse === null}
+              placeholder="—"
+              onCommit={(n) => {
+                setEndVerse(n);
                 setRenderError("");
                 setRenderState("idle");
-              } else if (e.target.value === "") {
-                setStartVerse(null);
-                setEndVerse(null);
-              }
-            }}
-            disabled={!selectedSurah}
-            placeholder={
-              selectedSurah
-                ? (tx("رقم الآية...", "Ayet numarası...", "Ayah number..."))
-                : (tx("أولاً اختر السورة", "Önce sure seçin", "Choose a surah first"))
-            }
-            className="w-full h-[50px] rounded-xl border border-border bg-background px-4 py-2.5 text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
-            dir={isArabic ? "rtl" : "ltr"}
-          />
+              }}
+            />
+            <button
+              type="button"
+              onClick={handleAddNextVerse}
+              disabled={!selectedSurah || endVerse === null || endVerse >= total}
+              aria-label={tx("أضف الآية التالية", "Sonraki ayeti ekle", "Add the next ayah")}
+              className={`${stepButton} border-l border-border/70`}
+            >
+              <PlusIcon className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <DropdownSelect
-          label={tx("الخط العربي", "Arapça Yazı Tipi", "Arabic Font")}
-          placeholder={tx("اختر الخط...", "Yazı tipi seçin...", "Choose a font...")}
-          options={(Object.keys(ARABIC_FONT_OPTIONS) as ArabicFontKey[]).map((key) => ({
-            value: key,
-            label: tx(ARABIC_FONT_OPTIONS[key].labelAr, ARABIC_FONT_OPTIONS[key].labelTr, ARABIC_FONT_OPTIONS[key].labelEn),
-          }))}
-          value={arabicFont}
-          onChange={(val) => onArabicFontChange(val as ArabicFontKey)}
-          isRtl={isArabic}
-        />
-
-        <div>
-          <DropdownSelect
-            label={tx("خط الترجمة", "Çeviri Yazı Tipi", "Translation Font")}
-            placeholder={tx("اختر الخط...", "Yazı tipi seçin...", "Choose a font...")}
-            options={translationFontOptions}
-            value={resolveTranslationFont(translationFont, translationLanguage, hasCustomFont)}
-            onChange={handleTranslationFontSelect}
-            isRtl={isArabic}
-          />
-          <input
-            ref={customFontInputRef}
-            type="file"
-            accept=".ttf,.otf,.woff,.woff2"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) onCustomTranslationFontUpload(file);
-              e.target.value = "";
-            }}
-          />
-        </div>
-      </div>
-
-      <div className="mt-4">
-        <QuranSearch
-          getSurahName={(id) => {
-            const surah = surahs.find((s) => s.id === id);
-            if (!surah) return "";
-            if (isArabic) return fixMojibake(surah.name);
-            if (language === "en") return surahEnglishName(id) ?? fixMojibake(surah.transliteration);
-            const turkishName = surahTurkishNames.get(id);
-            return turkishName ? fixMojibake(turkishName) : fixMojibake(surah.transliteration);
-          }}
-          onSelectVerse={(surahId, ayahNumber) => {
-            const surah = surahs.find((s) => s.id === surahId);
-            if (surah) {
-              setSelectedSurah(surah);
-              setStartVerse(ayahNumber);
-              setEndVerse(ayahNumber);
-              setRenderError("");
-              setRenderState("idle");
-            }
-          }}
-          onSelectRange={(surahId, fromAyah, toAyah) => {
-            const surah = surahs.find((s) => s.id === surahId);
-            if (surah) {
-              setSelectedSurah(surah);
-              setStartVerse(fromAyah);
-              setEndVerse(toAyah);
-              setRenderError("");
-              setRenderState("idle");
-            }
-          }}
-        />
+      <div className="space-y-2">
+        <label className="text-sm font-medium">{tx("الترجمة", "Çeviri", "Translation")}</label>
+        <TranslationSelector className="w-full" forceShow={true} />
       </div>
 
       {startVerse && endVerse && selectedSurah && (
-        <div className="animate-slide-up mt-6 space-y-5 rounded-2xl border border-border/50 bg-gradient-to-br from-surface/80 to-background p-4 sm:p-5 shadow-inner-soft backdrop-blur-sm transition-all duration-300">
-          <div className="flex items-center justify-between gap-2 px-1 flex-wrap">
-            <h3 className="text-sm font-semibold text-foreground/80">
-              {tx(`الآيات المختارة (${versesArray.length})`, `Seçili Ayetler (${versesArray.length})`, `Selected Ayahs (${versesArray.length})`)}
+        <div className="animate-slide-up space-y-4 rounded-2xl border border-border/60 bg-gradient-to-br from-surface/80 to-background p-4 sm:p-5 shadow-inner-soft">
+          <div className="flex flex-wrap items-center gap-2 px-1">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              {tx("الآيات المختارة", "Seçili Ayetler", "Selected Ayahs")}
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-primary-dark dark:text-primary-light">
+                {versesArray.length}
+              </span>
             </h3>
-            <div className="flex items-center gap-2 flex-wrap">
-              {canStartWithBasmala && (
-                <button
-                  type="button"
-                  onClick={onToggleBasmala}
-                  className={
-                    startsWithBasmala
-                      ? "inline-flex items-center gap-1 rounded-lg bg-accent-red-bg/60 px-2.5 py-1 text-xs font-medium text-accent-red transition-all hover:bg-accent-red-bg"
-                      : "inline-flex items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary transition-all hover:bg-primary/20"
-                  }
-                >
-                  {startsWithBasmala
-                    ? `- ${tx("إزالة البسملة", "Besmeleyi Kaldır", "Remove Basmala")}`
-                    : `+ ${tx("أضف البسملة", "Besmele Ekle", "Add Basmala")}`}
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={handleAddNextVerse}
-                disabled={endVerse >= selectedSurah.total_verses}
-                className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary transition-all hover:bg-primary/20 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                + {tx("أضف الآية التالية", "Sonraki Ayeti Ekle", "Add Next Ayah")}
-              </button>
-              <button
-                type="button"
-                onClick={handleRemoveLastVerse}
-                disabled={endVerse <= startVerse}
-                className="inline-flex items-center gap-1 rounded-lg bg-accent-red-bg/60 px-2.5 py-1 text-xs font-medium text-accent-red transition-all hover:bg-accent-red-bg disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                - {tx("إزالة آخر آية", "Son Ayeti Kaldır", "Remove Last Ayah")}
-              </button>
-            </div>
-            <span className="text-xs font-medium text-muted-foreground">
-              {isArabic
-                ? fixMojibake(selectedSurah.name)
-                : language === "en"
-                  ? surahEnglishName(selectedSurah.id) ?? fixMojibake(selectedSurah.transliteration)
-                  : fixMojibake(selectedSurah.transliteration)}
+            <span className="text-xs text-muted-foreground">
+              {isArabic ? `سورة ${surahName(selectedSurah.id)}` : surahName(selectedSurah.id)} · {startVerse === endVerse ? startVerse : `${startVerse}–${endVerse}`}
             </span>
+            {canStartWithBasmala && (
+              <button
+                type="button"
+                onClick={onToggleBasmala}
+                aria-pressed={startsWithBasmala}
+                className={`ms-auto inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                  startsWithBasmala
+                    ? "border-primary/50 bg-primary/10 text-primary-dark dark:text-primary-light"
+                    : "border-border bg-surface text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                }`}
+              >
+                {startsWithBasmala ? "✓ " : "+ "}
+                {tx("البسملة في البداية", "Başta besmele", "Basmala first")}
+              </button>
+            )}
           </div>
 
           {/* Per-page PUA fonts, both scripts:

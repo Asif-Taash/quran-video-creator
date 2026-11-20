@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { MagnifyingGlassIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { ArrowUturnLeftIcon, MagnifyingGlassIcon, SparklesIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { useLanguage, useT } from "@/lib/LanguageContext";
 import Spinner from "@/components/ui/Spinner";
 import { findWordStartMatches } from "@/lib/arabicSearch";
@@ -10,11 +10,16 @@ interface QuranSearchProps {
   // A range found by reciting it (ReciteSearch) -- one ayah or several.
   onSelectRange: (surahNumber: number, fromAyah: number, toAyah: number) => void;
   getSurahName: (surahNumber: number) => string;
+  // A surah (and ayah) the query names -- "البقرة 255", "2:255", "yasin" --
+  // offered first, to go straight there (lib/surahJump.ts).
+  resolveJump?: (query: string) => { surah: number; ayah: number; hasAyah: boolean } | null;
 }
 
 interface SearchResult {
   surahNumber: number;
   ayahNumber: number;
+  // The last ayah, when a result spans several (the closest-text search).
+  toAyah?: number;
   text: string;
   // Meaning search: the ayah's translation in the UI language, if any.
   translation?: string | null;
@@ -43,7 +48,7 @@ const THEMES: { ar: string; tr: string; en: string }[] = [
   { ar: "الأنبياء", tr: "Peygamberler", en: "Prophets" },
 ];
 
-export default function QuranSearch({ onSelectVerse, onSelectRange, getSurahName }: QuranSearchProps) {
+export default function QuranSearch({ onSelectVerse, onSelectRange, getSurahName, resolveJump }: QuranSearchProps) {
   const tx = useT();
   const { language } = useLanguage();
   const isArabic = language === "ar";
@@ -54,6 +59,9 @@ export default function QuranSearch({ onSelectVerse, onSelectRange, getSurahName
   const [isOpen, setIsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<SearchMode>("text");
+  // The words weren't found as typed: the results are the closest text
+  // ("near", a word wrong or missing) or, failing that, the closest meaning.
+  const [fallback, setFallback] = useState<"near" | "meaning" | null>(null);
   // The meaning model loads on its first query (a few seconds): started as
   // soon as the mode is picked, while the user is still typing.
   const warmedRef = useRef(false);
@@ -132,9 +140,36 @@ export default function QuranSearch({ onSelectVerse, onSelectRange, getSurahName
           params.set("mode", "meaning");
           params.set("lang", language);
         }
-        const response = await fetch(`/api/quran/search?${params}`);
-        const data = await response.json();
+        let response = await fetch(`/api/quran/search?${params}`);
+        let data = await response.json();
         if (requestId !== searchRequestIdRef.current) return; // superseded by a newer search
+        // No ayah has these words as typed: first the closest text (a word
+        // misremembered or misspelt -- "وكفر عنا خطايانا" finds 3:193), then
+        // the closest meaning (a topic typed in the text mode).
+        let usedFallback: "near" | "meaning" | null = null;
+        // "البقرة 255" is a place to go to (offered above the results), not
+        // words to look for.
+        const isPlace = Boolean(resolveJump?.(debouncedQuery)?.hasAyah);
+        if (mode === "text" && !isPlace && response.ok && !(data.search?.results?.length > 0)) {
+          for (const [kind, extra] of [
+            ["near", { mode: "fuzzy" }],
+            ["meaning", { mode: "meaning", lang: language }],
+          ] as const) {
+            const res = await fetch(`/api/quran/search?${new URLSearchParams({ q: debouncedQuery, ...extra })}`).catch(() => null);
+            if (requestId !== searchRequestIdRef.current) return;
+            if (!res?.ok) continue;
+            const found = await res.json();
+            const list = found.search?.results ?? [];
+            // A close text is one with most of its letters right.
+            if (list.length > 0 && (kind === "meaning" || list[0].score >= 0.6)) {
+              response = res;
+              data = found;
+              usedFallback = kind;
+              break;
+            }
+          }
+        }
+        setFallback(usedFallback);
 
         if (mode === "meaning" && !response.ok) {
           setResults([]);
@@ -149,6 +184,7 @@ export default function QuranSearch({ onSelectVerse, onSelectRange, getSurahName
             return {
               surahNumber: surah,
               ayahNumber: ayah,
+              toAyah: typeof r.to === "number" && r.to > ayah ? r.to : undefined,
               text: r.text, // Text with full diacritics
               translation: r.translation ?? null,
             };
@@ -185,7 +221,8 @@ export default function QuranSearch({ onSelectVerse, onSelectRange, getSurahName
   };
 
   const handleSelect = (result: SearchResult) => {
-    onSelectVerse(result.surahNumber, result.ayahNumber);
+    if (result.toAyah) onSelectRange(result.surahNumber, result.ayahNumber, result.toAyah);
+    else onSelectVerse(result.surahNumber, result.ayahNumber);
     setIsOpen(false);
   };
 
@@ -229,31 +266,40 @@ export default function QuranSearch({ onSelectVerse, onSelectRange, getSurahName
     );
   };
 
+  const jump = resolveJump && query.trim().length > 1 ? resolveJump(query) : null;
+  const showDropdown = isOpen && query.trim().length > 1;
+  const modeChip = (active: boolean) =>
+    `inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-all ${
+      active
+        ? "border-primary/50 bg-primary/10 text-primary-dark shadow-sm dark:text-primary-light"
+        : "border-border bg-surface text-muted-foreground hover:border-primary/30 hover:text-foreground"
+    }`;
+
   return (
     <div className="relative w-full" ref={containerRef}>
       <ReciteSearch getSurahName={getSurahName} onSelect={onSelectRange}>
         <div className="relative flex items-center">
-          <div className={`absolute inset-y-0 ${isArabic ? 'right-0 pr-3' : 'left-0 pl-3'} flex items-center pointer-events-none`}>
-            <MagnifyingGlassIcon className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+          <div className={`absolute inset-y-0 ${isArabic ? 'right-0 pr-4' : 'left-0 pl-4'} flex items-center pointer-events-none`}>
+            <MagnifyingGlassIcon className="h-5 w-5 text-primary/70" aria-hidden="true" />
           </div>
           <input
             type="text"
-            className={`block w-full rounded-xl border-0 py-3 ${isArabic ? 'pr-10 pl-10' : 'pl-10 pr-10'} text-foreground ring-1 ring-inset ring-border placeholder:text-muted-foreground focus:ring-2 focus:ring-inset focus:ring-primary sm:text-sm sm:leading-6 bg-surface shadow-sm`}
+            className={`block h-12 w-full rounded-xl border-0 ${isArabic ? 'pr-11 pl-10' : 'pl-11 pr-10'} text-[15px] text-foreground ring-1 ring-inset ring-border placeholder:text-muted-foreground/80 focus:ring-2 focus:ring-inset focus:ring-primary bg-surface shadow-sm transition-shadow focus:shadow-md`}
             placeholder={
               mode === "meaning"
                 ? tx("اكتب موضوعاً: الصبر، الجنة، الأم...", "Bir konu yazın: sabır, cennet, anne...", "Type a topic: patience, paradise, mother...")
-                : tx("ابحث عن آية أو كلمة في القرآن...", "Kur'an'da bir ayet veya kelime arayın...", "Search the Quran for an ayah or word...")
+                : tx("كلمات من الآية أو «البقرة 255»", "Ayetten kelimeler ya da «Bakara 255»", "Words of the ayah or “Baqarah 255”")
             }
             value={query}
             onChange={(e) => {
-               setQuery(e.target.value);
-               if (e.target.value.trim().length > 1) {
-                  setIsOpen(true);
-               }
+              setQuery(e.target.value);
+              if (e.target.value.trim().length > 1) {
+                setIsOpen(true);
+              }
             }}
             dir={isArabic ? "rtl" : "ltr"}
             onFocus={() => {
-              if (results.length > 0) setIsOpen(true);
+              if (results.length > 0 || jump) setIsOpen(true);
             }}
           />
           {query && (
@@ -261,6 +307,7 @@ export default function QuranSearch({ onSelectVerse, onSelectRange, getSurahName
               type="button"
               className={`absolute inset-y-0 ${isArabic ? 'left-0 pl-3' : 'right-0 pr-3'} flex items-center`}
               onClick={handleClear}
+              aria-label={tx("مسح", "Temizle", "Clear")}
             >
               <XMarkIcon className="h-5 w-5 text-muted-foreground hover:text-foreground transition-colors" aria-hidden="true" />
             </button>
@@ -268,19 +315,15 @@ export default function QuranSearch({ onSelectVerse, onSelectRange, getSurahName
         </div>
       </ReciteSearch>
 
-      <div className="mt-2 flex flex-wrap items-center gap-2" dir={isArabic ? "rtl" : "ltr"}>
-        <div className="flex rounded-lg border border-border bg-background p-0.5 text-xs font-medium">
-          {(["text", "meaning"] as SearchMode[]).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setMode(m)}
-              className={`rounded-md px-3 py-1.5 transition-colors ${mode === m ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              {m === "text" ? tx("بالنص", "Metne göre", "By text") : tx("بالمعنى والموضوع", "Anlama / konuya göre", "By meaning / topic")}
-            </button>
-          ))}
-        </div>
+      <div className="mt-2.5 flex flex-wrap items-center gap-2" dir={isArabic ? "rtl" : "ltr"}>
+        <button type="button" onClick={() => setMode("text")} aria-pressed={mode === "text"} className={modeChip(mode === "text")}>
+          <MagnifyingGlassIcon className="h-3.5 w-3.5" />
+          {tx("بالكلمات", "Kelimeyle", "By words")}
+        </button>
+        <button type="button" onClick={() => setMode("meaning")} aria-pressed={mode === "meaning"} className={modeChip(mode === "meaning")}>
+          <SparklesIcon className="h-3.5 w-3.5" />
+          {tx("بالمعنى والموضوع", "Anlam ve konuyla", "By meaning or topic")}
+        </button>
       </div>
       {mode === "meaning" && (
         <div className="-mx-1 mt-2 flex gap-2 overflow-x-auto px-1 pb-1" dir={isArabic ? "rtl" : "ltr"}>
@@ -291,10 +334,10 @@ export default function QuranSearch({ onSelectVerse, onSelectRange, getSurahName
                 key={t.ar}
                 type="button"
                 onClick={() => pickTheme(label)}
-                className={`flex-shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                className={`flex-shrink-0 rounded-full border px-3 py-1 text-xs transition-colors ${
                   debouncedQuery === label
-                    ? "border-primary bg-primary/15 text-primary"
-                    : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                    ? "border-primary/50 bg-primary/10 font-medium text-primary-dark dark:text-primary-light"
+                    : "border-border/70 bg-background text-muted-foreground hover:border-primary/30 hover:text-foreground"
                 }`}
               >
                 {label}
@@ -304,53 +347,80 @@ export default function QuranSearch({ onSelectVerse, onSelectRange, getSurahName
         </div>
       )}
 
-      {isOpen && (query.length > 1) && (
+      {showDropdown && (
         <div
-          className={`animate-fadeIn absolute z-50 mt-1 w-full rounded-xl bg-surface border border-border shadow-lg overflow-auto ${isArabic ? 'text-right' : 'text-left'}`}
+          className={`animate-fadeIn absolute z-50 mt-1.5 w-full overflow-auto rounded-2xl border border-border bg-surface shadow-xl ${isArabic ? 'text-right' : 'text-left'}`}
           style={{ maxHeight: dropdownMaxHeight }}
           dir="rtl"
         >
+          {jump && (
+            <button
+              type="button"
+              onClick={() => {
+                onSelectVerse(jump.surah, jump.ayah);
+                setIsOpen(false);
+              }}
+              className="flex w-full items-center gap-3 border-b border-border/60 bg-primary/5 px-4 py-3 text-right transition-colors hover:bg-primary/10"
+            >
+              <ArrowUturnLeftIcon className="h-4 w-4 flex-shrink-0 text-primary" />
+              <span className="flex-1 text-sm font-semibold text-foreground">
+                {tx("انتقل إلى", "Git:", "Go to")} {tx("سورة ", "", "Surah ")}
+                {getSurahName(jump.surah)}
+                {jump.hasAyah ? `${tx("، الآية ", " Suresi, ", ", ayah ")}${jump.ayah}${tx("", ". ayet", "")}` : tx("", " Suresi", "")}
+              </span>
+            </button>
+          )}
           {isLoading ? (
-            <div className="p-4 flex items-center justify-center gap-2 text-muted-foreground">
+            <div className="flex items-center justify-center gap-2 p-4 text-sm text-muted-foreground">
               <Spinner size="sm" />
               <span>{tx("جاري البحث...", "Aranıyor...", "Searching...")}</span>
             </div>
           ) : error ? (
-            <div className="p-4 text-sm text-accent-red text-center">{error}</div>
+            <div className="p-4 text-center text-sm text-accent-red">{error}</div>
           ) : results.length > 0 ? (
-            <ul className="divide-y divide-border/50">
-              {results.map((result) => (
-                <li
-                  key={`${result.surahNumber}-${result.ayahNumber}`}
-                  className="p-4 hover:bg-primary/5 cursor-pointer transition-colors flex items-start gap-4"
-                  onClick={() => handleSelect(result)}
-                >
-                  <div className="flex-shrink-0 mt-1">
-                    <span className="inline-flex items-center rounded-md bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary ring-1 ring-inset ring-primary/20 whitespace-nowrap">
-                      [{getSurahName(result.surahNumber)} {result.ayahNumber}]
-                    </span>
-                  </div>
-                  <div className="flex-1 text-foreground">
-                    {mode === "meaning" ? <span className="font-arabic leading-loose text-lg">{result.text}</span> : renderHighlightedText(result.text)}
-                    {result.translation && (
-                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground" dir="ltr">
-                        {result.translation}
-                      </p>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="p-4 text-sm text-muted-foreground text-center">
-              {tx("لا توجد نتائج مطابقة", "Eşleşen sonuç bulunamadı", "No matching results found")}
-              {mode === "text" && (
-                <button type="button" onClick={() => setMode("meaning")} className="mt-2 block w-full font-medium text-primary hover:underline">
-                  {tx("ابحث بالمعنى بدلاً من ذلك", "Bunun yerine anlama göre ara", "Search by meaning instead")}
-                </button>
+            <>
+              {fallback && (
+                <p className="flex items-center gap-1.5 border-b border-border/50 px-4 py-2 text-xs text-muted-foreground">
+                  <SparklesIcon className="h-3.5 w-3.5 text-primary" />
+                  {fallback === "near"
+                    ? tx("لم أجد هذه الكلمات بنصّها، وهذه أقرب الآيات لما كتبت:", "Bu kelimeler aynen bulunamadı; yazdığınıza en yakın ayetler:", "These words weren't found as typed; the closest ayahs:")
+                    : tx("لم أجد هذه الكلمات بنصّها، وهذه آيات قريبة منها في المعنى:", "Bu kelimeler aynen bulunamadı; anlamca yakın ayetler:", "These words weren't found as typed; ayahs close in meaning:")}
+                </p>
               )}
+              <ul className="divide-y divide-border/50">
+                {results.map((result) => (
+                  <li
+                    key={`${result.surahNumber}-${result.ayahNumber}`}
+                    className="group flex cursor-pointer items-start gap-3 px-4 py-3.5 transition-colors hover:bg-primary/5"
+                    onClick={() => handleSelect(result)}
+                  >
+                    <span className="mt-1.5 inline-flex flex-shrink-0 items-center gap-1 whitespace-nowrap rounded-lg bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary-dark ring-1 ring-inset ring-primary/15 dark:text-primary-light">
+                      {getSurahName(result.surahNumber)}
+                      <span className="rounded-md bg-surface px-1.5 tabular-nums">
+                        {result.toAyah ? `${result.ayahNumber}-${result.toAyah}` : result.ayahNumber}
+                      </span>
+                    </span>
+                    <div className="min-w-0 flex-1 text-foreground">
+                      {mode === "meaning" || fallback ? (
+                        <span className="font-arabic text-lg leading-loose">{result.text}</span>
+                      ) : (
+                        renderHighlightedText(result.text)
+                      )}
+                      {result.translation && (
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground" dir="ltr">
+                          {result.translation}
+                        </p>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : !jump ? (
+            <div className="p-4 text-center text-sm text-muted-foreground">
+              {tx("لا توجد نتائج مطابقة", "Eşleşen sonuç bulunamadı", "No matching results found")}
             </div>
-          )}
+          ) : null}
         </div>
       )}
     </div>

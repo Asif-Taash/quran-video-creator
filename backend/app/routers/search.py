@@ -37,6 +37,20 @@ async def search_ayahs(q: str, lang: str = "", limit: int = 30):
     ]}
 
 
+@router.get("/fuzzy")
+async def search_fuzzy(q: str, limit: int = 8):
+    """Ayahs closest to typed words, a wrong or missing word and all
+    (recite_search.match_text): {"results": [{"surah", "from", "to",
+    "score"}]} best first; [] for under about three words."""
+    q = q.strip()
+    if not q:
+        raise HTTPException(status_code=400, detail="Missing query")
+    if not recite_search.available():
+        raise HTTPException(status_code=503, detail="Quran text not built (see ayah_search.py)")
+    results = await run_in_threadpool(recite_search.match_text, q, max(1, min(limit, 20)))
+    return {"results": results}
+
+
 @router.post("/recitation")
 async def search_recitation(audio: UploadFile = File(...)):
     """Find ayahs by reciting them (scripts/recite_search.py): a short

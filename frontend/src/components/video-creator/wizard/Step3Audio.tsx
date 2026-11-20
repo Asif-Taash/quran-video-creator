@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Spinner from "@/components/ui/Spinner";
+import Segmented from "@/components/ui/Segmented";
 import { MusicalNoteIcon, VideoCameraIcon, XMarkIcon } from "@heroicons/react/24/outline";
 
 import { useT } from "@/lib/LanguageContext";
@@ -89,28 +90,15 @@ export default function Step3Audio({
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4">
-        <div className="flex p-1 bg-primary/5 rounded-xl border border-primary/10 mb-2 relative">
-          <button
-            type="button"
-            onClick={() => setAudioSourceMode("reciter")}
-            className={`flex-1 flex items-center justify-center py-2.5 px-4 text-sm font-medium rounded-lg transition-all duration-300 relative z-10 ${audioSourceMode === "reciter"
-                ? "bg-background text-primary shadow-sm border border-primary/20"
-                : "text-muted-foreground hover:text-foreground"
-              }`}
-          >
-            {tx("اختر قارئ", "Kari Seç", "Choose Reciter")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setAudioSourceMode("custom")}
-            className={`flex-1 flex items-center justify-center py-2.5 px-4 text-sm font-medium rounded-lg transition-all duration-300 relative z-10 ${audioSourceMode === "custom"
-                ? "bg-background text-primary shadow-sm border border-primary/20"
-                : "text-muted-foreground hover:text-foreground"
-              }`}
-          >
-            {tx("رابط أو ملف صوتي", "Bağlantı veya Ses Dosyası", "Link or Audio File")}
-          </button>
-        </div>
+        <Segmented
+          dir={isArabic ? "rtl" : "ltr"}
+          value={audioSourceMode}
+          onChange={setAudioSourceMode}
+          options={[
+            { value: "reciter", label: tx("قارئ من القائمة", "Listeden kâri", "A reciter from the list") },
+            { value: "custom", label: tx("رابط أو ملف صوتي", "Bağlantı veya ses dosyası", "A link or audio file") },
+          ]}
+        />
 
         {audioSourceMode === "reciter" ? (
           <ReciterPicker
@@ -234,8 +222,8 @@ export default function Step3Audio({
             ) : prepareError && !preparedAudioUrl ? (
               <p className="animate-fade-in whitespace-pre-line font-medium text-accent-red">{prepareError}</p>
             ) : preparedAudioUrl ? (
-              <p className="animate-fade-in font-medium text-accent-green">
-                {tx("✅ الفيديو جاهز بالأسفل", "✅ Video aşağıda hazır", "✅ The video is ready below")}
+              <p className="animate-fade-in inline-flex items-center gap-1.5 rounded-full bg-accent-green/10 px-3 py-1 font-medium text-accent-green">
+                {tx("✓ الصوت جاهز، والفيديو في الأسفل", "✓ Ses hazır, video aşağıda", "✓ The audio is ready, the video is below")}
               </p>
             ) : (
               <p className="text-muted-foreground">
@@ -243,18 +231,14 @@ export default function Step3Audio({
               </p>
             )}
           </div>
-          {(preparedAudioUrl || (!isPreparingAudio && isReady)) && (
+          {!preparedAudioUrl && !isPreparingAudio && isReady && (
             <button
               type="button"
               onClick={handlePrepareAudio}
               disabled={isPreparingAudio}
               className="w-full sm:w-auto px-4 py-2.5 sm:py-2 text-sm rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 flex-shrink-0"
             >
-              {preparedAudioUrl
-                ? tx("تعديل الصوت والتوقيت", "Ses ve Zamanlamayı Düzenle", "Edit Audio and Timing")
-                : prepareError
-                  ? tx("حاول مجدداً", "Tekrar dene", "Try again")
-                  : tx("إنشاء الفيديو", "Videoyu Oluştur", "Create the Video")}
+              {prepareError ? tx("حاول مجدداً", "Tekrar dene", "Try again") : tx("إنشاء الفيديو", "Videoyu Oluştur", "Create the Video")}
             </button>
           )}
         </div>
