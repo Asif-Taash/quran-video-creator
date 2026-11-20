@@ -418,6 +418,15 @@ export default function Step5Generate({
           </div>
         </div>
       )}
+      {renderState === "rendering" && renderProgress?.stage === "rendering" && (
+        <p className="text-center text-xs text-muted-foreground" dir={isArabic ? "rtl" : "ltr"}>
+          {tx(
+            "لا تحتاج للانتظار: اضغط «مشروع جديد» في الأعلى وابدأ فيديو آخر، وسيُنزَّل هذا وحده حين ينتهي.",
+            "Beklemeniz gerekmez: yukarıdan «Yeni Proje»ye basıp başka bir videoya başlayın, bu video bitince kendiliğinden iner.",
+            "No need to wait: press \"New Project\" above and start another video; this one downloads by itself when done."
+          )}
+        </p>
+      )}
 
       {lastDownload && (
         <p className="text-center text-xs text-muted-foreground" dir={isArabic ? "rtl" : "ltr"}>

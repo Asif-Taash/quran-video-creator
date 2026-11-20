@@ -501,6 +501,16 @@ export default function VideoCreatorForm() {
   // Uploaded Files by identity, for renderSignature.
   const renderFileIdsRef = useRef({ ids: new WeakMap<File, number>(), next: 1 });
   const [renderProgress, setRenderProgress] = useState<RenderProgress | null>(null);
+  // Exports left running when the user started a new project (2026-11-20):
+  // they go on, download by themselves when done, and show in a small box
+  // at the bottom of the page meanwhile. projectEpochRef tells an export
+  // whether its project is still the one on screen.
+  type BackgroundExport = { key: string; name: string; progress: number | null; status: "rendering" | "done" | "error"; url?: string };
+  const [backgroundExports, setBackgroundExports] = useState<BackgroundExport[]>([]);
+  const projectEpochRef = useRef(0);
+  const currentExportRef = useRef<{ key: string; name: string; epoch: number } | null>(null);
+  const updateBackgroundExport = (key: string, patch: Partial<BackgroundExport>) =>
+    setBackgroundExports((prev) => prev.map((e) => (e.key === key ? { ...e, ...patch } : e)));
   // Set for the whole duration of resuming a draft so the prepared-audio/
   // segmentation invalidation effect below (which reacts to surah/verse/
   // reciter/custom-audio changes) doesn't immediately wipe the very state
@@ -1339,6 +1349,10 @@ export default function VideoCreatorForm() {
 
   const executeVideoRender = async (segmentationData: any[] | null = null) => {
     let exportCopy: { snapshotId: string; reused: boolean } | null = null;
+    const epoch = projectEpochRef.current;
+    const exportKey = `export-${Date.now()}`;
+    // Still the project on screen (the user didn't start a new one meanwhile).
+    const stillHere = () => projectEpochRef.current === epoch;
     try {
       await applyPendingSegmentation(segmentationData);
 
@@ -1354,6 +1368,11 @@ export default function VideoCreatorForm() {
       const downloadName = suggestedTitle
         ? `${suggestedTitle.replace(/\s*\|\s*/g, " - ").replace(/[\\/:*?"<>|]/g, "").trim()}.mp4`
         : "";
+      currentExportRef.current = {
+        key: exportKey,
+        name: downloadName.replace(/\.mp4$/, "") || `${selectedSurah?.id ?? ""}:${startVerse ?? ""}-${endVerse ?? ""}`,
+        epoch,
+      };
       // Copied before rendering: an edit made while the video renders
       // would otherwise end up in the copy without being in the video.
       if (savedDraftId) exportCopy = await keepExportCopy(savedDraftId, downloadName);
@@ -1363,13 +1382,16 @@ export default function VideoCreatorForm() {
       const renderedUrl = (await reusableRenderUrl(signature)) ?? (await runRealRender(formData, signature));
 
       const finalVideoUrl = `${renderedUrl}?t=${Date.now()}`;
-      setRenderState("done");
-
-      // The "Videoyu İndir" button both renders AND downloads in one click --
-      // trigger the actual browser download automatically the instant the
-      // video is ready, instead of making the user click a second separate
-      // download link/button after generation finishes.
-      setLastDownload({ url: finalVideoUrl, name: downloadName });
+      if (stillHere()) {
+        setRenderState("done");
+        // The "Videoyu İndir" button both renders AND downloads in one click --
+        // trigger the actual browser download automatically the instant the
+        // video is ready, instead of making the user click a second separate
+        // download link/button after generation finishes.
+        setLastDownload({ url: finalVideoUrl, name: downloadName });
+      } else {
+        updateBackgroundExport(exportKey, { status: "done", url: finalVideoUrl, progress: 1 });
+      }
       // iPhone/iPad Safari only honors `download` on a click the user made
       // themselves -- this one comes long after the tap, once the render is
       // done, and could open the video in place of this page instead. There
@@ -1390,10 +1412,15 @@ export default function VideoCreatorForm() {
       if (exportCopy && !exportCopy.reused) {
         fetch(`/api/drafts/${exportCopy.snapshotId}`, { method: "DELETE" }).catch(() => {});
       }
-      setRenderError(error instanceof Error ? error.message : "تعذر إنشاء الفيديو");
-      setRenderState("error");
+      if (stillHere()) {
+        setRenderError(error instanceof Error ? error.message : "تعذر إنشاء الفيديو");
+        setRenderState("error");
+      } else {
+        updateBackgroundExport(exportKey, { status: "error" });
+      }
     } finally {
-      setSegmentationProgress(null);
+      if (currentExportRef.current?.key === exportKey) currentExportRef.current = null;
+      if (stillHere()) setSegmentationProgress(null);
     }
   };
 
@@ -2212,6 +2239,17 @@ export default function VideoCreatorForm() {
   // saved in "مشاريعي" (it used to be deleted, which is why this asked for
   // confirmation first); the next pick of a surah starts a new draft.
   const handleStartOver = async () => {
+    // An export still running goes on in the background (see
+    // backgroundExports) and downloads by itself when done.
+    projectEpochRef.current += 1;
+    const running = currentExportRef.current;
+    if (running && renderState === "rendering") {
+      setBackgroundExports((prev) => [
+        ...prev.filter((e) => e.key !== running.key),
+        { key: running.key, name: running.name, progress: renderProgress?.stage === "rendering" ? renderProgress.progress : null, status: "rendering" },
+      ]);
+    }
+    setRenderProgress(null);
     await flushAutosave();
     localStorage.removeItem(DRAFT_STORAGE_KEY);
     await fetch("/api/segmentation/clear", { method: "POST" }).catch(() => {});
@@ -3185,20 +3223,29 @@ export default function VideoCreatorForm() {
       const res = await fetch(`/api/video/render?id=${encodeURIComponent(current.renderId)}`).catch(() => null);
       if (!res?.ok || lastRealRenderRef.current !== current) return;
       const data = await res.json().catch(() => null);
-      if (data && typeof data.progress === "number") setRenderProgress(data);
+      if (!data || typeof data.progress !== "number") return;
+      const running = currentExportRef.current;
+      if (running && running.epoch !== projectEpochRef.current) {
+        updateBackgroundExport(running.key, { progress: data.stage === "rendering" ? data.progress : null });
+      } else {
+        setRenderProgress(data);
+      }
     }, 1000);
 
+    const epoch = projectEpochRef.current;
     try {
       // Queued behind any real render already in flight for this project
       // (see runSerializedRender/realRenderChainRef).
       await runSerializedRender(() => executeVideoRender(segmentationData));
     } catch (error) {
-      setRenderError(error instanceof Error ? error.message : "تعذر إنشاء الفيديو");
-      setRenderState("error");
-      setSegmentationProgress(null);
+      if (projectEpochRef.current === epoch) {
+        setRenderError(error instanceof Error ? error.message : "تعذر إنشاء الفيديو");
+        setRenderState("error");
+        setSegmentationProgress(null);
+      }
     } finally {
       clearInterval(progressTimer);
-      setRenderProgress(null);
+      if (projectEpochRef.current === epoch) setRenderProgress(null);
     }
   };
 
@@ -3287,14 +3334,18 @@ export default function VideoCreatorForm() {
             {tx("اختر السورة والآيات والخلفية والقارئ، ثم أنشئ فيديو جاهزًا للتحميل.", "Sureyi, ayetleri, arka planı ve kariyi seçip indirilebilir video oluşturun.", "Choose the surah, ayahs, background and reciter to create a downloadable video.")}
           </p>
 
-          {/* A matched pair, directly under the header. Both wait while a
-              video is being exported: leaving the project then would
-              abandon that export. */}
+          {/* A matched pair, directly under the header. "مشاريعي" waits
+              while a video is being exported (opening a project reloads the
+              page, which would abandon that export); a new project doesn't:
+              the export goes on in the background. */}
           <div className="mx-auto flex w-full max-w-md items-stretch justify-center gap-3">
             <button
               type="button"
               onClick={handleStartOver}
-              disabled={renderState === "rendering"}
+              // Not in an export's first seconds: the render reads this
+              // project's split (temp_segmentation.json) as it starts, and
+              // a new project clears it. Once frames are being drawn it has.
+              disabled={renderState === "rendering" && renderProgress?.stage !== "rendering"}
               className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-primary/40 px-4 py-2.5 text-sm font-medium text-primary transition-colors hover:border-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <ArrowPathIcon className="h-4 w-4" />
@@ -3632,6 +3683,52 @@ export default function VideoCreatorForm() {
           onOpen={(id, isExport) => (isExport ? handleOpenExport(id) : handleOpenProject(id))}
           onClose={() => setShowProjects(false)}
         />
+      )}
+
+      {backgroundExports.length > 0 && (
+        <div className="fixed bottom-4 left-4 right-4 z-50 mx-auto flex max-w-sm flex-col gap-2 sm:left-auto" dir={isArabic ? "rtl" : "ltr"}>
+          {backgroundExports.map((e) => (
+            <div key={e.key} className="rounded-xl border border-border bg-surface p-3 text-xs shadow-lg">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate font-medium text-foreground">{e.name}</span>
+                {e.status !== "rendering" && (
+                  <button
+                    type="button"
+                    onClick={() => setBackgroundExports((prev) => prev.filter((x) => x.key !== e.key))}
+                    className="flex-shrink-0 px-1 text-muted-foreground hover:text-foreground"
+                    aria-label={tx("إغلاق", "Kapat", "Close")}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              {e.status === "rendering" ? (
+                <>
+                  <p className="mt-1 text-muted-foreground">
+                    {tx("يُصدَّر في الخلفية، وسيُنزَّل وحده حين ينتهي…", "Arka planda dışa aktarılıyor, bitince kendiliğinden inecek…", "Exporting in the background; it downloads by itself when done…")}
+                  </p>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-border">
+                    <div
+                      className="h-full rounded-full bg-primary transition-[width] duration-700"
+                      style={{ width: `${Math.round((e.progress ?? 0.03) * 100)}%` }}
+                    />
+                  </div>
+                </>
+              ) : e.status === "done" ? (
+                <p className="mt-1 text-accent-green">
+                  {tx("✓ جاهز ونُزّل.", "✓ Hazır ve indirildi.", "✓ Ready and downloaded.")}{" "}
+                  {e.url && (
+                    <a href={e.url} download={`${e.name}.mp4`} className="font-semibold text-primary underline underline-offset-2">
+                      {tx("لم يبدأ التنزيل؟", "İndirme başlamadı mı?", "Didn't download?")}
+                    </a>
+                  )}
+                </p>
+              ) : (
+                <p className="mt-1 text-accent-red">{tx("تعذّر تصدير هذا الفيديو. افتحه من «مشاريعي» وحاول مجدداً.", "Bu video dışa aktarılamadı. «Projelerim»den açıp tekrar deneyin.", "This video couldn't be exported. Open it from My Projects and try again.")}</p>
+              )}
+            </div>
+          ))}
+        </div>
       )}
 
       {pendingAudioChange && (
