@@ -16,6 +16,8 @@ import ayah_search  # noqa: E402
 import recite_search  # noqa: E402
 
 MAX_RECORDING_BYTES = 25 * 1024 * 1024
+# A reel of a few minutes, even as a video file.
+MAX_IDENTIFY_BYTES = 200 * 1024 * 1024
 
 router = APIRouter()
 
@@ -49,6 +51,29 @@ async def search_fuzzy(q: str, limit: int = 8):
         raise HTTPException(status_code=503, detail="Quran text not built (see ayah_search.py)")
     results = await run_in_threadpool(recite_search.match_text, q, max(1, min(limit, 20)))
     return {"results": results}
+
+
+@router.post("/identify")
+async def identify_recording(audio: UploadFile = File(...)):
+    """Which ayahs a whole short recording holds -- a reel pasted as the
+    audio (recite_search.identify): {"found": {"surah", "from", "to",
+    "score", "basmala"} | null, "heard"}."""
+    if not recite_search.available():
+        raise HTTPException(status_code=503, detail="Quran text not built (see ayah_search.py)")
+    with tempfile.NamedTemporaryFile(suffix=".audio", delete=False) as f:
+        size = 0
+        while chunk := await audio.read(1 << 20):
+            size += len(chunk)
+            if size > MAX_IDENTIFY_BYTES:
+                f.close()
+                os.unlink(f.name)
+                raise HTTPException(status_code=413, detail="Recording too large")
+            f.write(chunk)
+        path = f.name
+    try:
+        return await run_in_threadpool(recite_search.identify, path)
+    finally:
+        os.unlink(path)
 
 
 @router.post("/recitation")

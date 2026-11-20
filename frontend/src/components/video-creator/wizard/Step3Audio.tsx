@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Spinner from "@/components/ui/Spinner";
 import Segmented from "@/components/ui/Segmented";
-import { MusicalNoteIcon, VideoCameraIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { MusicalNoteIcon, XMarkIcon } from "@heroicons/react/24/outline";
 
 import { useT } from "@/lib/LanguageContext";
 import AudioLinkInput from "./AudioLinkInput";
@@ -22,9 +22,11 @@ interface Step3Props {
   reciterNameText: string;
   onReciterNameTextChange: (text: string) => void;
   customAudio: File | null;
-  handleCustomAudioUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  handleVideoUploadForAudio: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onAudioFromLink: (file: File) => void;
+  // The user's own audio: a link's, or an audio or video file.
+  onAudioFile: (file: File) => void;
+  // What finding the ayahs in that audio came to (see VideoCreatorForm's
+  // identifyCustomAudio), shown under it.
+  identifyNotice: { tone: "working" | "ok" | "info" | "warn"; text: string } | null;
   removeCustomAudio: () => void;
 
   // Also expands the unified audio-trim/timing panel (below the video
@@ -53,9 +55,8 @@ export default function Step3Audio({
   reciterNameText,
   onReciterNameTextChange,
   customAudio,
-  handleCustomAudioUpload,
-  handleVideoUploadForAudio,
-  onAudioFromLink,
+  onAudioFile,
+  identifyNotice,
   removeCustomAudio,
   handlePrepareAudio,
   isPreparingAudio,
@@ -142,32 +143,25 @@ export default function Step3Audio({
                 ) : (
                   <audio controls src={customAudioPreviewUrl ?? undefined} className="w-full mt-3 h-10 rounded-lg outline-none" />
                 )}
+                {identifyNotice && (
+                  <p
+                    className={`animate-fade-in mt-3 flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium ${
+                      identifyNotice.tone === "ok"
+                        ? "bg-accent-green/10 text-accent-green"
+                        : identifyNotice.tone === "warn"
+                          ? "bg-accent-amber-bg/40 text-accent-amber"
+                          : "bg-primary/5 text-muted-foreground"
+                    }`}
+                    dir={isArabic ? "rtl" : "ltr"}
+                  >
+                    {identifyNotice.tone === "working" && <Spinner size="sm" />}
+                    {identifyNotice.text}
+                  </p>
+                )}
               </>
               );
             })() : (
-              <div className="flex flex-col gap-3">
-                <AudioLinkInput isArabic={isArabic} onAudio={onAudioFromLink} />
-
-                <label className={`w-full flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-5 py-3.5 shadow-sm hover:border-primary/30 hover:shadow-md text-sm font-medium transition-all duration-300 cursor-pointer ${isArabic ? 'text-right' : 'text-left'}`} dir={isArabic ? 'rtl' : 'ltr'}>
-                  <span className="opacity-50 truncate">
-                    {tx("تصفح لاختيار ملف صوتي مخصص...", "Özel bir ses dosyası seçin...", "Choose a custom audio file...")}
-                  </span>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <MusicalNoteIcon className="w-5 h-5 text-foreground/40" />
-                  </div>
-                  <input type="file" accept="audio/*" className="hidden" onChange={handleCustomAudioUpload} />
-                </label>
-
-                <label className={`w-full flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-5 py-3.5 shadow-sm hover:border-primary/30 hover:shadow-md text-sm font-medium transition-all duration-300 cursor-pointer ${isArabic ? 'text-right' : 'text-left'}`} dir={isArabic ? 'rtl' : 'ltr'}>
-                  <span className="opacity-70 truncate">
-                    {tx("أو استخرج الصوت من ملف فيديو...", "Veya videodan sesi çıkarın...", "Or extract the audio from a video...")}
-                  </span>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <VideoCameraIcon className="w-5 h-5 text-foreground/40" />
-                  </div>
-                  <input type="file" accept="video/*" className="hidden" onChange={handleVideoUploadForAudio} />
-                </label>
-              </div>
+              <AudioLinkInput isArabic={isArabic} onAudio={onAudioFile} />
             )}
           </div>
         )}
@@ -207,10 +201,10 @@ export default function Step3Audio({
         )}
       </div>
 
-      {/* The video is created automatically once the reciter (or an
-          uploaded file) is chosen -- see VideoCreatorForm's auto-prepare
-          effect. This row only reports that, and keeps a manual button for
-          retrying a failed attempt or opening the audio/timing editor. */}
+      {/* The video is created automatically once the reciter (or the
+          user's own audio) is there -- see VideoCreatorForm's auto-prepare
+          effect. This row only reports that, with a button for retrying a
+          failed attempt (the audio and timing are edited under the video). */}
       <div className="pt-4 border-t border-border/50">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex-1 text-xs">
@@ -227,7 +221,9 @@ export default function Step3Audio({
               </p>
             ) : (
               <p className="text-muted-foreground">
-                {tx("سيُنشأ الفيديو تلقائياً بعد اختيار القارئ.", "Kari seçildikten sonra video otomatik oluşturulur.", "The video is created automatically once a reciter is chosen.")}
+                {audioSourceMode === "custom"
+                  ? tx("سيُنشأ الفيديو تلقائياً بعد إضافة الصوت.", "Ses eklendikten sonra video otomatik oluşturulur.", "The video is created automatically once the audio is added.")
+                  : tx("سيُنشأ الفيديو تلقائياً بعد اختيار القارئ.", "Kari seçildikten sonra video otomatik oluşturulur.", "The video is created automatically once a reciter is chosen.")}
               </p>
             )}
           </div>

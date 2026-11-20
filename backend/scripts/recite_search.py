@@ -114,8 +114,10 @@ def _strip_prefix(words, prefix):
     return words[cut:] if best >= 0.8 else None
 
 
-def match(words, limit=LIMIT):
-    """[{"surah", "from", "to", "score"}] best first for heard words."""
+def match(words, limit=LIMIT, covers=False):
+    """[{"surah", "from", "to", "score"}] best first for heard words; with
+    covers, also how much of the first and last ayah the words cover
+    ("first_cover", "last_cover", 0-1)."""
     st = _load()
     heard_text = "".join(words)
     size = len(heard_text)
@@ -156,13 +158,19 @@ def match(words, limit=LIMIT):
             continue
         ayahs = st["ayah_of"][first:last]
         # An edge ayah touched by only a letter or two is the loose edge of
-        # the match, not something that was read.
+        # the match, not something that was read -- unless that is all of it
+        # (الم، حم، يس).
         idx, counts = np.unique(ayahs, return_counts=True)
+        letters_in = dict(zip(idx.tolist(), counts.tolist()))
         idx, counts = list(idx), list(counts)
-        while len(idx) > 1 and counts[0] < 4:
+
+        def loose(i, n):
+            return n < min(4, int(st["lengths"][i]))
+
+        while len(idx) > 1 and loose(idx[0], counts[0]):
             idx.pop(0)
             counts.pop(0)
-        while len(idx) > 1 and counts[-1] < 4:
+        while len(idx) > 1 and loose(idx[-1], counts[-1]):
             idx.pop()
             counts.pop()
         (s1, a1), (s2, a2) = st["keys"][idx[0]], st["keys"][idx[-1]]
@@ -180,7 +188,11 @@ def match(words, limit=LIMIT):
         # longer one (7:187).
         first_idx, last_idx = st["position"][(s1, a1)], st["position"][(s2, a2)]
         cover = min(1.0, (last - first) / max(1, int(st["lengths"][first_idx:last_idx + 1].sum())))
-        found.append({"surah": s1, "from": a1, "to": a2, "score": round(1 - edits / size, 3), "cover": cover})
+        result = {"surah": s1, "from": a1, "to": a2, "score": round(1 - edits / size, 3), "cover": cover}
+        if covers:
+            result["first_cover"] = min(1.0, letters_in.get(first_idx, 0) / max(1, int(st["lengths"][first_idx])))
+            result["last_cover"] = min(1.0, letters_in.get(last_idx, 0) / max(1, int(st["lengths"][last_idx])))
+        found.append(result)
 
     found.sort(key=lambda r: (-r["score"], -r["cover"], r["surah"], r["from"]))
     out = []
@@ -202,10 +214,11 @@ def match_text(text, limit=LIMIT):
     return match(_norm_words(text[:600]), limit)
 
 
-def _decode(path):
-    """16 kHz mono float32 samples of an audio file (the browser's webm)."""
+def _decode(path, seconds=MAX_SECONDS):
+    """16 kHz mono float32 samples of an audio file (the browser's webm, a
+    reel's m4a, a video)."""
     raw = subprocess.run(
-        ["ffmpeg", "-nostdin", "-v", "error", "-i", str(path), "-t", str(MAX_SECONDS),
+        ["ffmpeg", "-nostdin", "-v", "error", "-i", str(path), "-t", str(seconds),
          "-f", "f32le", "-ac", "1", "-ar", "16000", "-"],
         check=True, capture_output=True, timeout=120,
     ).stdout
@@ -243,3 +256,117 @@ def recognize(path):
     logger.info(f"Recitation search: heard {len(words)} words in {t1 - t0:.1f}s, matched in {time.time() - t1:.2f}s: "
                 f"{[(r['surah'], r['from'], r['to'], r['score']) for r in results[:3]]}")
     return {"heard": heard, "basmala": basmala, "results": results}
+
+
+# ---------- Which ayahs a whole short recording holds ----------
+# A reel pasted as the audio (2026-11-20): its ayahs are picked by
+# themselves, so the link is all a video takes. Heard piece by piece
+# (Whisper's segments): a piece that isn't Quran -- the poster talking, a
+# nasheed, music heard as words -- matches nothing well and is left out,
+# and a repeated ayah only matches again where it already was.
+IDENTIFY_SECONDS = 300
+IDENTIFY_MIN_SCORE = 0.6
+# The first/last ayah counts when most of it was heard: a reel cut a word
+# into the next ayah, or starting on the end of the one before, doesn't
+# bring that ayah in.
+EDGE_COVER = 0.5
+# A piece matching far from the rest is a stray (a phrase that also occurs
+# elsewhere in the surah).
+STRAY_AYAHS = 15
+# The longest opening-letters ayah (كهيعص).
+OPENING_LETTERS_MAX = 5
+
+
+def identify(path):
+    """{"found": {"surah", "from", "to", "score", "basmala"} | None,
+    "heard": str} for a recording of up to IDENTIFY_SECONDS."""
+    from quran_aligner import _get_verify_model
+
+    t0 = time.time()
+    audio = _decode(path, IDENTIFY_SECONDS)
+    if len(audio) < 16000:
+        return {"found": None, "heard": ""}
+    segments, _ = _get_verify_model().transcribe(
+        audio, language="ar", beam_size=5, condition_on_previous_text=False, vad_filter=True,
+    )
+    isti_adha = _norm_words("أعوذ بالله من الشيطان الرجيم")
+    basmala_words = _norm_words("بسم الله الرحمن الرحيم")
+    # Whisper's pieces, a short one (a slow, drawn-out reading heard a word
+    # or two at a time) joined to the next.
+    pieces, pending = [], []
+    for segment in segments:
+        pending.extend(_norm_words(segment.text))
+        if len("".join(pending)) >= 2 * MIN_LETTERS:
+            pieces.append(pending)
+            pending = []
+    if pending:
+        pieces.append(pending)
+    heard, kept, basmala = [], [], False
+    for words in pieces:
+        heard.extend(words)
+        rest = _strip_prefix(words, isti_adha)
+        if rest is not None:
+            words = rest
+        rest = _strip_prefix(words, basmala_words)
+        if rest is not None:
+            words = rest
+            basmala = basmala or not kept
+        if len("".join(words)) < MIN_LETTERS:
+            continue
+        found = match(words, limit=6, covers=True)
+        if found and found[0]["score"] >= IDENTIFY_MIN_SCORE:
+            kept.append([r for r in found if r["score"] >= found[0]["score"] - 0.02])
+    result = {"found": None, "heard": " ".join(heard)}
+    if not kept:
+        return result
+
+    # The surah most of it is from (a piece matching equally in several
+    # surahs gives each a share).
+    votes = defaultdict(float)
+    for candidates in kept:
+        surahs = {c["surah"] for c in candidates}
+        for c in candidates:
+            votes[c["surah"]] += c["score"] / len(surahs)
+    surah = max(votes, key=votes.get)
+    pieces = [[c for c in candidates if c["surah"] == surah] for candidates in kept]
+    pieces = [p for p in pieces if p]
+    # Pieces with one place in the surah fix where the reading is; a piece
+    # with several (a refrain) takes the one nearest to them.
+    anchors = [p[0] for p in pieces if len(p) == 1] or [p[0] for p in pieces]
+    low, high = min(c["from"] for c in anchors), max(c["to"] for c in anchors)
+
+    def distance(c):
+        return 0 if c["to"] >= low and c["from"] <= high else min(abs(c["from"] - high), abs(c["to"] - low))
+
+    chosen = [c for c in (min(p, key=distance) for p in pieces) if distance(c) <= STRAY_AYAHS]
+    cover = defaultdict(float)
+    for c in chosen:
+        for ayah in range(c["from"], c["to"] + 1):
+            if c["from"] < ayah < c["to"]:
+                part = 1.0
+            elif ayah == c["from"]:
+                part = c["first_cover"]
+            else:
+                part = c["last_cover"]
+            cover[ayah] = min(1.0, cover[ayah] + part)
+    first, last = min(cover), max(cover)
+    while first < last and cover[first] < EDGE_COVER:
+        first += 1
+    while last > first and cover[last] < EDGE_COVER:
+        last -= 1
+    # A reading of the surah's opening letters alone (الم، حم، يس) is often
+    # not heard as words at all; one starting right after them has them.
+    st = _load()
+    if first > 1 and all(
+        int(st["lengths"][st["position"][(surah, ayah)]]) <= OPENING_LETTERS_MAX for ayah in range(1, first)
+    ):
+        first = 1
+    # Al-Fatiha's basmala is its first ayah, not a basmala before it.
+    if surah == 1 and basmala:
+        first, basmala = 1, False
+    score = round(sum(c["score"] for c in chosen) / len(chosen), 3)
+    result["found"] = {"surah": surah, "from": first, "to": last, "score": score,
+                       "basmala": basmala and first == 1 and surah != 9}
+    logger.info(f"Identified {surah}:{first}-{last} (score {score}, {len(chosen)}/{len(kept)} pieces, "
+                f"basmala {basmala}) in {time.time() - t0:.1f}s.")
+    return result

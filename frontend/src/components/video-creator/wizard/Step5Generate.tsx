@@ -37,9 +37,6 @@ interface Step5Props {
   // VideoCreatorForm's own suggestedTitle) -- null until a surah/verse
   // range is actually selected.
   suggestedTitle: string | null;
-  // The post the video goes out with (lib/postCaption.ts): surah, reciter,
-  // the ayahs, their meaning and hashtags -- null until it is ready.
-  postCaption: string | null;
   // The video's font pickers (TextFontPickers), shown in the Text section.
   fontPickers?: React.ReactNode;
   // The running render's progress while renderState is "rendering" -- null
@@ -256,7 +253,6 @@ export default function Step5Generate({
   isLoadingPreview,
   previewError,
   suggestedTitle,
-  postCaption,
   fontPickers,
   renderProgress,
   aspectRatio,
@@ -288,7 +284,6 @@ export default function Step5Generate({
   // Brief "copied" checkmark swap on the title's copy button -- reverts on
   // its own after a couple seconds, no need to track anything past that.
   const [titleCopied, setTitleCopied] = useState(false);
-  const [captionCopied, setCaptionCopied] = useState(false);
   // Which folding section under the video is open (one at a time). The
   // audio/timing one is the timing panel itself (showTimingEditor): opening
   // it folds these, but opening one of these never closes it -- that would
@@ -304,17 +299,6 @@ export default function Step5Generate({
       setTimeout(() => setTitleCopied(false), 2000);
     } catch (err) {
       console.error("[Step5Generate] Copy title failed:", err);
-    }
-  };
-
-  const handleCopyCaption = async () => {
-    if (!postCaption) return;
-    try {
-      await navigator.clipboard.writeText(postCaption);
-      setCaptionCopied(true);
-      setTimeout(() => setCaptionCopied(false), 2000);
-    } catch (err) {
-      console.error("[Step5Generate] Copy caption failed:", err);
     }
   };
 
@@ -496,47 +480,6 @@ export default function Step5Generate({
         </div>
       )}
 
-      {/* The post text for the video (lib/postCaption.ts), copied in one
-          tap. Its own direction follows its text (an Arabic post reads
-          right-to-left even on a Turkish page). */}
-      {postCaption && (
-        <div
-          className="flex flex-col gap-1.5 rounded-xl border border-border bg-surface px-4 py-3"
-          dir={isArabic ? "rtl" : "ltr"}
-        >
-          <div className="flex items-center gap-2">
-            <span className="flex-1 text-xs font-medium text-muted-foreground">
-              {tx("نص المنشور (للصقه مع الفيديو):", "Paylaşım Metni (videoyla birlikte):", "Post Text (to go with the video):")}
-            </span>
-            <button
-              type="button"
-              onClick={handleCopyCaption}
-              title={tx("نسخ نص المنشور", "Paylaşım metnini kopyala", "Copy post text")}
-              className={`flex flex-shrink-0 items-center gap-1.5 h-8 rounded-lg border px-3 text-xs font-medium transition-colors ${
-                captionCopied
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border bg-background text-muted-foreground hover:bg-primary/10 hover:text-primary"
-              }`}
-            >
-              {captionCopied ? <CheckIcon className="h-4 w-4" /> : <ClipboardDocumentIcon className="h-4 w-4" />}
-              {captionCopied ? tx("نُسخ", "Kopyalandı", "Copied") : tx("نسخ", "Kopyala", "Copy")}
-            </button>
-          </div>
-          {/* Line by line, each in its own direction: the Arabic ayahs right
-              to left even under a Turkish or English heading. */}
-          <div className="max-h-36 space-y-1 overflow-y-auto text-sm leading-relaxed text-foreground">
-            {postCaption.split("\n").map((line, i) =>
-              line ? (
-                <p key={i} dir={/^[^\p{L}]*\p{Script=Arabic}/u.test(line) ? "rtl" : "ltr"} className="text-start">
-                  {line}
-                </p>
-              ) : (
-                <div key={i} className="h-1.5" />
-              )
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Every setting folds under one header -- the page opens on just the
           video, the download button and these titles. The background

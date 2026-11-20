@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { LinkIcon } from "@heroicons/react/24/outline";
+import { LinkIcon, PaperClipIcon } from "@heroicons/react/24/outline";
 import Spinner from "@/components/ui/Spinner";
 import { useT } from "@/lib/LanguageContext";
 
@@ -13,15 +13,19 @@ interface AudioLinkInputProps {
   onAudio: (file: File) => void;
 }
 
-// Pasting a link starts right away; the button is for a link typed by hand.
-// The result is handed over as a File, so from there on it's the same as a
-// file the user picked (preview, audio preparation, drafts).
+// The one place the user's own audio comes in (2026-11-20, was three
+// boxes: a link, an audio file, a video file): paste a link, or pick or drop
+// an audio or video file. Pasting a link starts right away; the button is
+// for a link typed by hand. A link's audio is handed over as a File too, so
+// from there on all three are the same (preview, audio preparation, drafts).
 export default function AudioLinkInput({ isArabic, onAudio }: AudioLinkInputProps) {
   const tx = useT();
   const [link, setLink] = useState("");
   const [isFetching, setIsFetching] = useState(false);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
 
   // Switching back to the reciter tab abandons the download.
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -77,15 +81,33 @@ export default function AudioLinkInput({ isArabic, onAudio }: AudioLinkInputProp
     ),
     no_audio: tx("هذا الفيديو بلا صوت.", "Bu videoda ses yok.", "This video has no audio."),
     failed: tx(
-      "تعذر إحضار الصوت. تحقق من اتصال الإنترنت وحاول مجدداً، أو نزّل الفيديو وارفعه من الخانة أدناه.",
-      "Ses getirilemedi. İnternet bağlantınızı kontrol edip yeniden deneyin ya da videoyu indirip aşağıdan yükleyin.",
-      "Couldn't get the audio. Check your connection and try again, or download the video and upload it below.",
+      "تعذر إحضار الصوت. تحقق من اتصال الإنترنت وحاول مجدداً، أو نزّل الفيديو واختره بزر المشبك.",
+      "Ses getirilemedi. İnternet bağlantınızı kontrol edip yeniden deneyin ya da videoyu indirip ataç düğmesiyle seçin.",
+      "Couldn't get the audio. Check your connection and try again, or download the video and pick it with the clip button.",
     ),
   };
 
   return (
     <div className="flex flex-col gap-2" dir={isArabic ? "rtl" : "ltr"}>
-      <div className="flex w-full items-center gap-3 rounded-2xl border border-border bg-background py-2 pe-2 ps-5 shadow-sm transition-all duration-300 focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/15 hover:border-primary/30 hover:shadow-md">
+      <div
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes("Files")) return;
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          const file = e.dataTransfer.files?.[0];
+          setDragging(false);
+          if (!file) return;
+          e.preventDefault();
+          setErrorCode(null);
+          onAudio(file);
+        }}
+        className={`flex w-full items-center gap-3 rounded-2xl border bg-background py-2 pe-2 ps-5 shadow-sm transition-all duration-300 focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/15 hover:border-primary/30 hover:shadow-md ${
+          dragging ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-border"
+        }`}
+      >
         <LinkIcon className="h-5 w-5 flex-shrink-0 text-foreground/40" />
         <input
           type="text"
@@ -110,12 +132,39 @@ export default function AudioLinkInput({ isArabic, onAudio }: AudioLinkInputProp
             if (link.trim()) fetchAudio(link);
           }}
           placeholder={tx(
-            "الصق رابط يوتيوب أو تيك توك أو إنستغرام...",
-            "YouTube, TikTok veya Instagram bağlantısı yapıştırın...",
-            "Paste a YouTube, TikTok or Instagram link...",
+            "الصق رابط يوتيوب أو تيك توك أو إنستغرام",
+            "YouTube, TikTok veya Instagram bağlantısı yapıştırın",
+            "Paste a YouTube, TikTok or Instagram link",
           )}
           className="min-w-0 flex-1 truncate bg-transparent py-1.5 text-sm font-medium outline-none placeholder:opacity-50 disabled:opacity-60"
         />
+        {!isFetching && (
+          <>
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              title={tx("ملف صوت أو فيديو من جهازك", "Cihazınızdan ses veya video dosyası", "An audio or video file from your device")}
+              aria-label={tx("ملف صوت أو فيديو من جهازك", "Cihazınızdan ses veya video dosyası", "An audio or video file from your device")}
+              className="flex-shrink-0 rounded-xl p-2 text-foreground/50 transition-colors hover:bg-primary/10 hover:text-primary"
+            >
+              <PaperClipIcon className="h-5 w-5" />
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="audio/*,video/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                // Lets the same file be picked again after "إلغاء" in the dialog.
+                e.target.value = "";
+                if (!file) return;
+                setErrorCode(null);
+                onAudio(file);
+              }}
+            />
+          </>
+        )}
         {isFetching ? (
           <button
             type="button"
@@ -142,6 +191,15 @@ export default function AudioLinkInput({ isArabic, onAudio }: AudioLinkInputProp
             "جاري إحضار الصوت من الرابط، قد يستغرق ذلك دقيقة أو أكثر...",
             "Ses bağlantıdan getiriliyor, bu bir dakika veya daha uzun sürebilir...",
             "Getting the audio from the link, this can take a minute or more...",
+          )}
+        </p>
+      )}
+      {!isFetching && !errorCode && (
+        <p className="px-2 text-xs text-muted-foreground">
+          {tx(
+            "أو اختر ملف صوت أو فيديو بزر المشبك، أو اسحبه إلى هنا.",
+            "Ya da ataç düğmesiyle bir ses veya video dosyası seçin veya buraya sürükleyin.",
+            "Or pick an audio or video file with the clip button, or drop it here.",
           )}
         </p>
       )}

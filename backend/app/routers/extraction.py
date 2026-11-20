@@ -267,32 +267,3 @@ def download_extracted(filename: str):
     media_type = "audio/mpeg" if filename.endswith(".mp3") else "application/json"
     return FileResponse(str(file_path), media_type=media_type)
 
-@router.delete("/{filename}")
-def delete_clip(filename: str):
-    file_path = Path("/app/data/extracted_clips") / filename
-    if file_path.exists():
-        os.remove(file_path)
-        return {"success": True}
-    return {"success": False, "message": "Not found"}
-
-@router.delete("/cleanup/all")
-def cleanup_all():
-    """Clear all temporary audio/video files to free up space."""
-    import shutil
-    try:
-        paths_to_clean = [
-            Path("/app/data/temp_extraction"),
-            Path("/app/data/extracted_clips")
-        ]
-        
-        for path in paths_to_clean:
-            if path.exists():
-                for item in path.iterdir():
-                    if item.is_file():
-                        item.unlink()
-                    elif item.is_dir():
-                        shutil.rmtree(item)
-        
-        return {"success": True, "message": "Backend cleanup completed."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))

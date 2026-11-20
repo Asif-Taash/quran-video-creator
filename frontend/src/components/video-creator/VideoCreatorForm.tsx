@@ -12,7 +12,6 @@ import quranQcfV1Data from "@/data/quran-qcf-v1.json";
 import { useTranslationContext } from "@/lib/TranslationContext";
 import { getTranslationOption } from "@/lib/translationOptions";
 import { surahEnglishName } from "@/lib/surahEnglishNames";
-import { buildPostCaption } from "@/lib/postCaption";
 import SegmentTimingEditor, { type AyahWordTiming, type SegmentTimingInput, type SegmentTimingResult } from "./SegmentTimingEditor";
 import {
   ARABIC_FONT_OPTIONS,
@@ -32,7 +31,6 @@ import {
 import { buildVerseTimeline, fitWordCounts, holdWordsThroughRepeats, moveBoundariesOffMarks, repeatWordWindows, shiftWordsToTrim, voicedSpan } from "@/remotion/timing";
 import { buildTextSchedule } from "@/remotion/textSchedule";
 import { applyReadings } from "@/lib/readingPath";
-import { type WizardStepMeta } from "./wizard/WizardShell";
 import Step1SurahVerse from "./wizard/Step1SurahVerse";
 import BackgroundPicker from "./BackgroundPicker";
 import Step3Audio from "./wizard/Step3Audio";
@@ -245,6 +243,37 @@ function applyTimingResults(prev: any[], results: SegmentTimingResult[], surahId
     });
   }
   return next;
+}
+
+// A recording up to this long is taken for a reel and has its ayahs found
+// (identifyCustomAudio); a longer one is a lesson or a whole surah.
+const IDENTIFY_MAX_SECONDS = 240;
+// When the length can't be read in the browser.
+const IDENTIFY_MAX_BYTES = 40 * 1024 * 1024;
+
+// A media file's length in seconds, read by the browser (null if it can't).
+function mediaDuration(file: File): Promise<number | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const media = document.createElement(file.type.startsWith("video/") ? "video" : "audio");
+    let settled = false;
+    const done = (seconds: number | null) => {
+      if (settled) return;
+      settled = true;
+      URL.revokeObjectURL(url);
+      media.removeAttribute("src");
+      resolve(seconds);
+    };
+    media.preload = "metadata";
+    media.onloadedmetadata = () => done(Number.isFinite(media.duration) ? media.duration : null);
+    media.onerror = () => done(null);
+    window.setTimeout(() => done(null), 8000);
+    media.src = url;
+  });
+}
+
+interface WizardStepMeta {
+  label: string;
 }
 
 function StepCard({ idx, label, children, className }: { idx: number; label: string; children: React.ReactNode; className?: string }) {
@@ -1539,52 +1568,6 @@ export default function VideoCreatorForm() {
     return `${surahName} Suresi${verseRange}${reciterPart}`;
   })();
 
-  // The post text under the video (lib/postCaption.ts), in the video's
-  // language. The page only has the font's glyph codes, so the ayahs'
-  // readable Uthmani text is fetched once per range.
-  const captionKey = selectedSurah && startVerse && endVerse ? `${selectedSurah.id}:${startVerse}:${endVerse}` : "";
-  const [captionAyahs, setCaptionAyahs] = useState<{ key: string; ayahs: { n: number; text: string }[] } | null>(null);
-  useEffect(() => {
-    if (!captionKey) return;
-    const [surah, from, to] = captionKey.split(":");
-    let cancelled = false;
-    fetch(`/api/quran/ayahs?surah=${surah}&from=${from}&to=${to}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!cancelled && Array.isArray(data?.ayahs)) setCaptionAyahs({ key: captionKey, ayahs: data.ayahs });
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [captionKey]);
-  const postCaption = (() => {
-    if (!selectedSurah || !startVerse || !endVerse || !captionAyahs || captionAyahs.key !== captionKey) return null;
-    const surahId = selectedSurah.id;
-    // Only a translation's meaning goes in -- an Arabic tafsir is too long
-    // for a post.
-    const withMeaning = selectedTranslation.language === "tr" || selectedTranslation.language === "en";
-    const turkishName = surahTurkishNames.get(surahId);
-    return buildPostCaption({
-      language: selectedTranslation.language ?? translationLanguage,
-      surahId,
-      surahNameAr: fixMojibake(selectedSurah.name),
-      surahNameTr: turkishName ? fixMojibake(turkishName) : fixMojibake(selectedSurah.transliteration),
-      surahNameEn: surahEnglishName(surahId) ?? fixMojibake(selectedSurah.transliteration),
-      startVerse,
-      endVerse,
-      totalVerses: selectedSurah.total_verses,
-      basmala: startsWithBasmala,
-      reciterAr: reciterNameText.trim(),
-      reciterLatin: audioSourceMode === "reciter" && selectedReciter ? RECITER_DISPLAY_NAMES[selectedReciter] ?? "" : "",
-      ayahs: captionAyahs.ayahs.map((a) => ({
-        n: a.n,
-        arabic: a.text,
-        translation: withMeaning ? getTranslation(surahId, a.n, "") : "",
-      })),
-    });
-  })();
-
   // What the preview shows: the saved segmentation, with the open timing
   // editor's unsaved state on top (built exactly as saving it would).
   const effectiveSegmentation = useMemo(
@@ -1792,12 +1775,97 @@ export default function VideoCreatorForm() {
     if (favorite) setSelectedReciter(favorite.id);
   }, [selectedSurah, startVerse, endVerse, selectedReciter, audioSourceMode, hydrationVersion]);
 
+  // Which ayahs the user's own audio holds, when it's short -- a reel
+  // (2026-11-20): heard by the backend (recite_search.identify) and picked
+  // by themselves, so a pasted reel link is all a video takes; preparation,
+  // the split and the background then follow as for any new audio. A long
+  // one (a lesson, a whole surah) is the user's to place: the ayahs chosen
+  // above are cut out of it, as before. Preparation waits while this runs.
+  const [audioIdentify, setAudioIdentify] = useState<
+    | { state: "checking" | "working" | "long" | "unknown" }
+    | { state: "found"; surah: number; from: number; to: number }
+    | null
+  >(null);
+  const identifyRunRef = useRef(0);
+  const identifyCustomAudio = async (file: File) => {
+    const run = ++identifyRunRef.current;
+    setAudioIdentify({ state: "checking" });
+    const seconds = await mediaDuration(file);
+    if (run !== identifyRunRef.current) return;
+    if (seconds === null ? file.size > IDENTIFY_MAX_BYTES : seconds > IDENTIFY_MAX_SECONDS) {
+      setAudioIdentify({ state: "long" });
+      return;
+    }
+    setAudioIdentify({ state: "working" });
+    let found: { surah: number; from: number; to: number; basmala?: boolean } | null = null;
+    try {
+      const form = new FormData();
+      form.append("audio", file, file.name);
+      const res = await fetch("/api/quran/identify", { method: "POST", body: form });
+      found = res.ok ? (await res.json()).found ?? null : null;
+    } catch (err) {
+      console.error("[identifyCustomAudio] failed:", err);
+    }
+    if (run !== identifyRunRef.current) return;
+    const surah = found ? surahs.find((s) => s.id === found!.surah) : undefined;
+    if (!found || !surah) {
+      setAudioIdentify({ state: "unknown" });
+      return;
+    }
+    setSelectedSurah(surah);
+    setStartVerse(found.from);
+    setEndVerse(found.to);
+    setIncludeBasmala(Boolean(found.basmala) && found.from === 1);
+    setRenderError("");
+    setRenderState("idle");
+    setAudioIdentify({ state: "found", surah: surah.id, from: found.from, to: found.to });
+  };
+  const surahLabel = (id: number) => {
+    const surah = surahs.find((s) => s.id === id);
+    if (!surah) return "";
+    if (isArabic) return `سورة ${fixMojibake(surah.name)}`;
+    if (language === "en") return `Surah ${surahEnglishName(id) ?? fixMojibake(surah.transliteration)}`;
+    return `${fixMojibake(surahTurkishNames.get(id) ?? surah.transliteration)} Suresi`;
+  };
+  const identifyNotice: { tone: "working" | "ok" | "info" | "warn"; text: string } | null =
+    audioSourceMode !== "custom" || !customAudio || !audioIdentify
+      ? null
+      : audioIdentify.state === "checking" || audioIdentify.state === "working"
+        ? { tone: "working", text: tx("أتعرّف على الآيات في المقطع...", "Klipteki ayetler tanınıyor...", "Finding the ayahs in the clip...") }
+        : audioIdentify.state === "found"
+          ? {
+              tone: "ok",
+              text: (() => {
+                const name = surahLabel(audioIdentify.surah);
+                const range = audioIdentify.from === audioIdentify.to ? `${audioIdentify.from}` : `${audioIdentify.from}-${audioIdentify.to}`;
+                return tx(`✓ عرفتُ الآيات: ${name} ${range}`, `✓ Ayetler bulundu: ${name} ${range}`, `✓ Found the ayahs: ${name} ${range}`);
+              })(),
+            }
+          : audioIdentify.state === "long"
+            ? {
+                tone: "info",
+                text: tx(
+                  "مقطع طويل: تُقتطع منه الآيات المختارة في الأعلى.",
+                  "Uzun bir kayıt: yukarıda seçilen ayetler içinden kesilir.",
+                  "A long recording: the ayahs chosen above are cut from it."
+                ),
+              }
+            : {
+                tone: "warn",
+                text: tx(
+                  "لم أتعرّف على الآيات في المقطع، فاخترها في الأعلى.",
+                  "Klipteki ayetler tanınamadı; yukarıdan seçin.",
+                  "Couldn't tell which ayahs the clip holds; choose them above."
+                ),
+              };
+
   const lastAutoPrepareEpochRef = useRef(-1);
   const hasAudioSource = audioSourceMode === "reciter" ? Boolean(selectedReciter) : Boolean(customAudio);
   useEffect(() => {
     if (isHydratingRef.current) return;
     if (!selectedSurah || startVerse === null || endVerse === null || !hasAudioSource) return;
     if (preparedAudioUrl || isPreparingAudio) return;
+    if (audioSourceMode === "custom" && (audioIdentify?.state === "checking" || audioIdentify?.state === "working")) return;
     const epoch = audioParamsEpochRef.current;
     if (lastAutoPrepareEpochRef.current === epoch) return;
     const timer = setTimeout(() => {
@@ -1807,7 +1875,7 @@ export default function VideoCreatorForm() {
     }, 700);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSurah, startVerse, endVerse, hasAudioSource, selectedReciter, customAudio, audioSourceMode, startsWithBasmala, preparedAudioUrl, isPreparingAudio, hydrationVersion]);
+  }, [selectedSurah, startVerse, endVerse, hasAudioSource, selectedReciter, customAudio, audioSourceMode, startsWithBasmala, preparedAudioUrl, isPreparingAudio, hydrationVersion, audioIdentify]);
 
   // Right after a fresh preparation the long ayahs are split, as the split
   // button does -- once the translation's text is there. Not when the user
@@ -3297,42 +3365,21 @@ export default function VideoCreatorForm() {
     }
   };
 
-  const handleCustomAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    // Lets the same file be picked again after "إلغاء" in the dialog.
-    e.target.value = "";
-    if (!file) return;
+  // The user's own audio -- a link's, or an audio or video file (the backend
+  // decodes a video's sound itself, so it's staged as it is). A short one
+  // then has its ayahs found (identifyCustomAudio).
+  const takeCustomAudio = (file: File) => {
     guardAudioChange(() => {
       setCustomAudio(file);
       setRenderState("idle");
-    });
-  };
-
-  // The video file is staged as-is -- no client-side ffmpeg round trip. The
-  // backend's custom-audio extraction (extract_custom_clip) already decodes
-  // straight from a video container via ffmpeg's `-vn`/faster-whisper's own
-  // decoder, so pre-extracting to mp3 here would only add a redundant
-  // upload+download+re-upload of the full file (painfully slow on mobile
-  // uplinks) before "Prepare Audio" does the real work anyway.
-  const handleVideoUploadForAudio = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    guardAudioChange(() => {
-      setCustomAudio(file);
-      setRenderState("idle");
-    });
-  };
-
-  const handleAudioFromLink = (file: File) => {
-    guardAudioChange(() => {
-      setCustomAudio(file);
-      setRenderState("idle");
+      void identifyCustomAudio(file);
     });
   };
 
   const removeCustomAudio = () => {
     guardAudioChange(() => {
+      identifyRunRef.current++;
+      setAudioIdentify(null);
       setCustomAudio(null);
       setRenderState("idle");
     });
@@ -3364,6 +3411,9 @@ export default function VideoCreatorForm() {
   };
   const onAudioSourceModeChange = (mode: "reciter" | "custom") => {
     const apply = () => {
+      // An identification still running belongs to the source left behind.
+      identifyRunRef.current++;
+      setAudioIdentify(null);
       setAudioSourceMode(mode);
       setReciterNameEdit(null);
     };
@@ -3478,9 +3528,8 @@ export default function VideoCreatorForm() {
                     reciterNameText={reciterNameText}
                     onReciterNameTextChange={setReciterNameEdit}
                     customAudio={customAudio}
-                    handleCustomAudioUpload={handleCustomAudioUpload}
-                    handleVideoUploadForAudio={handleVideoUploadForAudio}
-                    onAudioFromLink={handleAudioFromLink}
+                    onAudioFile={takeCustomAudio}
+                    identifyNotice={identifyNotice}
                     removeCustomAudio={removeCustomAudio}
                     handlePrepareAudio={handlePrepareAudio}
                     prepareError={audioPrepError}
@@ -3594,7 +3643,6 @@ export default function VideoCreatorForm() {
                 isLoadingPreview={isLoadingPreview}
                 previewError={previewError}
                 suggestedTitle={suggestedTitle}
-                postCaption={postCaption}
                 fontPickers={
                   <TextFontPickers
                     isArabic={isArabic}
