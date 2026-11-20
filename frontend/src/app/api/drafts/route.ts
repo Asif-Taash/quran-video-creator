@@ -6,6 +6,7 @@ import crypto from "crypto";
 import { stripAudioInPlace } from "@/lib/silentVideo";
 import { lowDiskError } from "@/lib/diskSpace";
 import { fileSha, rememberStockSource } from "@/lib/usedBackgrounds";
+import { mediaExtension } from "@/lib/mediaExtension";
 
 export const runtime = "nodejs";
 // GET lists the drafts on disk: never a build-time snapshot.
@@ -48,7 +49,7 @@ async function saveDraftFile(draftId: string, kind: "bg" | "bgVideo" | "audio" |
   const dir = path.join(DRAFT_ASSETS_DIR, draftId);
   await fs.mkdir(dir, { recursive: true });
   const defaultExtension = kind === "bg" ? ".jpg" : kind === "bgVideo" ? ".mp4" : kind === "font" ? ".ttf" : ".mp3";
-  const extension = path.extname(file.name).toLowerCase() || defaultExtension;
+  const extension = mediaExtension(file.name, defaultExtension);
   const filename = `${kind}${extension}`;
   const absolutePath = path.join(dir, filename);
   const buffer = Buffer.from(await file.arrayBuffer());

@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
-import { exec, execFile } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
-const execAsync = promisify(exec);
+import { mediaExtension } from "@/lib/mediaExtension";
+// Commands always get an argument array, never a string a shell re-parses
+// (2026-11-20 security fix: a browser-sent path went into one).
 const execFileAsync = promisify(execFile);
 import quranData from "@/data/quran.json";
 import quranQcfV1Data from "@/data/quran-qcf-v1.json";
@@ -76,6 +78,18 @@ const qcfV1TextBySurahAyah = new Map<string, { text: string; page: number }>(
 const FPS = 30;
 const RENDERS_DIR = path.join(process.cwd(), "public", "renders");
 
+// Where a prepared clip may live: the temp clips, and the projects' kept
+// copies (api/drafts' keepPreparedAudio).
+const PREPARED_AUDIO_DIRS = [
+  path.join(RENDERS_DIR, "temp_audio"),
+  path.join(process.cwd(), "public", "render-assets", "drafts"),
+];
+
+function isOurAudioPath(filePath: string): boolean {
+  const absolute = path.resolve(filePath);
+  return PREPARED_AUDIO_DIRS.some((dir) => absolute.startsWith(dir + path.sep));
+}
+
 const formatNumber = (num: number) => num.toString().padStart(3, "0");
 
 // null when the reciter has no per-ayah set (see reciterNames.ts' everyAyahDir).
@@ -114,10 +128,9 @@ async function saveUploadOnce(
 ): Promise<{ filename: string; absolutePath: string; hash: string }> {
   const buffer = Buffer.from(await file.arrayBuffer());
   const hash = crypto.createHash("sha256").update(buffer).digest("hex").slice(0, 32);
-  // The extension comes from the client's own filename -- only a short
-  // alphanumeric one is kept (see the execFile note on ffprobe below).
-  const rawExtension = path.extname(file.name).toLowerCase();
-  const extension = /^\.[a-z0-9]{1,5}$/.test(rawExtension) ? rawExtension : defaultExtension;
+  // The extension comes from the client's own filename -- only a media one
+  // is kept (lib/mediaExtension.ts: this folder is served by the site).
+  const extension = mediaExtension(file.name, defaultExtension);
   const filename = `${prefix}-${hash}${extension}`;
   const uploadsDir = path.join(process.cwd(), "public", "render-assets", subdir);
   const absolutePath = path.join(uploadsDir, filename);
@@ -793,10 +806,9 @@ export async function POST(req: Request) {
         const saved = await saveUploadOnce(bgVideo, "backgrounds", "bg", ".mp4", stripAudioInPlace);
         filename = saved.filename;
         usedBackground = { path: saved.absolutePath, kind: "video", name: bgVideo.name, sha: saved.hash };
-        // execFile (argument array), NOT execAsync's shell string -- the
-        // path's extension comes from the uploaded file's own name (see
-        // saveUploadOnce), so it must never be pasted into a string a shell
-        // re-parses.
+        // execFile (argument array), never a shell string -- the path's
+        // extension comes from the uploaded file's own name (see
+        // saveUploadOnce).
         const { stdout } = await execFileAsync("ffprobe", [
           "-v", "error",
           "-show_entries", "format=duration",
@@ -845,7 +857,15 @@ export async function POST(req: Request) {
 
     const customAudio = formData.get("customAudio") as File | null;
     const usePreparedAudio = formData.get("usePreparedAudio") === "true";
-    const preparedAudioLocalPath = formData.get("preparedAudioLocalPath") as string;
+    // Sent by the browser, so only a file in our own audio folders is used
+    // (2026-11-20 security fix): the temp clips, or a project's kept copy.
+    // Anything else is treated as not sent -- a fresh extraction.
+    const sentAudioPath = formData.get("preparedAudioLocalPath");
+    const preparedAudioLocalPath =
+      typeof sentAudioPath === "string" && isOurAudioPath(sentAudioPath) ? sentAudioPath : "";
+    if (typeof sentAudioPath === "string" && sentAudioPath && !preparedAudioLocalPath) {
+      console.warn(`[Video Render] Ignoring a prepared audio path outside our folders: ${JSON.stringify(sentAudioPath)}`);
+    }
     const preparedJsonStr = formData.get("preparedJsonData") as string;
     // let, not const -- reset to 0 below if preparedAudioLocalPath turned
     // out to be gone (see preparedAudioFileExists): these boundaries were
@@ -1048,7 +1068,7 @@ export async function POST(req: Request) {
               .catch(() => false);
 
             if (!alreadyTrimmed) {
-              const toArg = trimEnd > 0 ? `-to ${trimEnd}` : "";
+              const toArgs = trimEnd > 0 ? ["-to", String(trimEnd)] : [];
               // Re-encoded, not stream-copied: "-c:a copy" cuts an MP3 at whole
               // frames and drops its encoder-delay header, and the trimmed file
               // started 86-94 ms INTO the audio -- the first sound was cut off
@@ -1056,11 +1076,14 @@ export async function POST(req: Request) {
               // that much ahead of its timing. Encoding to a file (not a pipe)
               // keeps LAME's delay header: measured 0 ms off, at 320k the
               // second encode isn't audible.
-              await execAsync(
-                hasImprovedAudio
-                  ? `ffmpeg -y -i "${improvedAudioPath}" -ss ${trimStart} ${toArg} -c:a pcm_s16le "${trimmedAbsolutePath}"`
-                  : `ffmpeg -y -i "${preparedAudioLocalPath}" -ss ${trimStart} ${toArg} -c:a libmp3lame -b:a 320k "${trimmedAbsolutePath}"`
-              );
+              await execFileAsync("ffmpeg", [
+                "-y",
+                "-i", hasImprovedAudio ? improvedAudioPath : preparedAudioLocalPath,
+                "-ss", String(trimStart),
+                ...toArgs,
+                ...(hasImprovedAudio ? ["-c:a", "pcm_s16le"] : ["-c:a", "libmp3lame", "-b:a", "320k"]),
+                trimmedAbsolutePath,
+              ]);
             }
 
             // We must serve it relative to the public folder
