@@ -26,14 +26,21 @@ interface Appearance {
   unit: number;
   start: number;
   end: number;
+  // The furthest token of the unit read in this appearance.
+  reached: number;
 }
 
 const SCALE_FIELDS = ["arabicTextScale", "arabicWidthScale", "translationTextScale", "translationWidthScale"] as const;
 
 // Turns the reading path into the segmentation the video and the timing
-// editor show, on these rules (the user's, 2026-10-27). A "unit" is a part
-// of an ayah as it is split -- or the whole ayah when it isn't:
-// - going back to the FIRST word of the unit on screen shows it again;
+// editor show, on these rules (the user's, 2026-10-27; the first refined
+// 2026-11-21). A "unit" is a part of an ayah as it is split -- or the whole
+// ayah when it isn't:
+// - going back to the FIRST word of the unit on screen shows it again, but
+//   only once he had read it to its end: "الرحمن" then "الرحمن الرحيم"
+//   (a part he broke off and began again) keeps it on screen, while a part
+//   read whole and then read again -- a one-word part said twice too --
+//   shows again;
 // - going back to a word in the middle of it keeps it on screen (no flash);
 // - going back to a unit already left (an earlier part, or an earlier ayah
 //   after the next one began) shows that unit again, wherever in it he
@@ -79,15 +86,20 @@ export function applyReadings<S extends { surah: number; ayah: number; mappings:
       if (isMarkToken(tokens[token] ?? "")) return;
       const unit = ayahUnits.findIndex((u) => token >= u.from && token <= u.to);
       if (unit < 0) return;
-      // The unit's first SPOKEN word: a part can open on a Hizb sign ۞.
+      // The unit's first and last SPOKEN words: a part can open on a Hizb
+      // sign ۞ and end on a waqf mark.
       let firstWord = ayahUnits[unit].from;
       while (firstWord < ayahUnits[unit].to && isMarkToken(tokens[firstWord] ?? "")) firstWord++;
-      const restart = r.jump && k === 0 && token === firstWord;
-      if (!current || current.ayah !== r.ayah || current.unit !== unit || restart) {
-        current = { ayah: r.ayah, unit, start, end };
+      let lastWord = ayahUnits[unit].to;
+      while (lastWord > ayahUnits[unit].from && isMarkToken(tokens[lastWord] ?? "")) lastWord--;
+      const sameUnit: boolean = current !== null && current.ayah === r.ayah && current.unit === unit;
+      const restart = sameUnit && r.jump && k === 0 && token === firstWord && current!.reached >= lastWord;
+      if (!sameUnit || restart) {
+        current = { ayah: r.ayah, unit, start, end, reached: token };
         appearances.push(current);
       } else {
-        current.end = end;
+        current!.end = end;
+        current!.reached = Math.max(current!.reached, token);
       }
     });
   }

@@ -81,6 +81,14 @@ control's own reference) put them.
 Still missed: 98:8's long "جَزَآؤُهُمْ" restarts (no ear hears the first
 saying), minshawi79 (the aligned start sits inside a pause, not after it),
 sudais79 (Whisper hears neither saying), luhaidan79.
+
+2026-11-21, display rule only (no engine change): a restart at an ayah's
+first word shows it again only once it had been read to its end (the
+user's rule, see _appearances). --cached-only: on screen 150 -> 149/168;
+the one change, husary79_restart_ayah, is a path that already missed the
+first reading's last word (31:0-2), so the ayah now stays on screen
+through the restart instead of showing again. No case's word left the
+screen (frontend scripts/check-reading-display.ts unchanged).
 """
 import argparse
 import hashlib
@@ -508,15 +516,18 @@ SCREEN_TOL_SEC = 0.5
 
 def _appearances(occ, words):
     """[(ayah, start)]: when each ayah comes on screen, by the display rules
-    (frontend lib/readingPath.ts, every ayah one part): another ayah, or a
-    restart at its first word, shows it (again); going back inside it keeps
-    it -- and so does saying one word twice in a row (a restart of a single
-    word holds the text from the first time)."""
-    out, prev = [], None
+    (frontend lib/readingPath.ts, every ayah one part): another ayah shows
+    it (again), and so does a restart at its first word once it had been
+    read to its last (2026-11-21: one broken off and begun again stays);
+    going back inside it keeps it -- and so does saying one word twice in a
+    row (a restart of a single word holds the text from the first time)."""
+    out, prev, reached = [], None, -1
     for a, k, s, _ in sorted(occ, key=lambda o: o[2]):
-        first = min(i for i, t in enumerate(words[a]["tokens"]) if not qa._is_mark_token(t))
-        if prev is None or a != prev[0] or (k == first and k < prev[1]):
+        spoken = [i for i, t in enumerate(words[a]["tokens"]) if not qa._is_mark_token(t)]
+        if prev is None or a != prev[0] or (k == spoken[0] and k < prev[1] and reached >= spoken[-1]):
             out.append((a, s))
+            reached = k
+        reached = max(reached, k)
         prev = (a, k)
     return out
 
