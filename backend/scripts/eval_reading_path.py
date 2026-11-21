@@ -89,6 +89,16 @@ the one change, husary79_restart_ayah, is a path that already missed the
 first reading's last word (31:0-2), so the ayah now stays on screen
 through the restart instead of showing again. No case's word left the
 screen (frontend scripts/check-reading-display.ts unchanged).
+
+2026-11-21, ctc-v19 (one word said again after a breath, RESAY_*; a word
+lost before a jump, TAIL_*), --cached-only: 162 -> 165/197 passed, on
+screen 149/168 both, controls unchanged, no case worse. RESAY fired 12
+times, all on true one-word repeats (none in the 29 controls, none in the
+user's 23 prepared recordings); TAIL once (salimi79_back_after_next).
+Highlight, frames of check-reading-display.ts per word (a word wrong when
+lit wrong half its time or more; words of a last ayah the splice cuts
+short left out): plain reading 2/2252 both, within 1.5 s of a repeat
+25 -> 22/541.
 """
 import argparse
 import hashlib

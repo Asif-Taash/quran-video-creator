@@ -63,8 +63,10 @@ logger = logging.getLogger(__name__)
 # Bumped whenever output semantics change, so cached clips written by an
 # older engine (or by extract_precise_clip.py, which never wrote this field)
 # are never reused. ctc-v18 (2026-11-20): clips from ayah 1 align the
-# basmala before it as context (see NO_BASMALA_SURAHS).
-ENGINE_VERSION = "ctc-v18"
+# basmala before it as context (see NO_BASMALA_SURAHS). ctc-v19 (2026-11-21):
+# one word said again after a breath (RESAY_*) and a word lost before a
+# jump (TAIL_*) are found, for the word highlight.
+ENGINE_VERSION = "ctc-v19"
 # Part of the clip cache key next to ENGINE_VERSION: what the written audio
 # is, which can change while the alignment doesn't.
 AUDIO_VERSION = "loud1"
@@ -211,6 +213,30 @@ RETURN_RESTART_GAP_SEC = 2 * CLEAR_WIDEN_SEC
 RETURN_UNSAID_SHARE = 0.5
 RETURN_UNSAID_CONF = 0.1
 RETURN_PACKED_LETTERS = 4
+# One word said again straight after itself, mid-ayah ("...وَأَخْرَجَ", a
+# breath, "وَأَخْرَجَ ضُحَىٰهَا") -- the most common repeat (2026-11-21:
+# left unfound, the next word took the second saying, and the highlight
+# lit it while he was still saying the first; 18 of the eval's 19
+# one_word_mid cases). Too short for RETURN_MIN_WORDS, and the alignment
+# model alone can't tell it from a madd split in two -- so it is taken
+# only when it looks like a word said twice: a real breath between the
+# two (RESAY_PAUSE_*), both sayings about as long (RESAY_MIN_SEC,
+# RESAY_LEN_RATIO; a split madd is a long and a short piece), its
+# consonants clear in both (RESAY_MIN_CLEAR, RETURN_MIN_RATIO), and the
+# second saying sounding more like his first than like any other word he
+# says in the recording (RESAY_SELF_RATIO, MFCC as RESTART_SELF_*). Over
+# the eval's 69 false one-word candidates (30 in unspliced recordings)
+# these turned down every one in the unspliced recordings. (The eval's
+# spliced one-word repeats copy the same audio, so the sound check is easy
+# there; on its one-word restarts, played again at another speed, the
+# second saying still matched the first best in 7 of 9.) Not where the
+# text itself says the word twice ("دَكًّۭا دَكًّۭا").
+RESAY_PAUSE_SEC = 0.3
+RESAY_PAUSE_DB = 18.0
+RESAY_MIN_SEC = 0.35
+RESAY_LEN_RATIO = (0.7, 1.4)
+RESAY_MIN_CLEAR = 0.45
+RESAY_SELF_RATIO = 1.0
 # A second ear. In slow, long-madd recitation (Husary, Minshawi, Abdul
 # Basit: 1-2 of 10 spliced repeats found by ctc-v12) the alignment model
 # hears a repeat too faintly for the search to take it -- blanks absorb it
@@ -2060,6 +2086,79 @@ def _verify_jumps(occ, order, heard=(), paused=None):
     return checks
 
 
+# A reading he broke off to go back can lose its last word: the search
+# stretches the word before over it (Salimi's 79:31 "أَخْرَجَ مِنْهَا", then
+# back to 79:30 -- "أَخْرَجَ" held through "مِنْهَا", lit while he said it;
+# 5 of the eval's 136 jumps, 2026-11-21). So where the word after a
+# reading's last one is read again after the jump but not in it, it is
+# looked for at the end of that last word: when its consonants peak there,
+# in order after the last word's own, at TAIL_MIN_PEAK+ and TAIL_MIN_REL+
+# of how clearly the same reciter says it after the jump, he said it
+# before going back, and it is put there (plain alignment then times both).
+TAIL_MIN_PEAK = 0.25
+TAIL_MIN_REL = 0.6
+TAIL_LEAD_SEC = 0.3
+
+
+def _peaks_at(em, ids, f0, f1, consonant):
+    """As _consonant_peaks, with the frame of each peak."""
+    out, at = [], f0
+    for c in ids:
+        if not consonant[c]:
+            continue
+        if at >= f1:
+            out.append((0.0, f1))
+            continue
+        k = int(np.argmax(em[at:f1, c]))
+        out.append((float(np.exp(em[at + k, c])), at + k))
+        at += k
+    return out
+
+
+def _complete_tails(em, occ, order, consonant, r0=0):
+    """occ with the word lost before a jump put back (see TAIL_*)."""
+    occ = list(occ)
+    n = 1
+    while n < len(occ):
+        o, last = occ[n], occ[n - 1]
+        w = last["w"] + 1
+        later = next((q for q in occ[n:] if q["w"] == w), None)
+        if (not o["jump"] or later is None or w >= len(order) or not order[w]["target"]
+                or order[w]["ayah"] != order[last["w"]]["ayah"] or any(q["w"] == w for q in occ[:n])
+                or sum(consonant[c] for c in order[w]["ids"]) < RESTART_MIN_CONSONANTS):
+            n += 1
+            continue
+        heard = [int(h / FRAME_SEC) - r0 for h in order[w].get("whisper_at", ())]
+        heard = [f for f in heard if last["f0"] + int(0.2 / FRAME_SEC) <= f < o["f0"] - int(0.1 / FRAME_SEC)]
+        if not heard:
+            logger.info(f"Lost before the jump? {order[w]['ayah']}:{order[w]['index']}: Whisper didn't hear it there -> no.")
+            n += 1
+            continue
+        start = max(last["f0"] + 1, heard[0] - int(TAIL_LEAD_SEC / FRAME_SEC))
+        end = o["f0"]  # up to where he goes back
+        here = _peaks_at(em, order[w]["ids"], start, end, consonant)
+        there = [p for p, _ in _peaks_at(em, order[w]["ids"], later["f0"], later["f1"] + 1, consonant)]
+        ok = (here and min(p for p, _ in here) >= TAIL_MIN_PEAK
+              and np.mean([p for p, _ in here]) >= TAIL_MIN_REL * np.mean(there))
+        logger.info(f"Lost before the jump? {order[w]['ayah']}:{order[w]['index']} at the end of "
+                    f"{order[last['w']]['ayah']}:{order[last['w']]['index']}: peaks "
+                    f"{np.mean([p for p, _ in here]) if here else 0:.2f} (min {min((p for p, _ in here), default=0):.2f}) "
+                    f"vs {np.mean(there) if there else 0:.2f} after it -> {'yes' if ok else 'no'}.")
+        if ok:
+            split = max(last["f0"] + 1, min(here[0][1], last["f1"]))
+            f1 = max(last["f1"], here[-1][1])
+            last["spans"] = [(a, min(b, split - 1)) for a, b in last["spans"] if a < split] or [(last["f0"], split - 1)]
+            last["f1"] = last["spans"][-1][1]
+            k = len(order[w]["ids"])
+            step = max(1, (f1 + 1 - split) // k)
+            spans = [(min(split + i * step, f1), min(split + (i + 1) * step - 1, f1)) for i in range(k)]
+            occ.insert(n, {"w": w, "jump": False, "f0": split, "f1": f1, "conf": last["conf"],
+                           "clear": float(np.mean([p for p, _ in here])), "spans": spans})
+            n += 1
+        n += 1
+    return occ
+
+
 def _retime_readings(emission, env, occ, order, r0, n_frames):
     """The path decides the order he read in; the times inside each stretch
     he read straight through (from one jump to the next) come from plain
@@ -2388,12 +2487,55 @@ def _reading_path(emission, units, env, follow=(), wav=None, words_by_ayah=None)
             f"to {order[x]['ayah']}:{order[x]['index']} at {s0:.1f}s" for s0, x, _ in hints) or "nowhere") + ".")
 
     _from_as_heard = _from_word_check(order)
+    _said_mfcc = {}
+
+    def _said_again(occ, c):
+        """Why the one-word jump c is that word said again (RESAY_*), or None."""
+        n = next((n for n, o in enumerate(occ) if o["jump"] and o["f0"] == c["frame"] and o["w"] == c["to"]), None)
+        if not n or occ[n - 1]["w"] != occ[n]["w"] or wav is None:
+            return None
+        o, pv = occ[n], occ[n - 1]
+        w = o["w"]
+        if w + 1 < len(order) and order[w + 1]["ids"] == order[w]["ids"]:
+            return None
+        pid = arrive.get(o["f0"])
+        if pid is None:
+            return None
+        i, j, depth = runs[pid]
+        if (j - i) * ENV_HOP_SEC < RESAY_PAUSE_SEC or depth < RESAY_PAUSE_DB:
+            return None
+        sec = lambda f: (r0 + f) * FRAME_SEC  # noqa: E731
+        d1, d2 = (pv["f1"] - pv["f0"] + 1) * FRAME_SEC, (o["f1"] - o["f0"] + 1) * FRAME_SEC
+        if d1 < RESAY_MIN_SEC or not RESAY_LEN_RATIO[0] <= d2 / d1 <= RESAY_LEN_RATIO[1]:
+            return None
+        lo, hi = sorted((o["clear"], pv["clear"]))
+        if lo < RESAY_MIN_CLEAR or lo / max(hi, 1e-6) < RETURN_MIN_RATIO:
+            return None
+        if "m" not in _said_mfcc:
+            _said_mfcc["m"] = _mfcc(wav)
+        hop = MFCC_HOP_SEC
+        seg = lambda a, b: _said_mfcc["m"][int(a / hop):max(int(a / hop) + 1, int(b / hop))]  # noqa: E731
+        g = seg(sec(o["f0"]), sec(o["f1"] + 1))
+        own = _match_cost(g, seg(sec(pv["f0"]) - 0.05, min(sec(pv["f1"] + 1) + 0.15, sec(o["f0"]) - 0.02)),
+                          anchor=max(1, int(round(0.1 / hop))))
+        others = [_match_cost(g, seg(sec(q["f0"]), sec(q["f1"] + 1))) for q in occ
+                  if q is not o and q is not pv and order[q["w"]]["ids"] != order[w]["ids"]
+                  and (q["f1"] - q["f0"] + 1) * FRAME_SEC >= RESTART_SELF_MIN_WORD_SEC]
+        if len(others) < RESTART_SELF_MIN_WORDS or own > RESAY_SELF_RATIO * min(others):
+            return None
+        return (f"breath {(j - i) * ENV_HOP_SEC:.2f}s/{depth:.0f}dB, {d1:.2f}s and {d2:.2f}s, "
+                f"clear {pv['clear']:.2f}/{o['clear']:.2f}, sounds like it {own:.3f} vs {min(others):.3f}")
 
     def search(round_name, **limits):
         path, jumps = _path_search(em, y, words, start_words, np.array(end_words), arrive, no_span,
                                    landable=landable, **limits)
         occ = _path_occurrences(path, jumps, em, y, tok_word, consonant)
         checks = _verify_jumps(occ, order, heard, paused)
+        for c in checks:
+            if not c["ok"] and c["words"] == 1 and c["to"] == c["from"]:
+                why = _said_again(occ, c)
+                if why:
+                    c.update(ok=True, suspect=False, margin=0.0, detail=c["detail"] + ", one word said again: " + why)
         for c in checks:
             t = (r0 + c["frame"]) * FRAME_SEC
             if any(w == c["to"] and lo <= c["frame"] <= hi and not _from_as_heard(c["from"], last)
@@ -2488,6 +2630,7 @@ def _reading_path(emission, units, env, follow=(), wav=None, words_by_ayah=None)
     suspects += [a for a, _ in unexplained]
     if not jumps:
         return None, suspects, unexplained
+    occ = _complete_tails(em, occ, order, consonant, r0)
     _retime_readings(emission, env, occ, order, r0, len(path))
     # A restart (see RETURN_RESTART_*) is one reading of the word, from the
     # first time he says it to the end of the second.
