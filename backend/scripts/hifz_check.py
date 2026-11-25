@@ -328,6 +328,7 @@ class LiveSession:
             frames = self._frames(settle=False)
         result = guard_quiet(self.audio, hifz_judge.check_frames(frames, self.fps, self.ref, self.surah, self.first),
                              frames, self.fps)
+        cut_last_word(result, duration)
         _keep_for_review(self.audio, self.expected, result)
         logger.info(f"Hifz live check: {len(self.expected)} words, {duration:.0f}s, {_summary(result)}, "
                     f"{time.time() - t0:.1f}s")
@@ -335,6 +336,22 @@ class LiveSession:
                 "fixed": result.get("fixed", []),
                 "duration": round(duration, 2), "checked": sum(1 for w in result["words"] if w.get("checked")),
                 "seconds": round(time.time() - t0, 2)}
+
+
+# A word the recording stopped in the middle of (the reader pressed «انتهيت»
+# while saying it): its last sound is this close to the end. It isn't a slip:
+# the reading stopped before it.
+CUT_TAIL_SEC = 0.35
+
+
+def cut_last_word(result, duration):
+    words = result["words"]
+    last = max((k for k, w in enumerate(words) if "t1" in w), default=None)
+    if last is None or words[last]["s"] not in ("wrong", "tashkeel", "missing"):
+        return
+    if duration - words[last]["t1"] < CUT_TAIL_SEC:
+        words[last] = {"s": "unread"}
+        result["stop"] = min(result.get("stop", last), last)
 
 
 def _warm():
@@ -351,8 +368,25 @@ def _warm():
         logger.warning(f"Quran ear warm-up failed: {e}")
 
 
-def warm_soon():
-    threading.Thread(target=_warm, daemon=True).start()
+def _prepare(surah, first):
+    """The surah's ayahs from `first` in the phonetic script, ahead of a
+    recitation (the session's reference is then built at once)."""
+    import hifz_judge
+
+    try:
+        for n in range(first, first + 300):
+            hifz_judge._phonetized(surah, n)
+    except Exception:
+        pass  # past the surah's last ayah
+
+
+def warm_soon(surah=None, first=None):
+    def run():
+        _warm()
+        if surah:
+            _prepare(surah, first or 1)
+
+    threading.Thread(target=run, daemon=True).start()
 
 
 def live_start(expected, surah):

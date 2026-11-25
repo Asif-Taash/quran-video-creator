@@ -82,10 +82,11 @@ MAX_LIVE_CHUNK_BYTES = 2 * 1024 * 1024
 
 
 @router.post("/warm")
-async def warm():
+async def warm(surah: int = 0, start: int = 1):
     """Loads the Quran ear ahead of a recitation (the page asks when the
-    reader opens «سمّع»), so the first words aren't late."""
-    hifz_check.warm_soon()
+    reader opens «سمّع»), so the first words aren't late; with ?surah=&start=
+    the surah's text from there is readied too."""
+    hifz_check.warm_soon(surah if 1 <= surah <= 114 else None, max(1, min(start, 286)))
     return {"ok": True}
 
 

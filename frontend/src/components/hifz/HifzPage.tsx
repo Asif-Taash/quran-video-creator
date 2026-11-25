@@ -474,8 +474,10 @@ export default function HifzPage({ surahs }: { surahs: HifzSurah[] }) {
   // the page lets it go.
   useEffect(() => {
     if (!prefsLoaded || mode !== "recite") return;
+    // With the surah and start: its text is readied too (2 s for a long surah).
     const warm = () => {
-      if (document.visibilityState === "visible") fetch("/api/hifz/warm", { method: "POST" }).catch(() => {});
+      if (document.visibilityState === "visible")
+        fetch(`/api/hifz/warm?surah=${surah.id}&start=${reciteStart}`, { method: "POST" }).catch(() => {});
     };
     warm();
     const timer = window.setInterval(warm, 4 * 60_000);
@@ -484,7 +486,7 @@ export default function HifzPage({ surahs }: { surahs: HifzSurah[] }) {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", warm);
     };
-  }, [prefsLoaded, mode]);
+  }, [prefsLoaded, mode, surah.id, reciteStart]);
 
   // ----- Moving around -----
   const halt = useCallback(() => {

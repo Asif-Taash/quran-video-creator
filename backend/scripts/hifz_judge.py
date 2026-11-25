@@ -48,6 +48,7 @@ Measured 2026-11-21 on 17 reciters' recitations with planted mistakes
 15/17, swapped 16/17, added 15/17 (Whisper + MMS: 13, 12, 13); false alarms
 on clean readings 7 in 700 words (5), phone-like audio 8 (14).
 """
+import functools
 import re
 from dataclasses import dataclass, field
 
@@ -148,6 +149,20 @@ def _bare(text):
     return re.sub(r"[^ء-يٱ]", "", text).replace("ٱ", "ا")
 
 
+@functools.lru_cache(maxsize=800)
+def _phonetized(surah, n):
+    """An ayah in the phonetic script, with its words' bounds (default moshaf).
+    Kept: phonetizing a whole surah took 2.2 s at the start of each
+    recitation (1050 words of Al-Mu'minun), the first words waiting on it."""
+    from quran_transcript import Aya, quran_phonetizer
+    from quran_transcript.phonetics.search import clean_uthmani_spaces, get_uth_word_boundaries_in_ph
+
+    f = Aya(surah, n).get()
+    out = quran_phonetizer(f.uthmani, default_moshaf(), remove_spaces=True, sura_idx=surah)
+    bounds = get_uth_word_boundaries_in_ph(clean_uthmani_spaces(f.uthmani), out.mappings) + [len(out.phonemes)]
+    return f, out, bounds
+
+
 def build_reference(surah, ayahs, our_words, moshaf=None):
     """ayahs: [ayah numbers]; our_words: {ayah: [uthmani words as shown]}.
     The reference is phonetized ayah by ayah (each read as from a stop to
@@ -155,16 +170,20 @@ def build_reference(surah, ayahs, our_words, moshaf=None):
     from quran_transcript import Aya, quran_phonetizer
     from quran_transcript.phonetics.search import clean_uthmani_spaces, get_uth_word_boundaries_in_ph
 
+    default = moshaf is None  # (before it is filled in: the kept ayahs are the default moshaf's)
     moshaf = moshaf or default_moshaf()
     chars, owner = [], []
     wasl_start, taa_end, ayah_first, ayah_last = set(), set(), set(), set()
     letters = []
     base = 0
     for n in ayahs:
-        f = Aya(surah, n).get()
-        uth = clean_uthmani_spaces(f.uthmani)
-        out = quran_phonetizer(f.uthmani, moshaf, remove_spaces=True, sura_idx=surah)
-        bounds = get_uth_word_boundaries_in_ph(uth, out.mappings) + [len(out.phonemes)]
+        if default:
+            f, out, bounds = _phonetized(surah, n)
+        else:
+            f = Aya(surah, n).get()
+            uth = clean_uthmani_spaces(f.uthmani)
+            out = quran_phonetizer(f.uthmani, moshaf, remove_spaces=True, sura_idx=surah)
+            bounds = get_uth_word_boundaries_in_ph(uth, out.mappings) + [len(out.phonemes)]
         their = f.uthmani_words
         # their word k -> our word index (by letters; 4 ayahs split words differently)
         ours = our_words[n]
@@ -685,7 +704,10 @@ def judge(ref, heard, pauses=None, live=False, nested=False):
 
     hyp0, _ = normalize(heard)
     tail_item = None
-    judge.repeating = False
+    if not nested:
+        # (a nested call -- a first saying judged for the notes -- must not
+        # reset it: «تكرار» never reached the page)
+        judge.repeating = False
     if READING_PATH and not nested:
         hyp, kept, restarts = reading_path(hyp0, ref, live=live)
         judge.repeating = reading_path.repeating
