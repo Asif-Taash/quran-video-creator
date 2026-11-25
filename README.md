@@ -50,13 +50,26 @@ Her şey bilgisayarınızda, ücretsiz ve açık araçlarla çalışır; ücretl
   - Dışa aktarılan her videonun değişmeyen bir kopyası ayrıca saklanır.
   - Hesap gerekmez.
 - **Disk koruması:** Diskte 5 GB'tan az yer kaldığında kaydetme ve dışa aktarma durur. Docker günlüklerinin boyutu sınırlıdır.
+- **Hıfz sayfası (`/hifz`):**
+  - Ayetler Medine Mushafı'ndaki satırlarıyla, aynı sayfa fontlarıyla, tam ekran gösterilir. Mushafın üstündeki çubuktan ne yapılacağı her an seçilir; alttaki ince çubukta yalnızca o modun araçları durur. Sayfanın boş kenarına dokunmak çubukları gizler.
+  - **Ezberle:** metin istenildiği kadar gizlenir (hepsi açık, her kelimenin ilk harfi, bir kelime açık bir kelime gizli, hepsi gizli; dokunulan kelime açılır). Seçilen ayet istenen sayıda dinlenir.
+  - **Ezberden oku:** istenen ayetten başlanır, istenildiği an bitirilir; sonuna kadar okunan ayetler tekrar takvimine girer.
+  - **Dinle:** kâri okurken okuduğu kelime sayfada yanar; her ayet ya da bütün bölüm tekrarlanır, telkin ve hız seçilir.
+  - **Dinle ve tekrarla:** Ayetler, videodaki hizalayıcıyla kârinin kaydından kesilir; her ayetin başı ve sonu sesin kendisinden bulunur (mp3quran'ın ayet zamanlaması birçok kâride saniyelerce kayıyordu). Bir bölüm ilk seferde birkaç saniyede hazırlanır, sonra hazır bekler. Her ayet ve bütün bölüm istenen sayıda tekrarlanır, hız ayarlanır; isteğe bağlı olarak her ayetten sonra ayet uzunluğunda sessizlik bırakılır (telkin). 210 kârinin hepsiyle çalışır.
+  - **Ezberden okuma kontrolü (anında):** Siz okurken ses yaklaşık her saniye sunucuya gider. Doğru okunan kelime belirir, yanlış okunan kelime hemen kırmızıya döner (telefonda kısa bir titreşim). Geri dönüp doğru okursanız uyarı kalkar. Bitirince bütün kayıt bir kez daha kontrol edilir. Geri dönüp tekrar etmek hata sayılmaz. Bir kelimeye dokununca o yerdeki kendi sesinizi ve kârinin okuyuşunu dinleyebilirsiniz.
+  - **Okuma yolu (2026-11-25):** Okuyucunun metindeki yolu tek bir aramayla bulunur. Geri dönüp tekrar etmek (iki ayet bile) anında anlaşılır, atlanan ayetler fark edilir, her kelime en son okunuşuna göre değerlendirilir. Düzeltilen hata «yanıldı, sonra düzeltti» notu olarak kalır. Şüpheli her ses ayrı ayrı doğrulanır. Uzmanların etiketlediği Iqra'Eval QuranMB.v2 testinde (18 kişi, 1642 okuma) doğru kelimelere yanlış uyarı %24,2'den %8,3'e indi; gerçek hataların %52'si bulunur.
+  - Mikrofonun tarayıcı işlemleri (yankı giderme, gürültü bastırma) kapalıdır: tilavetteki uzun meddleri gürültü sanıp kesiyorlardı.
+  - Kontrol edilen son 30 okuma, hataları incelemek için yalnızca bu bilgisayarda `backend/data/hifz_recordings/` altında saklanır.
+  - **Kur'an kulağı:** Okuma, Kur'an tilavetine özel eğitilmiş Quran Muaalem modeliyle (obadx/muaalem-model-v3_2, yaklaşık 850 saat tilavet) ses ses dinlenir: harfler harekeleriyle, med ve gunne dahil. Model beklenen metni görmeden duyduğunu yazar; böylece iki kez söylenen bir kelime iki kez duyulur ve yanlış bir hareke de fark edilir (ayrı, daha hafif bir uyarı olarak). Şüpheli her kelime aynı modelin kendi olasılıklarıyla yeniden doğrulanır. Kelime sonu, okuyucunun orada durup durmadığına göre değerlendirilir (seste gerçek bir duraklama ya da ayet sonu): durulan yerde vakıf okunuşu doğrudur; vasılda son hareke ve tenvin yazıldığı gibi okunmalı, vasıl hemzesi okunmamalıdır. 97 tilavette metne yerleştirilen hatalarla ölçüldü (2026-11-24): kelime içi hareke 373/377, vasılda kelime sonu harekesi 354/375 (önceden 4/375), yakın harf (س/ص, ذ/ز, ح/ه …) 373/377; doğru okumalarda yanlış hareke uyarısı 3555 kelimede 15 (önceden 12).
+  - 9 kârinin 17 kaydında, içine bilerek hata eklenen testte: atlanan kelimelerin 15/17'si, değiştirilenlerin 16/17'si, eklenenlerin 15/17'si bulundu (önceki Whisper + MMS sistemi: 13, 12, 13). Doğru okumada 700 kelimede 7 yanlış uyarı (önceki: 5), telefon kalitesinde 8 (önceki: 14).
+  - **Tekrar takvimi:** Her ayet, okuma başarısına göre artan aralıklarla tekrara gelir (SM-2'ye benzer). "Tekrarlarım" kartı bugün tekrar edilecek ayetleri, sure sure ilerlemeyi ve son okumaları gösterir. İlerleme sunucuda tutulur; telefon ve bilgisayar aynı ilerlemeyi görür.
 
 ## Altyapı
 
 | Bölüm | Teknoloji |
 |---|---|
 | Arayüz ve video oluşturma | Next.js 14, React 18, Remotion 4 (başsız Chromium + ffmpeg), Tailwind CSS |
-| Sunucu (backend) | FastAPI, PyTorch/torchaudio (CUDA), faster-whisper, transformers |
+| Sunucu (backend) | FastAPI, PyTorch/torchaudio (CUDA), faster-whisper, transformers, Quran Muaalem + quran-transcript (Kur'an kulağı) |
 
 Veritabanı yoktur: Kur'an metni arayüzle birlikte gelir, projeler dosya olarak kaydedilir.
 
@@ -70,6 +83,8 @@ Aşağıdaki dosyaların yayın hakları sahiplerine aittir. Bu yüzden depoya k
 | `frontend/public/fonts/2005/`, `frontend/public/fonts/2013/` | QCF v1 ve v2 sayfa fontları | Kral Fahd Mushaf Basım Kompleksi ([fonts.qurancomplex.gov.sa](https://fonts.qurancomplex.gov.sa)) |
 | `frontend/public/fonts/uthmanic_hafs_v20.ttf`, `frontend/public/fonts/UthmanTN1 Ver10.otf` | KFGQPC Hafs ve Osman Taha Nesih fontları | Aynı kaynak |
 | `frontend/src/data/quran.json`, `frontend/src/data/quran-qcf-v1.json` | Sure listesi ve her ayetin QCF v2 / v1 glif kodları | Quran.com API v4 (`code_v2` / `code_v1` alanları) |
+| `frontend/src/data/hifz-words.json` | Hıfz sayfasının kelimeleri: QCF v2 glif kodu, Osmanî ve imlâî yazım, sayfa ve satır | `frontend/scripts/build-hifz-words.mjs` betiği (Quran.com API v4) |
+| `backend/data/models/muaalem-model-v3_2/` | Kur'an kulağının model ağırlıkları (MIT, 2.4 GB) | [obadx/muaalem-model-v3_2](https://huggingface.co/obadx/muaalem-model-v3_2) — dosyaları bu klasöre indirin |
 | `backend/scripts/segment_align_cases.json` | Meal bölme testinin Diyanet metni içeren örnekleri | Yalnızca `backend/scripts/eval_segment_align.py` için gereklidir |
 
 ## Kaynaklar ve lisanslar
@@ -130,7 +145,15 @@ cp frontend/src/data/translations/diyanet_vakfi.json backend/data/ayah_search/
 docker compose exec -T backend python -I scripts/ayah_search.py --build
 ```
 
-**4. Açma**
+**4. Hıfz sayfasının kelimeleri (bir kez)**
+
+`frontend/src/data/quran.json` yerindeyken (yukarıya bakın), Quran.com'dan kelime listesini indirir ve her ayetin glif kodlarını `quran.json` ile karşılaştırır (birkaç dakika):
+
+```bash
+docker compose exec -u 1000:1000 frontend node scripts/build-hifz-words.mjs
+```
+
+**5. Açma**
 
 Uygulama [http://localhost:3000](http://localhost:3000) adresinde açılır. Sunucu API belgeleri [http://localhost:8000/docs](http://localhost:8000/docs) adresindedir.
 
@@ -139,16 +162,18 @@ Uygulama [http://localhost:3000](http://localhost:3000) adresinde açılır. Sun
 ```
 frontend/
   src/app/              sayfa ve API yolları (render, drafts, prepare-audio, backgrounds)
-  src/components/       video oluşturma sihirbazı ve arayüz
+  src/components/       video oluşturma sihirbazı, hıfz sayfası (hifz/) ve arayüz
   src/remotion/         videonun kendisi: QuranVideo.tsx (kompozisyon), timing.ts, types.ts
   src/lib/              ortak mantık (kâriler, mealler, stok arka planlar, kullanılmış arka planlar...)
   src/data/             Kur'an metni ve mealler (bir kısmı depoda yok, yukarıya bakın)
   public/fonts/         Mushaf sayfa fontları ve video fontları
-  scripts/              meal dosyalarını oluşturan betikler
+  scripts/              meal dosyalarını ve hıfz kelime listesini oluşturan betikler
 backend/
-  app/routers/          FastAPI uç noktaları (extraction, segmentation, vision, enhance, search, ai)
+  app/routers/          FastAPI uç noktaları (extraction, segmentation, vision, enhance, search, hifz, ai)
   scripts/              quran_aligner.py (geçerli hizalayıcı), ayah_search.py (anlamla arama),
-                        recite_search.py (sesle arama ve klip tanıma), extract_precise_clip.py (eski
+                        recite_search.py (sesle arama ve klip tanıma), quran_ear.py (Kur'an kulağı),
+                        hifz_check.py + hifz_judge.py (ezber kontrolü),
+                        extract_precise_clip.py (eski
                         Whisper akışı; ALIGN_ENGINE=legacy ve ortak yardımcılar için duruyor),
                         segment_align.py, eval_* betikleri
   data/                 (git dışında) model önbellekleri, indirilen sure sesleri, test sesleri

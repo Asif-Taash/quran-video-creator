@@ -1,0 +1,20 @@
+# The Quran-specific ear (scripts/quran_ear.py): obadx's Quran Muaalem model
+# hears a recitation sound by sound in the Quran phonetic script (madd,
+# ghunna, harakat), and quran-transcript writes the expected ayahs in the
+# same script. Installed by the Dockerfile in a layer of its own, after
+# requirements.txt.
+#
+# quran-muaalem and quran-transcript ask for numpy>=2.2.6 but run unchanged
+# on the numpy 1.26 the rest of the backend needs (checked 2026-11-21), so
+# the Dockerfile installs them with --no-deps; their own dependencies are
+# listed here. pydantic is raised above requirements.txt's pin for
+# quran-transcript (FastAPI 0.111 works with it).
+#
+# Licenses: quran-transcript MIT; quran-muaalem code QML-1.0 (Apache-2.0
+# with conditions: an AI-use notice, no ads); the model weights MIT.
+pydantic==2.14.4
+levenshtein==0.27.4
+diff-match-patch==20241021
+rich==15.0.0
+xmltodict==1.0.4
+fuzzysearch==0.8.1

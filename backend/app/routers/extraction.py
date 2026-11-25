@@ -184,6 +184,30 @@ def lossless_clip(
 _preview_timing_cache = {}
 
 
+def mp3quran_times(read_id, surah):
+    """{ayah: (start, end)} seconds in a reciter's mp3quran recording of a
+    surah (mp3quran's own ayah timing), or None when it can't be had.
+    Kept per process: the reciter preview and the memorization page's
+    listen-and-repeat ask for the same surahs again and again."""
+    key = (read_id, surah)
+    times = _preview_timing_cache.get(key)
+    if times is None:
+        req = urllib.request.Request(
+            f"https://mp3quran.net/api/v3/ayat_timing?surah={surah}&read={read_id}",
+            headers={"User-Agent": "Mozilla/5.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as response:
+                data = json.loads(response.read().decode())
+        except Exception:
+            return None
+        rows = data if isinstance(data, list) else (data.get("times") or data.get("ayat_timing") or [])
+        times = {int(t["ayah"]): (t["start_time"] / 1000.0, t["end_time"] / 1000.0) for t in rows}
+        if len(_preview_timing_cache) > 300:
+            _preview_timing_cache.clear()
+        _preview_timing_cache[key] = times
+    return times
+
+
 @router.get("/preview-source")
 def preview_source(reciter: str, surah: int, start: int, end: int):
     """Where to listen to the chosen ayahs in a reciter's recording before
@@ -201,24 +225,9 @@ def preview_source(reciter: str, surah: int, start: int, end: int):
     # The copy the video will be cut from (same recording, same timing).
     url = (RECITERS_HQ[reciter][0] if has_hq_copy(reciter, surah) else RECITERS_MP3QURAN[reciter]).format(surah=surah)
     read_id = RECITERS_TIMING_ID.get(reciter)
-    if not read_id:
+    times = mp3quran_times(read_id, surah) if read_id else None
+    if not times:
         return {"url": url, "start": 0, "end": None, "total": None, "timed": False}
-    key = (read_id, surah)
-    times = _preview_timing_cache.get(key)
-    if times is None:
-        req = urllib.request.Request(
-            f"https://mp3quran.net/api/v3/ayat_timing?surah={surah}&read={read_id}",
-            headers={"User-Agent": "Mozilla/5.0"})
-        try:
-            with urllib.request.urlopen(req, timeout=10) as response:
-                data = json.loads(response.read().decode())
-        except Exception:
-            return {"url": url, "start": 0, "end": None, "total": None, "timed": False}
-        rows = data if isinstance(data, list) else (data.get("times") or data.get("ayat_timing") or [])
-        times = {int(t["ayah"]): (t["start_time"] / 1000.0, t["end_time"] / 1000.0) for t in rows}
-        if len(_preview_timing_cache) > 300:
-            _preview_timing_cache.clear()
-        _preview_timing_cache[key] = times
     total = max((e for _, e in times.values()), default=None)
     first = times.get(start) or (times.get(1) if start == 0 else None)
     last = times.get(end)

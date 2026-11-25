@@ -24,6 +24,12 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# The Quran ear (see requirements-quran.txt): a layer of its own, so adding
+# it doesn't reinstall the above. numpy stays 1.26.
+COPY requirements-quran.txt .
+RUN pip install --no-cache-dir -r requirements-quran.txt numpy==1.26.4 && \
+    pip install --no-cache-dir --no-deps quran-transcript==0.6.4 quran-muaalem==0.3.0
+
 COPY . .
 
 # Ensure ctranslate2 can find the pip-installed CUDA libraries for GPU acceleration

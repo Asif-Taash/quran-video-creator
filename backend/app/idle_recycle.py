@@ -18,7 +18,11 @@ IDLE_SEC = float(os.getenv("IDLE_RECYCLE_SEC", "600"))
 # Below this no model is loaded, so a restart would give nothing back.
 MIN_RSS_MB = float(os.getenv("IDLE_RECYCLE_MIN_RSS_MB", "800"))
 # The routes that can load a model; others don't count as using one.
-MODEL_PATHS = ("/api/extraction", "/api/vision", "/api/enhance", "/api/segmentation")
+# 2026-11-25: /api/hifz was missing, so the worker restarted 10 minutes after
+# the last video-page request even mid-recitation (the live session lost) and
+# every recitation began with the Quran ear unloaded: the first words
+# showed about 5 s late.
+MODEL_PATHS = ("/api/extraction", "/api/vision", "/api/enhance", "/api/segmentation", "/api/hifz")
 
 logger = logging.getLogger(__name__)
 

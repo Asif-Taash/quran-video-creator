@@ -2,14 +2,24 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
+import { BookOpenIcon, FilmIcon } from "@heroicons/react/24/outline";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { LanguageToggle } from "@/components/LanguageToggle";
+import { useT } from "@/lib/LanguageContext";
 import { useState, useEffect } from "react";
 
-// The app is one page (the video creator), so the bar holds only the logo
-// and the language/theme switches.
+// The logo, the two pages (the video creator and memorization, /hifz) and
+// the language/theme switches. On a phone the two pages show as icons only,
+// so everything fits one row at 360px.
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
+  const pathname = usePathname();
+  const tx = useT();
+  const pages = [
+    { href: "/", label: tx("الفيديو", "Video", "Video"), title: tx("صانع الفيديو القرآني", "Kuran videosu oluşturucu", "Quran video creator"), Icon: FilmIcon },
+    { href: "/hifz", label: tx("الحفظ", "Hıfz", "Memorize"), title: tx("الحفظ والتسميع", "Hıfz ve ezber kontrolü", "Memorize & recite"), Icon: BookOpenIcon },
+  ];
 
   useEffect(() => {
     const handler = () => setScrolled(window.scrollY > 12);
@@ -48,10 +58,34 @@ export default function Navbar() {
                   priority
                 />
               </div>
-              <span className="text-lg sm:text-xl font-bold tracking-tight text-gradient-gold whitespace-nowrap" dir="ltr">
+              <span className="hidden xs:inline text-lg sm:text-xl font-bold tracking-tight text-gradient-gold whitespace-nowrap" dir="ltr">
                 Kuran Nuru
               </span>
             </Link>
+
+            {/* The two pages, in the same tray style as the app's segmented controls. */}
+            <div className="flex flex-shrink-0 gap-1 rounded-xl bg-primary/[0.06] p-1 ring-1 ring-inset ring-primary/10">
+              {pages.map(({ href, label, title, Icon }) => {
+                const active = href === "/" ? pathname === "/" : pathname?.startsWith(href);
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    title={title}
+                    aria-label={title}
+                    aria-current={active ? "page" : undefined}
+                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-all duration-200 sm:px-3 ${
+                      active
+                        ? "bg-surface text-primary-dark shadow-sm ring-1 ring-primary/25 dark:text-primary-light"
+                        : "text-muted-foreground hover:bg-surface/60 hover:text-foreground"
+                    }`}
+                  >
+                    <Icon className="h-5 w-5" />
+                    <span className="hidden sm:inline">{label}</span>
+                  </Link>
+                );
+              })}
+            </div>
 
             {/* Desktop & Mobile Toggles */}
             <div className="flex flex-shrink-0 items-center gap-1 sm:gap-2">

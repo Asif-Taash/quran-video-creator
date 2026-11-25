@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import {
   AbsoluteFill,
   Audio,
+  Freeze,
   Img,
   OffthreadVideo,
   Sequence,
@@ -990,6 +991,12 @@ function PageFontStyles({
 // its file is already loaded when its fade starts), so at most two copies
 // play at once however long the video is.
 const BACKGROUND_CROSSFADE_FRAMES = 30;
+// A background only this much shorter than the recitation is not repeated:
+// it plays once and its last frame stays on screen. A background made to
+// measure for the recitation can come out a frame or two shorter than the
+// audio's rounded-up frame count, and a repeat would then fade its opening in
+// over the very end of the video (seen 2026-11-23).
+const BACKGROUND_HOLD_TAIL_FRAMES = 60;
 
 function CrossfadeIn({ frames, children }: { frames: number; children: React.ReactNode }) {
   const frame = useCurrentFrame();
@@ -1018,6 +1025,16 @@ function LoopingBackgroundVideo({
   // repeat loading in must never stall the recitation.
   const video = <OffthreadVideo src={src} muted volume={0} pauseWhenBuffering={false} onError={onError} style={style} />;
   if (!clipFrames || clipFrames >= totalFrames) return video;
+  if (totalFrames - clipFrames <= BACKGROUND_HOLD_TAIL_FRAMES) {
+    // One copy on the composition's own timeline (inside a later Sequence,
+    // Freeze's frame would count from the composition start and land before
+    // the clip, showing its first frame).
+    return (
+      <Freeze frame={clipFrames - 1} active={(f) => f >= clipFrames}>
+        {video}
+      </Freeze>
+    );
+  }
 
   const crossfade = Math.min(BACKGROUND_CROSSFADE_FRAMES, Math.floor(clipFrames / 4));
   const period = clipFrames - crossfade;
