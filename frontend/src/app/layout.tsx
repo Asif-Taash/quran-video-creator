@@ -95,8 +95,11 @@ export const metadata: Metadata = {
   icons: {
     icon: "/kuran-nuru-favicon.png",
     shortcut: "/kuran-nuru-favicon.png",
-    apple: "/kuran-nuru-favicon.png",
+    // square: the favicon (651x550) came out squashed on a phone's home screen
+    apple: "/icon-192.png",
   },
+  // Added to a phone's home screen it opens full screen, like an app.
+  appleWebApp: { capable: true, title: "Kuran Nuru", statusBarStyle: "black-translucent" },
 };
 
 export default function RootLayout({

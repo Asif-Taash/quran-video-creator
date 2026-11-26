@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { Readable } from "stream";
 import axios from "axios";
+import { toWebStream } from "@/lib/fileResponse";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,7 +35,7 @@ export async function POST(req: Request) {
     });
 
     if (res.status === 200) {
-      return new Response(Readable.toWeb(res.data) as ReadableStream, {
+      return new Response(toWebStream(res.data), {
         headers: {
           "Content-Type": "audio/mp4",
           "X-Audio-Title": String(res.headers["x-audio-title"] ?? "audio"),

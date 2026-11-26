@@ -408,6 +408,9 @@ def live_start(expected, surah):
 def live_audio(session, pcm, final=False):
     """Adds audio to a live session; the reading so far, judged, or (final)
     the check of the whole recording. None for an unknown session."""
+    import live_priority
+
+    live_priority.mark()  # background work waits while this goes on
     with _live_lock:
         live = _live.get(session)
     if live is None:

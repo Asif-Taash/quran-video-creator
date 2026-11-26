@@ -64,6 +64,47 @@ function parseRange(header: string, size: number): { start: number; end: number 
   return { start, end };
 }
 
-function toWebStream(stream: fs.ReadStream): ReadableStream {
-  return Readable.toWeb(stream) as unknown as ReadableStream;
+// A Node stream as a web stream. Not Readable.toWeb: when the browser drops a
+// request midway (seeking in audio does it all the time), Node's adapter kept
+// pushing data into the closed stream and threw an uncaught "Controller is
+// already closed" (seen 2026-11-26 in the frontend log). Here the file read
+// stops the moment the response is cancelled.
+export function toWebStream(stream: Readable): ReadableStream<Uint8Array> {
+  let done = false;
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      stream.on("data", (chunk: Buffer) => {
+        if (done) return;
+        try {
+          controller.enqueue(chunk);
+        } catch {
+          done = true;
+          stream.destroy();
+          return;
+        }
+        if ((controller.desiredSize ?? 1) <= 0) stream.pause();
+      });
+      stream.on("end", () => {
+        if (done) return;
+        done = true;
+        try {
+          controller.close();
+        } catch {}
+      });
+      stream.on("error", (err) => {
+        if (done) return;
+        done = true;
+        try {
+          controller.error(err);
+        } catch {}
+      });
+    },
+    pull() {
+      stream.resume();
+    },
+    cancel() {
+      done = true;
+      stream.destroy();
+    },
+  });
 }

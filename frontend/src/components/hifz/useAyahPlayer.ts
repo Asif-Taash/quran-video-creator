@@ -108,6 +108,9 @@ export function useAyahPlayer(settings: PlayerSettings) {
     ticketRef.current++;
     clearTimer();
     cancelJob();
+    // Its job is cancelled now: the next play must start a new one, not wait
+    // on this one (that ended in 409 and showed "unavailable").
+    preparingRef.current = null;
     stopAtRef.current = null;
     audioRef.current?.pause();
     setStatus("idle");

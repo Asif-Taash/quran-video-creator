@@ -469,22 +469,36 @@ export default function HifzPage({ surahs }: { surahs: HifzSurah[] }) {
   }, [liveInfo.hard, recorder.recording]);
 
   // The ear gets ready as soon as «سمّع» is open, and stays ready while the
-  // page is in view (the backend frees idle models after 10 minutes; once
-  // freed, the first words of a recitation showed about 5 s late). Leaving
-  // the page lets it go.
+  // page is in view and in use (the backend frees idle models after 10
+  // minutes; once freed, the first words of a recitation showed about 5 s
+  // late). Untouched for 15 minutes, or left, it lets the ear go: kept ready
+  // all the time it held 3.7 GB of the laptop's memory (2026-11-26).
   useEffect(() => {
     if (!prefsLoaded || mode !== "recite") return;
+    let lastUse = Date.now();
+    const used = () => {
+      lastUse = Date.now();
+    };
     // With the surah and start: its text is readied too (2 s for a long surah).
     const warm = () => {
-      if (document.visibilityState === "visible")
+      if (document.visibilityState === "visible" && Date.now() - lastUse < 15 * 60_000)
         fetch(`/api/hifz/warm?surah=${surah.id}&start=${reciteStart}`, { method: "POST" }).catch(() => {});
     };
+    const back = () => {
+      if (document.visibilityState === "visible") {
+        used();
+        warm();
+      }
+    };
+    const events = ["pointerdown", "keydown", "wheel", "touchstart"] as const;
     warm();
     const timer = window.setInterval(warm, 4 * 60_000);
-    document.addEventListener("visibilitychange", warm);
+    document.addEventListener("visibilitychange", back);
+    events.forEach((e) => window.addEventListener(e, used, { passive: true }));
     return () => {
       window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", warm);
+      document.removeEventListener("visibilitychange", back);
+      events.forEach((e) => window.removeEventListener(e, used));
     };
   }, [prefsLoaded, mode, surah.id, reciteStart]);
 

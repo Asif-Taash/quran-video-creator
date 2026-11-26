@@ -1021,8 +1021,6 @@ def judge(ref, heard, pauses=None, live=False, nested=False):
                     "at": None if at0 is None else [at0 + i for i in judge.kept]}
             # The word it broke off on, said as another: what was said past
             # the matched words, when it isn't the next word's beginning.
-            import Levenshtein as lv
-
             seg = ref.chars[ref.starts[wa]:ref.starts[we]] if we > wa else ""
             ops = lv.opcodes(seg, text) if seg else []
             rest = text[ops[-1][3]:] if ops and ops[-1][0] == "insert" and ops[-1][1] == len(seg) else ""

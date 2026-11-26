@@ -25,6 +25,7 @@ Built-in reciters are always cut from their continuous whole-surah
 recording -- never stitched together from per-ayah files, which leaves an
 audible break between consecutive ayahs.
 """
+import live_priority
 import os
 
 os.environ.setdefault("HF_HOME", "/app/data/huggingface_cache")
@@ -743,6 +744,7 @@ def compute_emission(wav):
     """Frame-level log-posteriors [T, V] for a 16kHz mono float waveform,
     computed in overlapping 30s chunks (attention cost is quadratic in
     length, so one pass over minutes of audio is not viable)."""
+    live_priority.yield_to_live()  # a recitation goes first
     import torch
 
     model, _, _ = _get_mms()
@@ -1031,6 +1033,7 @@ def _norm_words(text):
 
 
 def _transcribe(wav):
+    live_priority.yield_to_live()  # a recitation goes first
     model = _get_verify_model()
     segments, _ = model.transcribe(
         wav, language="ar", beam_size=5, without_timestamps=True,
@@ -1879,6 +1882,7 @@ def _path_search(em, y, words, start_words, end_words, arrive, no_span, banned=f
     amount)]} added when a reading of that word starts on that frame
     (entering its first letter, not staying in it: once per reading).
     Returns (state per frame, frames a jump landed on)."""
+    live_priority.yield_to_live()  # a recitation goes first
     T, N, W = em.shape[0], len(y), len(words)
     S = 2 * N + 1
     labels = np.zeros(S, dtype=np.int64)
